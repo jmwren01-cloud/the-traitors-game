@@ -22,13 +22,18 @@ args = "Betrayal Game"
 name = "Betrayal Game"
 author = "agent"
 
+[workflows.workflow.metadata]
+outputType = "webview"
+
 [[workflows.workflow.tasks]]
 task = "shell.exec"
 args = "cd \"Betrayal Game\" && npm run dev"
-
-[workflows.workflow.metadata]
-outputType = "console"
+waitForPort = 5000
 
 [[ports]]
 localPort = 3000
+externalPort = 80
+
+[[ports]]
+localPort = 5000
 externalPort = 80

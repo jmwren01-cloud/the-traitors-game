@@ -1,17 +1,56 @@
 // WebSocket Server & Event Handlers
 
 import { WebSocketServer, WebSocket } from 'ws';
+import { createServer } from 'http';
+import { readFileSync } from 'fs';
+import { join, dirname } from 'path';
+import { fileURLToPath } from 'url';
 import * as game from './game/manager.js';
 import type { GameState, C2SEvent, S2CEvent } from './game/types.js';
 
-const PORT = 3000;
-const wss = new WebSocketServer({ port: PORT });
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const PORT = 5000;
+
+// Create HTTP server to serve the test client
+const httpServer = createServer((req, res) => {
+  if (req.url === '/' || req.url === '/index.html') {
+    try {
+      const htmlPath = join(__dirname, '..', 'test-client.html');
+      let html = readFileSync(htmlPath, 'utf-8');
+      
+      // Replace localhost with the correct WebSocket URL
+      const domain = process.env.REPLIT_DEV_DOMAIN || `localhost:${PORT}`;
+      const wsProtocol = domain.includes('replit') ? 'wss' : 'ws';
+      const wsUrl = `${wsProtocol}://${domain}`;
+      
+      html = html.replace("ws://localhost:3000", wsUrl);
+      
+      res.writeHead(200, { 
+        'Content-Type': 'text/html',
+        'Cache-Control': 'no-cache, no-store, must-revalidate'
+      });
+      res.end(html);
+    } catch (error) {
+      res.writeHead(500);
+      res.end('Error loading page');
+    }
+  } else {
+    res.writeHead(404);
+    res.end('Not found');
+  }
+});
+
+// Attach WebSocket server to the same HTTP server
+const wss = new WebSocketServer({ server: httpServer });
 
 // In-memory game storage
 const games = new Map<string, GameState>();
 const playerConnections = new Map<string, WebSocket>();
 
-console.log(`🎮 Betrayal Game Server running on ws://localhost:${PORT}`);
+httpServer.listen(PORT, '0.0.0.0', () => {
+  console.log(`🎮 Betrayal Game Server running on http://0.0.0.0:${PORT}`);
+  console.log(`🔌 WebSocket available at ws://0.0.0.0:${PORT}`);
+});
 
 wss.on('connection', (ws: WebSocket) => {
   let currentPlayerId: string | undefined;
