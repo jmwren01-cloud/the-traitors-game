@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Betrayal Game - Test Client</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 800px;
+      margin: 50px auto;
+      padding: 20px;
+      background: #f5f5f5;
+    }
+    .container {
+      background: white;
+      padding: 20px;
+      border-radius: 8px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+      margin-bottom: 20px;
+    }
+    h1 { color: #333; }
+    h2 { color: #666; font-size: 18px; }
+    input {
+      padding: 8px;
+      margin: 5px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      width: 200px;
+    }
+    button {
+      padding: 10px 20px;
+      margin: 5px;
+      background: #007bff;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    button:hover { background: #0056b3; }
+    button:disabled {
+      background: #ccc;
+      cursor: not-allowed;
+    }
+    .status {
+      padding: 10px;
+      border-radius: 4px;
+      margin: 10px 0;
+    }
+    .connected { background: #d4edda; color: #155724; }
+    .disconnected { background: #f8d7da; color: #721c24; }
+    .error { background: #f8d7da; color: #721c24; padding: 10px; margin: 10px 0; border-radius: 4px; }
+    .player {
+      padding: 8px;
+      margin: 5px 0;
+      background: #f8f9fa;
+      border-radius: 4px;
+      display: flex;
+      justify-content: space-between;
+    }
+    .host { background: #fff3cd; }
+    .traitor { background: #f8d7da; }
+    .faithful { background: #d4edda; }
+    .game-info { font-size: 14px; color: #666; }
+  </style>
+</head>
+<body>
+  <h1>🎭 Betrayal Game - Test Client</h1>
+  
+  <div class="container">
+    <h2>Connection</h2>
+    <div id="status" class="status disconnected">Disconnected</div>
+  </div>
+
+  <div class="container">
+    <h2>Create Game</h2>
+    <input type="text" id="createName" placeholder="Your name" />
+    <button onclick="createGame()">Create Game</button>
+  </div>
+
+  <div class="container">
+    <h2>Join Game</h2>
+    <input type="text" id="joinSessionId" placeholder="Session ID" />
+    <input type="text" id="joinName" placeholder="Your name" />
+    <button onclick="joinGame()">Join Game</button>
+  </div>
+
+  <div class="container">
+    <h2>Game Controls</h2>
+    <button onclick="startGame()">Start Game (Host Only)</button>
+    <button onclick="assignRoles()">Assign Roles</button>
+  </div>
+
+  <div class="container">
+    <h2>Game State</h2>
+    <div id="gameState">No game state yet</div>
+  </div>
+
+  <div class="container">
+    <h2>Messages</h2>
+    <div id="messages" style="max-height: 200px; overflow-y: auto; font-family: monospace; font-size: 12px;"></div>
+  </div>
+
+  <script>
+    let ws = null;
+    let gameState = null;
+
+    function connect() {
+      ws = new WebSocket('ws://localhost:3000');
+      
+      ws.onopen = () => {
+        document.getElementById('status').className = 'status connected';
+        document.getElementById('status').textContent = 'Connected';
+        addMessage('Connected to server');
+      };
+      
+      ws.onclose = () => {
+        document.getElementById('status').className = 'status disconnected';
+        document.getElementById('status').textContent = 'Disconnected';
+        addMessage('Disconnected from server');
+        setTimeout(connect, 2000);
+      };
+      
+      ws.onmessage = (event) => {
+        const msg = JSON.parse(event.data);
+        addMessage('Received: ' + event.data);
+        
+        if (msg.type === 'S2C_STATE_SYNC') {
+          gameState = msg.payload;
+          displayGameState();
+        } else if (msg.type === 'S2C_ERROR') {
+          showError(msg.payload.message || msg.payload.code);
+        }
+      };
+    }
+
+    function send(type, payload = {}) {
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        const msg = { type, payload };
+        ws.send(JSON.stringify(msg));
+        addMessage('Sent: ' + JSON.stringify(msg));
+      }
+    }
+
+    function createGame() {
+      const name = document.getElementById('createName').value;
+      if (!name) return alert('Enter your name');
+      send('C2S_CREATE_GAME', { playerName: name });
+    }
+
+    function joinGame() {
+      const sessionId = document.getElementById('joinSessionId').value;
+      const name = document.getElementById('joinName').value;
+      if (!sessionId || !name) return alert('Enter session ID and name');
+      send('C2S_JOIN_GAME', { sessionId, playerName: name });
+    }
+
+    function startGame() {
+      send('C2S_START_GAME');
+    }
+
+    function assignRoles() {
+      send('C2S_ASSIGN_ROLES');
+    }
+
+    function displayGameState() {
+      if (!gameState) return;
+      
+      const html = `
+        <div class="game-info">
+          <strong>Session ID:</strong> ${gameState.sessionId}<br>
+          <strong>Phase:</strong> ${gameState.phase}<br>
+          <strong>Players:</strong> ${gameState.players.length}
+        </div>
+        <h3>Players:</h3>
+        ${gameState.players.map(p => `
+          <div class="player ${p.isHost ? 'host' : ''} ${p.role === 'TRAITOR' ? 'traitor' : ''} ${p.role === 'FAITHFUL' ? 'faithful' : ''}">
+            <span>${p.name} ${p.isHost ? '👑' : ''}</span>
+            <span>${p.role || ''}</span>
+          </div>
+        `).join('')}
+      `;
+      
+      document.getElementById('gameState').innerHTML = html;
+    }
+
+    function showError(message) {
+      const errorDiv = document.createElement('div');
+      errorDiv.className = 'error';
+      errorDiv.textContent = 'Error: ' + message;
+      document.body.insertBefore(errorDiv, document.body.firstChild);
+      setTimeout(() => errorDiv.remove(), 5000);
+    }
+
+    function addMessage(msg) {
+      const div = document.getElementById('messages');
+      div.innerHTML += msg + '<br>';
+      div.scrollTop = div.scrollHeight;
+    }
+
+    // Connect on load
+    connect();
+  </script>
+</body>
+</html>

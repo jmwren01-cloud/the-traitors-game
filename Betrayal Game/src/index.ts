@@ -1,0 +1,368 @@
+// WebSocket Server & Event Handlers
+
+import { WebSocketServer, WebSocket } from 'ws';
+import * as game from './game/manager.js';
+import type { GameState, C2SEvent, S2CEvent } from './game/types.js';
+
+const PORT = 3000;
+const wss = new WebSocketServer({ port: PORT });
+
+// In-memory game storage
+const games = new Map<string, GameState>();
+const playerConnections = new Map<string, WebSocket>();
+
+console.log(`🎮 Betrayal Game Server running on ws://localhost:${PORT}`);
+
+wss.on('connection', (ws: WebSocket) => {
+  let currentPlayerId: string | undefined;
+  let currentSessionId: string | undefined;
+
+  ws.on('message', (data: string) => {
+    try {
+      const event: C2SEvent = JSON.parse(data);
+      
+      // ============= GAME CREATION =============
+      
+      if (event.type === 'C2S_CREATE_GAME') {
+        const gameState = game.createGame(event.payload.playerName);
+        games.set(gameState.sessionId, gameState);
+        
+        currentPlayerId = gameState.hostId;
+        currentSessionId = gameState.sessionId;
+        playerConnections.set(currentPlayerId, ws);
+
+        const response: S2CEvent = {
+          type: 'S2C_GAME_CREATED',
+          payload: {
+            sessionId: gameState.sessionId,
+            playerId: currentPlayerId,
+            playerName: event.payload.playerName
+          }
+        };
+        ws.send(JSON.stringify(response));
+        broadcastToSession(gameState.sessionId, {
+          type: 'S2C_PLAYER_JOINED',
+          payload: { players: gameState.players }
+        });
+        return;
+      }
+
+      // ============= PLAYER JOINING =============
+      
+      if (event.type === 'C2S_JOIN_GAME') {
+        const gameState = games.get(event.payload.sessionId);
+        if (!gameState) {
+          sendError(ws, 'Game not found');
+          return;
+        }
+
+        const { game: updatedGame, playerId } = game.addPlayer(gameState, event.payload.playerName);
+        games.set(event.payload.sessionId, updatedGame);
+        
+        currentPlayerId = playerId;
+        currentSessionId = event.payload.sessionId;
+        playerConnections.set(playerId, ws);
+
+        broadcastToSession(event.payload.sessionId, {
+          type: 'S2C_PLAYER_JOINED',
+          payload: { players: updatedGame.players }
+        });
+        return;
+      }
+
+      // All subsequent events require active session
+      if (!currentSessionId || !currentPlayerId) {
+        sendError(ws, 'Not in a game session');
+        return;
+      }
+
+      const gameState = games.get(currentSessionId);
+      if (!gameState) {
+        sendError(ws, 'Game session not found');
+        return;
+      }
+
+      // ============= GAME START & ROLE ASSIGNMENT =============
+      
+      if (event.type === 'C2S_START_GAME') {
+        const updatedGame = { ...gameState, phase: 'ROLE_ASSIGN' as const };
+        games.set(currentSessionId, updatedGame);
+        
+        broadcastToSession(currentSessionId, {
+          type: 'S2C_GAME_STARTED',
+          payload: { phase: 'ROLE_ASSIGN' }
+        });
+        return;
+      }
+
+      if (event.type === 'C2S_ASSIGN_ROLES') {
+        const updatedGame = game.assignRoles(gameState);
+        games.set(currentSessionId, updatedGame);
+        
+        broadcastToSession(currentSessionId, {
+          type: 'S2C_ROLES_ASSIGNED',
+          payload: { phase: 'ROLE_REVEAL' }
+        });
+
+        // WEEK 4 UPDATE: Send role reveals with traitor awareness
+        const traitorIds = game.getTraitorIds(updatedGame);
+        
+        updatedGame.players.forEach((player) => {
+          const connection = playerConnections.get(player.id);
+          if (connection && connection.readyState === WebSocket.OPEN && player.role) {
+            const basePayload = {
+              role: player.role,
+              phase: 'ROLE_REVEAL' as const
+            };
+            
+            const roleReveal: S2CEvent = {
+              type: 'S2C_ROLE_REVEAL',
+              payload: player.role === 'TRAITOR' 
+                ? { ...basePayload, traitorIds }
+                : basePayload
+            };
+            connection.send(JSON.stringify(roleReveal));
+          }
+        });
+        return;
+      }
+
+      // ============= VOTING PHASE =============
+      
+      if (event.type === 'C2S_START_VOTING') {
+        const updatedGame = game.startVoting(gameState);
+        games.set(currentSessionId, updatedGame);
+        
+        broadcastToSession(currentSessionId, {
+          type: 'S2C_VOTING_STARTED',
+          payload: { phase: 'VOTING' }
+        });
+        return;
+      }
+
+      if (event.type === 'C2S_SUBMIT_VOTE') {
+        const updatedGame = game.submitVote(gameState, currentPlayerId, event.payload.targetId);
+        games.set(currentSessionId, updatedGame);
+        
+        broadcastToSession(currentSessionId, {
+          type: 'S2C_VOTE_SUBMITTED',
+          payload: { voterId: currentPlayerId }
+        });
+        return;
+      }
+
+      if (event.type === 'C2S_REVEAL_VOTES') {
+        const updatedGame = game.revealVotes(gameState);
+        games.set(currentSessionId, updatedGame);
+        
+        broadcastToSession(currentSessionId, {
+          type: 'S2C_VOTES_REVEALED',
+          payload: { votes: updatedGame.revealedVotes, phase: 'VOTE_REVEAL' }
+        });
+        return;
+      }
+
+      if (event.type === 'C2S_BANISH_PLAYER') {
+        const updatedGame = game.banishPlayer(gameState);
+        games.set(currentSessionId, updatedGame);
+        
+        const banishedPlayer = updatedGame.players.find((p) => p.id === updatedGame.banishedPlayerId);
+        if (banishedPlayer && banishedPlayer.role) {
+          broadcastToSession(currentSessionId, {
+            type: 'S2C_PLAYER_BANISHED',
+            payload: {
+              banishedPlayerId: banishedPlayer.id,
+              banishedPlayerName: banishedPlayer.name,
+              banishedPlayerRole: banishedPlayer.role,
+              phase: 'BANISH_REVEAL'
+            }
+          });
+        }
+        return;
+      }
+
+      // ============= WIN CONDITION CHECK =============
+      
+      if (event.type === 'C2S_CHECK_WIN') {
+        const updatedGame = game.checkWinCondition(gameState);
+        games.set(currentSessionId, updatedGame);
+
+        if (updatedGame.phase === 'GAME_END' && updatedGame.winner) {
+          const aliveTraitors = updatedGame.players.filter((p) => p.isAlive && p.role === 'TRAITOR').length;
+          const aliveFaithful = updatedGame.players.filter((p) => p.isAlive && p.role === 'FAITHFUL').length;
+          
+          broadcastToSession(currentSessionId, {
+            type: 'S2C_GAME_END',
+            payload: {
+              winner: updatedGame.winner,
+              phase: 'GAME_END',
+              remainingTraitors: aliveTraitors,
+              remainingFaithful: aliveFaithful
+            }
+          });
+        } else {
+          broadcastToSession(currentSessionId, {
+            type: 'S2C_CONTINUE_GAME',
+            payload: { phase: updatedGame.phase, currentRound: updatedGame.currentRound }
+          });
+        }
+        return;
+      }
+
+      // ============= NIGHT PHASE & MURDER =============
+      
+      if (event.type === 'C2S_START_NIGHT') {
+        const updatedGame = game.startNight(gameState);
+        games.set(currentSessionId, updatedGame);
+        
+        // WEEK 4 UPDATE: Send alive traitor count to all players
+        const aliveTraitorCount = game.getAliveTraitorCount(updatedGame);
+        
+        broadcastToSession(currentSessionId, {
+          type: 'S2C_NIGHT_STARTED',
+          payload: { 
+            phase: 'NIGHT', 
+            currentRound: updatedGame.currentRound,
+            aliveTraitorCount
+          }
+        });
+        return;
+      }
+
+      if (event.type === 'C2S_SUBMIT_MURDER') {
+        const updatedGame = game.submitMurder(gameState, currentPlayerId, event.payload.targetId);
+        games.set(currentSessionId, updatedGame);
+        
+        // WEEK 4 UPDATE: Send vote progress to traitors
+        const progress = game.getMurderVoteProgress(updatedGame);
+        
+        // Send to all traitors
+        updatedGame.players.forEach((player) => {
+          if (player.role === 'TRAITOR' && player.isAlive) {
+            const connection = playerConnections.get(player.id);
+            if (connection && connection.readyState === WebSocket.OPEN && currentPlayerId) {
+              const murderUpdate: S2CEvent = {
+                type: 'S2C_MURDER_SUBMITTED',
+                payload: { 
+                  voterId: currentPlayerId,
+                  votesReceived: progress.received,
+                  votesNeeded: progress.needed
+                }
+              };
+              connection.send(JSON.stringify(murderUpdate));
+            }
+          }
+        });
+        return;
+      }
+
+      if (event.type === 'C2S_RESOLVE_MURDER') {
+        const updatedGame = game.resolveMurder(gameState);
+        games.set(currentSessionId, updatedGame);
+        
+        const murderedPlayer = updatedGame.players.find((p) => p.id === updatedGame.lastMurderedPlayerId);
+        if (murderedPlayer) {
+          broadcastToSession(currentSessionId, {
+            type: 'S2C_MURDER_RESOLVED',
+            payload: {
+              murderedPlayerId: murderedPlayer.id,
+              murderedPlayerName: murderedPlayer.name,
+              phase: 'MORNING'
+            }
+          });
+        }
+        return;
+      }
+
+      if (event.type === 'C2S_START_MORNING') {
+        const updatedGame = game.startMorning(gameState);
+        games.set(currentSessionId, updatedGame);
+        
+        const murderedPlayer = updatedGame.players.find((p) => p.id === updatedGame.lastMurderedPlayerId);
+        
+        if (murderedPlayer) {
+          broadcastToSession(currentSessionId, {
+            type: 'S2C_MORNING_STARTED',
+            payload: {
+              phase: 'MORNING',
+              lastMurderedPlayerId: murderedPlayer.id,
+              lastMurderedPlayerName: murderedPlayer.name
+            }
+          });
+        } else {
+          broadcastToSession(currentSessionId, {
+            type: 'S2C_MORNING_STARTED',
+            payload: {
+              phase: 'MORNING'
+            }
+          });
+        }
+        return;
+      }
+
+      if (event.type === 'C2S_CONTINUE_TO_DAY') {
+        const updatedGame = game.continueToDayPhase(gameState);
+        games.set(currentSessionId, updatedGame);
+
+        if (updatedGame.phase === 'GAME_END' && updatedGame.winner) {
+          const aliveTraitors = updatedGame.players.filter((p) => p.isAlive && p.role === 'TRAITOR').length;
+          const aliveFaithful = updatedGame.players.filter((p) => p.isAlive && p.role === 'FAITHFUL').length;
+          
+          broadcastToSession(currentSessionId, {
+            type: 'S2C_GAME_END',
+            payload: {
+              winner: updatedGame.winner,
+              phase: 'GAME_END',
+              remainingTraitors: aliveTraitors,
+              remainingFaithful: aliveFaithful
+            }
+          });
+        } else {
+          broadcastToSession(currentSessionId, {
+            type: 'S2C_CONTINUE_GAME',
+            payload: { phase: updatedGame.phase, currentRound: updatedGame.currentRound }
+          });
+        }
+        return;
+      }
+
+    } catch (error) {
+      console.error('Error handling message:', error);
+      sendError(ws, error instanceof Error ? error.message : 'Unknown error');
+    }
+  });
+
+  ws.on('close', () => {
+    if (currentPlayerId && currentSessionId) {
+      playerConnections.delete(currentPlayerId);
+      
+      const gameState = games.get(currentSessionId);
+      if (gameState) {
+        const updatedPlayers = gameState.players.map((p) =>
+          p.id === currentPlayerId ? { ...p, isConnected: false } : p
+        );
+        games.set(currentSessionId, { ...gameState, players: updatedPlayers });
+      }
+    }
+  });
+});
+
+function broadcastToSession(sessionId: string, event: S2CEvent) {
+  const gameState = games.get(sessionId);
+  if (!gameState) return;
+
+  gameState.players.forEach((player) => {
+    const connection = playerConnections.get(player.id);
+    if (connection && connection.readyState === WebSocket.OPEN) {
+      connection.send(JSON.stringify(event));
+    }
+  });
+}
+
+function sendError(ws: WebSocket, message: string) {
+  const error: S2CEvent = {
+    type: 'S2C_ERROR',
+    payload: { message }
+  };
+  ws.send(JSON.stringify(error));
+}
