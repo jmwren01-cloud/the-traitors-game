@@ -1,12 +1,12 @@
 import { useState } from 'react';
-import type { Player, C2SEvent, Role } from '../types';
+import type { Player, C2SEvent, Role, Vote } from '../types';
 import styles from './Voting.module.css';
 
 interface VotingProps {
   players: Player[];
   myPlayerId?: string;
   phase: string;
-  votes?: Record<string, string>;
+  votes?: Vote[];
   banishedPlayer?: { id: string; name: string; role: Role };
   onSend: (event: C2SEvent) => void;
 }
@@ -41,7 +41,7 @@ export function Voting({ players, myPlayerId, phase, votes, banishedPlayer, onSe
 
   const getVoteCount = (playerId: string) => {
     if (!votes) return 0;
-    return Object.values(votes).filter((v) => v === playerId).length;
+    return votes.filter((v) => v.targetId === playerId).length;
   };
 
   if (phase === 'ROUNDTABLE') {
@@ -148,7 +148,7 @@ export function Voting({ players, myPlayerId, phase, votes, banishedPlayer, onSe
     );
   }
 
-  if (phase === 'BANISH_REVEAL' && banishedPlayer) {
+  if ((phase === 'BANISH_REVEAL' || phase === 'CHECK_WIN') && banishedPlayer) {
     return (
       <div className={styles.container}>
         <h1 className={styles.title}>Banishment</h1>
@@ -167,10 +167,14 @@ export function Voting({ players, myPlayerId, phase, votes, banishedPlayer, onSe
           <p className={styles.failMessage}>An innocent has been banished...</p>
         )}
 
-        {isHost && (
+        {phase === 'BANISH_REVEAL' && isHost && (
           <button className={styles.primaryBtn} onClick={handleCheckWin}>
             Continue
           </button>
+        )}
+
+        {phase === 'CHECK_WIN' && (
+          <p className={styles.waiting}>Checking game status...</p>
         )}
       </div>
     );

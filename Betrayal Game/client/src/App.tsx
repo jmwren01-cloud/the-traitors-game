@@ -54,7 +54,7 @@ function App() {
     );
   }
 
-  if (phase === 'ROUNDTABLE' || phase === 'VOTING' || phase === 'VOTE_REVEAL' || phase === 'BANISH_REVEAL') {
+  if (phase === 'ROUNDTABLE' || phase === 'VOTING' || phase === 'VOTE_REVEAL' || phase === 'BANISH_REVEAL' || phase === 'CHECK_WIN') {
     return (
       <Voting
         players={gameState?.players || []}

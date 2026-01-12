@@ -8,6 +8,7 @@ export type GamePhase =
   | 'VOTING'
   | 'VOTE_REVEAL'
   | 'BANISH_REVEAL'
+  | 'CHECK_WIN'
   | 'NIGHT'
   | 'MORNING'
   | 'GAME_END';
@@ -21,6 +22,11 @@ export interface Player {
   isConnected?: boolean;
 }
 
+export interface Vote {
+  voterId: string;
+  targetId: string;
+}
+
 export interface GameState {
   sessionId: string;
   phase: GamePhase;
@@ -28,10 +34,12 @@ export interface GameState {
   myPlayerId?: string;
   myRole?: Role;
   traitorIds?: string[];
-  votes?: Record<string, string>;
+  votes?: Vote[];
   banishedPlayer?: { id: string; name: string; role: Role };
   murderedPlayer?: { id: string; name: string };
   winner?: 'TRAITORS' | 'FAITHFUL';
+  remainingTraitors?: number;
+  remainingFaithful?: number;
   currentRound?: number;
   aliveTraitorCount?: number;
   murderVoteProgress?: { received: number; needed: number };

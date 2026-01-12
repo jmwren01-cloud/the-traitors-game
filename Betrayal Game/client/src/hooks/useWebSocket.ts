@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import type { GameState, C2SEvent, Player, Role } from '../types';
+import type { GameState, C2SEvent, Player, Role, Vote } from '../types';
 
 const getWebSocketUrl = () => {
   const domain = window.location.host;
@@ -59,6 +59,18 @@ export function useWebSocket() {
         break;
       }
 
+      case 'S2C_GAME_JOINED': {
+        const payload = msg.payload as { sessionId: string; playerId: string; playerName: string; players: Player[] };
+        myPlayerIdRef.current = payload.playerId;
+        setGameState({
+          sessionId: payload.sessionId,
+          phase: 'LOBBY',
+          players: payload.players,
+          myPlayerId: payload.playerId,
+        });
+        break;
+      }
+
       case 'S2C_PLAYER_JOINED': {
         const payload = msg.payload as { players: Player[] };
         setGameState((prev) => prev ? { ...prev, players: payload.players } : null);
@@ -90,7 +102,7 @@ export function useWebSocket() {
 
       case 'S2C_VOTING_STARTED': {
         const payload = msg.payload as { phase: string };
-        setGameState((prev) => prev ? { ...prev, phase: payload.phase as GameState['phase'], votes: {} } : null);
+        setGameState((prev) => prev ? { ...prev, phase: payload.phase as GameState['phase'], votes: [] } : null);
         break;
       }
 
@@ -99,7 +111,7 @@ export function useWebSocket() {
       }
 
       case 'S2C_VOTES_REVEALED': {
-        const payload = msg.payload as { votes: Record<string, string>; phase: string };
+        const payload = msg.payload as { votes: Vote[]; phase: string };
         setGameState((prev) => prev ? {
           ...prev,
           phase: payload.phase as GameState['phase'],
@@ -191,11 +203,13 @@ export function useWebSocket() {
       }
 
       case 'S2C_GAME_END': {
-        const payload = msg.payload as { winner: 'TRAITORS' | 'FAITHFUL'; phase: string };
+        const payload = msg.payload as { winner: 'TRAITORS' | 'FAITHFUL'; phase: string; remainingTraitors: number; remainingFaithful: number };
         setGameState((prev) => prev ? {
           ...prev,
           phase: payload.phase as GameState['phase'],
           winner: payload.winner,
+          remainingTraitors: payload.remainingTraitors,
+          remainingFaithful: payload.remainingFaithful,
         } : null);
         break;
       }

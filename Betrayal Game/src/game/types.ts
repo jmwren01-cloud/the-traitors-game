@@ -63,6 +63,7 @@ export type C2SEvent =
 // Server-to-Client Events
 export type S2CEvent =
   | { type: 'S2C_GAME_CREATED'; payload: { sessionId: string; playerId: string; playerName: string } }
+  | { type: 'S2C_GAME_JOINED'; payload: { sessionId: string; playerId: string; playerName: string; players: Player[] } }
   | { type: 'S2C_PLAYER_JOINED'; payload: { players: Player[] } }
   | { type: 'S2C_GAME_STARTED'; payload: { phase: GamePhase } }
   | { type: 'S2C_ROLES_ASSIGNED'; payload: { phase: GamePhase } }

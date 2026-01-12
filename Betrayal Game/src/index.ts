@@ -119,6 +119,17 @@ wss.on('connection', (ws: WebSocket) => {
         currentSessionId = event.payload.sessionId;
         playerConnections.set(playerId, ws);
 
+        const joinResponse: S2CEvent = {
+          type: 'S2C_GAME_JOINED',
+          payload: {
+            sessionId: event.payload.sessionId,
+            playerId: playerId,
+            playerName: event.payload.playerName,
+            players: updatedGame.players
+          }
+        };
+        ws.send(JSON.stringify(joinResponse));
+
         broadcastToSession(event.payload.sessionId, {
           type: 'S2C_PLAYER_JOINED',
           payload: { players: updatedGame.players }
