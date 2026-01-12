@@ -1,0 +1,248 @@
+.container {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+  color: #fff;
+}
+
+.title {
+  font-size: 2.5rem;
+  margin-bottom: 0.5rem;
+  color: #e94560;
+}
+
+.subtitle {
+  color: #888;
+  margin-bottom: 2rem;
+}
+
+.playerGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 15px;
+  width: 100%;
+  max-width: 600px;
+  margin-bottom: 2rem;
+}
+
+.playerCard,
+.voteCard {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 20px 15px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 15px;
+  transition: all 0.3s;
+}
+
+.playerCard.me {
+  border: 2px solid rgba(233, 69, 96, 0.5);
+}
+
+.voteCard {
+  cursor: pointer;
+}
+
+.voteCard:hover:not(.disabled) {
+  background: rgba(255, 255, 255, 0.1);
+  transform: translateY(-5px);
+}
+
+.voteCard.selected {
+  background: rgba(233, 69, 96, 0.3);
+  border: 2px solid #e94560;
+}
+
+.voteCard.disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.avatar {
+  width: 50px;
+  height: 50px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #e94560, #ff6b6b);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.5rem;
+  font-weight: bold;
+  margin-bottom: 10px;
+}
+
+.bigAvatar {
+  width: 100px;
+  height: 100px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #e94560, #ff6b6b);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 3rem;
+  font-weight: bold;
+  margin-bottom: 20px;
+}
+
+.name {
+  font-size: 0.9rem;
+  text-align: center;
+}
+
+.youLabel {
+  font-size: 0.7rem;
+  color: #e94560;
+  margin-top: 5px;
+}
+
+.primaryBtn,
+.voteBtn {
+  padding: 15px 40px;
+  background: linear-gradient(135deg, #e94560 0%, #ff6b6b 100%);
+  color: #fff;
+  border: none;
+  border-radius: 10px;
+  font-size: 1.1rem;
+  font-weight: bold;
+  cursor: pointer;
+  transition: transform 0.2s;
+  margin-bottom: 15px;
+}
+
+.primaryBtn:hover,
+.voteBtn:hover {
+  transform: scale(1.05);
+}
+
+.voteBtn:disabled {
+  background: #555;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.secondaryBtn {
+  padding: 12px 30px;
+  background: transparent;
+  color: #e94560;
+  border: 2px solid #e94560;
+  border-radius: 10px;
+  font-size: 1rem;
+  cursor: pointer;
+  transition: all 0.3s;
+}
+
+.secondaryBtn:hover {
+  background: rgba(233, 69, 96, 0.2);
+}
+
+.dangerBtn {
+  padding: 15px 40px;
+  background: linear-gradient(135deg, #8b0000 0%, #ff0000 100%);
+  color: #fff;
+  border: none;
+  border-radius: 10px;
+  font-size: 1.1rem;
+  font-weight: bold;
+  cursor: pointer;
+  transition: transform 0.2s;
+}
+
+.dangerBtn:hover {
+  transform: scale(1.05);
+}
+
+.waiting {
+  color: #888;
+  font-style: italic;
+}
+
+.votedText {
+  color: #4caf50;
+  margin-bottom: 1rem;
+}
+
+.voteResults {
+  width: 100%;
+  max-width: 400px;
+  margin-bottom: 2rem;
+}
+
+.voteResult {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  padding: 15px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 10px;
+  margin-bottom: 10px;
+}
+
+.voteResult.topVote {
+  background: rgba(233, 69, 96, 0.2);
+  border: 2px solid #e94560;
+}
+
+.voteCount {
+  margin-left: auto;
+  font-weight: bold;
+  color: #e94560;
+}
+
+.banishMessage {
+  font-size: 1.2rem;
+  margin-bottom: 2rem;
+  color: #ff6b6b;
+}
+
+.revealCard {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 40px;
+  border-radius: 20px;
+  margin-bottom: 2rem;
+  animation: fadeIn 0.5s ease;
+}
+
+.revealCard.traitor {
+  background: linear-gradient(135deg, rgba(139, 0, 0, 0.5), rgba(255, 0, 0, 0.2));
+  border: 3px solid #ff0000;
+}
+
+.revealCard.faithful {
+  background: linear-gradient(135deg, rgba(0, 100, 0, 0.5), rgba(0, 255, 0, 0.2));
+  border: 3px solid #00ff00;
+}
+
+.roleReveal {
+  font-size: 1.3rem;
+  margin-top: 10px;
+}
+
+.successMessage {
+  color: #4caf50;
+  font-size: 1.2rem;
+  margin-bottom: 2rem;
+}
+
+.failMessage {
+  color: #ff6b6b;
+  font-size: 1.2rem;
+  margin-bottom: 2rem;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}

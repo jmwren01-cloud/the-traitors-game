@@ -1,0 +1,162 @@
+.container {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+  color: #fff;
+}
+
+.title {
+  font-size: 2.5rem;
+  margin-bottom: 1rem;
+  color: #e94560;
+}
+
+.subtitle {
+  font-size: 1.2rem;
+  color: #888;
+  margin-bottom: 2rem;
+}
+
+.card {
+  width: 250px;
+  height: 350px;
+  perspective: 1000px;
+  margin-bottom: 2rem;
+}
+
+.cardInner {
+  width: 100%;
+  height: 100%;
+  position: relative;
+  transform-style: preserve-3d;
+  transition: transform 0.8s ease;
+}
+
+.card.revealed .cardInner {
+  transform: rotateY(180deg);
+}
+
+.cardBack,
+.cardFront {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  backface-visibility: hidden;
+  border-radius: 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+}
+
+.cardBack {
+  background: linear-gradient(135deg, #2d2d44 0%, #1a1a2e 100%);
+  border: 3px solid #444;
+}
+
+.cardBack span {
+  font-size: 6rem;
+  color: #555;
+}
+
+.cardFront {
+  transform: rotateY(180deg);
+  padding: 20px;
+  text-align: center;
+}
+
+.cardFront.traitor {
+  background: linear-gradient(135deg, #8b0000 0%, #4a0000 100%);
+  border: 3px solid #ff0000;
+}
+
+.cardFront.faithful {
+  background: linear-gradient(135deg, #006400 0%, #003300 100%);
+  border: 3px solid #00ff00;
+}
+
+.cardFront h2 {
+  font-size: 2rem;
+  margin-bottom: 1rem;
+  letter-spacing: 3px;
+}
+
+.cardFront p {
+  font-size: 1rem;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.traitorList {
+  background: rgba(139, 0, 0, 0.3);
+  padding: 20px 40px;
+  border-radius: 15px;
+  margin-bottom: 2rem;
+  animation: fadeIn 0.5s ease;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.traitorList h3 {
+  color: #ff6b6b;
+  margin-bottom: 10px;
+}
+
+.traitorNames {
+  display: flex;
+  gap: 15px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.traitorName {
+  background: rgba(255, 0, 0, 0.3);
+  padding: 8px 16px;
+  border-radius: 20px;
+  font-weight: bold;
+}
+
+.primaryBtn {
+  padding: 15px 40px;
+  background: #e94560;
+  color: #fff;
+  border: none;
+  border-radius: 10px;
+  font-size: 1.1rem;
+  font-weight: bold;
+  cursor: pointer;
+  transition: transform 0.2s;
+}
+
+.primaryBtn:hover {
+  transform: scale(1.05);
+}
+
+.continueBtn {
+  padding: 15px 40px;
+  background: linear-gradient(135deg, #e94560 0%, #ff6b6b 100%);
+  color: #fff;
+  border: none;
+  border-radius: 10px;
+  font-size: 1.1rem;
+  font-weight: bold;
+  cursor: pointer;
+  transition: transform 0.2s;
+  margin-top: 1rem;
+}
+
+.continueBtn:hover {
+  transform: scale(1.05);
+}
+
+.waiting {
+  color: #888;
+  font-style: italic;
+}

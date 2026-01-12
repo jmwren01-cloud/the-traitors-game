@@ -1,0 +1,244 @@
+.container {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.nightOverlay {
+  min-height: 100vh;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: linear-gradient(135deg, #0a0a1a 0%, #1a0a2e 100%);
+  color: #fff;
+}
+
+.morningOverlay {
+  min-height: 100vh;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: linear-gradient(135deg, #2d2d44 0%, #3d3d5c 100%);
+  color: #fff;
+}
+
+.title {
+  font-size: 3rem;
+  margin-bottom: 0.5rem;
+  color: #8b0000;
+  text-shadow: 0 0 20px rgba(139, 0, 0, 0.5);
+}
+
+.morningOverlay .title {
+  color: #ffa500;
+  text-shadow: 0 0 20px rgba(255, 165, 0, 0.5);
+}
+
+.subtitle {
+  color: #888;
+  margin-bottom: 1rem;
+}
+
+.traitorInfo {
+  color: #ff6b6b;
+  margin-bottom: 2rem;
+  font-size: 1.1rem;
+}
+
+.sectionTitle {
+  color: #ff6b6b;
+  margin-bottom: 1rem;
+}
+
+.targetGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+  gap: 15px;
+  width: 100%;
+  max-width: 500px;
+  margin-bottom: 2rem;
+}
+
+.targetCard {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 15px 10px;
+  background: rgba(139, 0, 0, 0.2);
+  border: 2px solid transparent;
+  border-radius: 15px;
+  cursor: pointer;
+  transition: all 0.3s;
+}
+
+.targetCard:hover {
+  background: rgba(139, 0, 0, 0.4);
+  transform: translateY(-5px);
+}
+
+.targetCard.selected {
+  border-color: #ff0000;
+  background: rgba(255, 0, 0, 0.3);
+  box-shadow: 0 0 20px rgba(255, 0, 0, 0.3);
+}
+
+.avatar {
+  width: 50px;
+  height: 50px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #8b0000, #ff0000);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.5rem;
+  font-weight: bold;
+  margin-bottom: 10px;
+}
+
+.bigAvatar {
+  width: 100px;
+  height: 100px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #555, #333);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 3rem;
+  font-weight: bold;
+  margin-bottom: 20px;
+  opacity: 0.7;
+}
+
+.name {
+  font-size: 0.9rem;
+  text-align: center;
+}
+
+.voteProgress {
+  margin-bottom: 1rem;
+  color: #ff6b6b;
+  font-size: 1.1rem;
+}
+
+.murderBtn {
+  padding: 15px 40px;
+  background: linear-gradient(135deg, #8b0000 0%, #ff0000 100%);
+  color: #fff;
+  border: none;
+  border-radius: 10px;
+  font-size: 1.1rem;
+  font-weight: bold;
+  cursor: pointer;
+  transition: transform 0.2s, box-shadow 0.3s;
+  margin-bottom: 1rem;
+}
+
+.murderBtn:hover:not(:disabled) {
+  transform: scale(1.05);
+  box-shadow: 0 0 30px rgba(255, 0, 0, 0.5);
+}
+
+.murderBtn:disabled {
+  background: #444;
+  cursor: not-allowed;
+}
+
+.secondaryBtn {
+  padding: 12px 30px;
+  background: transparent;
+  color: #888;
+  border: 2px solid #555;
+  border-radius: 10px;
+  font-size: 1rem;
+  cursor: pointer;
+  transition: all 0.3s;
+  margin-top: 1rem;
+}
+
+.secondaryBtn:hover {
+  border-color: #888;
+  color: #fff;
+}
+
+.primaryBtn {
+  padding: 15px 40px;
+  background: linear-gradient(135deg, #ffa500 0%, #ff8c00 100%);
+  color: #fff;
+  border: none;
+  border-radius: 10px;
+  font-size: 1.1rem;
+  font-weight: bold;
+  cursor: pointer;
+  transition: transform 0.2s;
+  margin-top: 2rem;
+}
+
+.primaryBtn:hover {
+  transform: scale(1.05);
+}
+
+.waiting {
+  color: #888;
+  font-style: italic;
+  margin-bottom: 1rem;
+}
+
+.sleepingIcon {
+  font-size: 5rem;
+  margin-bottom: 2rem;
+  animation: float 3s ease-in-out infinite;
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-20px); }
+}
+
+.faithfulMessage {
+  text-align: center;
+  color: #888;
+  font-size: 1.2rem;
+  line-height: 1.8;
+}
+
+.deathReveal {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 40px;
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 20px;
+  margin-bottom: 2rem;
+  animation: fadeIn 1s ease;
+}
+
+.deathMessage {
+  color: #888;
+  font-size: 1.2rem;
+  margin-top: 10px;
+}
+
+.noDeathMessage {
+  font-size: 1.2rem;
+  color: #888;
+  margin-bottom: 2rem;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}

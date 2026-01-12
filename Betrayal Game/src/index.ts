@@ -2,48 +2,69 @@
 
 import { WebSocketServer, WebSocket } from 'ws';
 import { createServer } from 'http';
-import { readFileSync } from 'fs';
-import { join, dirname } from 'path';
+import { readFileSync, existsSync, statSync } from 'fs';
+import { join, dirname, extname } from 'path';
 import { fileURLToPath } from 'url';
 import * as game from './game/manager.js';
 import type { GameState, C2SEvent, S2CEvent } from './game/types.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PORT = 5000;
+const CLIENT_DIST = join(__dirname, '..', 'client', 'dist');
 
-// Create HTTP server to serve the test client
+const MIME_TYPES: Record<string, string> = {
+  '.html': 'text/html',
+  '.js': 'application/javascript',
+  '.css': 'text/css',
+  '.json': 'application/json',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.svg': 'image/svg+xml',
+  '.ico': 'image/x-icon',
+};
+
 const httpServer = createServer((req, res) => {
-  if (req.url === '/' || req.url === '/index.html') {
+  let filePath = req.url || '/';
+  
+  if (filePath === '/') {
+    filePath = '/index.html';
+  }
+  
+  const fullPath = join(CLIENT_DIST, filePath);
+  
+  if (existsSync(fullPath) && statSync(fullPath).isFile()) {
     try {
-      const htmlPath = join(__dirname, '..', 'test-client.html');
-      let html = readFileSync(htmlPath, 'utf-8');
+      const content = readFileSync(fullPath);
+      const ext = extname(filePath);
+      const contentType = MIME_TYPES[ext] || 'application/octet-stream';
       
-      // Replace localhost with the correct WebSocket URL
-      const domain = process.env.REPLIT_DEV_DOMAIN || `localhost:${PORT}`;
-      const wsProtocol = domain.includes('replit') ? 'wss' : 'ws';
-      const wsUrl = `${wsProtocol}://${domain}`;
-      
-      html = html.replace("ws://localhost:3000", wsUrl);
-      
+      res.writeHead(200, { 
+        'Content-Type': contentType,
+        'Cache-Control': 'no-cache, no-store, must-revalidate'
+      });
+      res.end(content);
+    } catch {
+      res.writeHead(500);
+      res.end('Error loading file');
+    }
+  } else {
+    try {
+      const indexPath = join(CLIENT_DIST, 'index.html');
+      const content = readFileSync(indexPath);
       res.writeHead(200, { 
         'Content-Type': 'text/html',
         'Cache-Control': 'no-cache, no-store, must-revalidate'
       });
-      res.end(html);
-    } catch (error) {
-      res.writeHead(500);
-      res.end('Error loading page');
+      res.end(content);
+    } catch {
+      res.writeHead(404);
+      res.end('Not found');
     }
-  } else {
-    res.writeHead(404);
-    res.end('Not found');
   }
 });
 
-// Attach WebSocket server to the same HTTP server
 const wss = new WebSocketServer({ server: httpServer });
 
-// In-memory game storage
 const games = new Map<string, GameState>();
 const playerConnections = new Map<string, WebSocket>();
 
@@ -59,8 +80,6 @@ wss.on('connection', (ws: WebSocket) => {
   ws.on('message', (data: string) => {
     try {
       const event: C2SEvent = JSON.parse(data);
-      
-      // ============= GAME CREATION =============
       
       if (event.type === 'C2S_CREATE_GAME') {
         const gameState = game.createGame(event.payload.playerName);
@@ -86,8 +105,6 @@ wss.on('connection', (ws: WebSocket) => {
         return;
       }
 
-      // ============= PLAYER JOINING =============
-      
       if (event.type === 'C2S_JOIN_GAME') {
         const gameState = games.get(event.payload.sessionId);
         if (!gameState) {
@@ -109,7 +126,6 @@ wss.on('connection', (ws: WebSocket) => {
         return;
       }
 
-      // All subsequent events require active session
       if (!currentSessionId || !currentPlayerId) {
         sendError(ws, 'Not in a game session');
         return;
@@ -121,8 +137,6 @@ wss.on('connection', (ws: WebSocket) => {
         return;
       }
 
-      // ============= GAME START & ROLE ASSIGNMENT =============
-      
       if (event.type === 'C2S_START_GAME') {
         const updatedGame = { ...gameState, phase: 'ROLE_ASSIGN' as const };
         games.set(currentSessionId, updatedGame);
@@ -143,7 +157,6 @@ wss.on('connection', (ws: WebSocket) => {
           payload: { phase: 'ROLE_REVEAL' }
         });
 
-        // WEEK 4 UPDATE: Send role reveals with traitor awareness
         const traitorIds = game.getTraitorIds(updatedGame);
         
         updatedGame.players.forEach((player) => {
@@ -166,8 +179,6 @@ wss.on('connection', (ws: WebSocket) => {
         return;
       }
 
-      // ============= VOTING PHASE =============
-      
       if (event.type === 'C2S_START_VOTING') {
         const updatedGame = game.startVoting(gameState);
         games.set(currentSessionId, updatedGame);
@@ -220,8 +231,6 @@ wss.on('connection', (ws: WebSocket) => {
         return;
       }
 
-      // ============= WIN CONDITION CHECK =============
-      
       if (event.type === 'C2S_CHECK_WIN') {
         const updatedGame = game.checkWinCondition(gameState);
         games.set(currentSessionId, updatedGame);
@@ -248,13 +257,10 @@ wss.on('connection', (ws: WebSocket) => {
         return;
       }
 
-      // ============= NIGHT PHASE & MURDER =============
-      
       if (event.type === 'C2S_START_NIGHT') {
         const updatedGame = game.startNight(gameState);
         games.set(currentSessionId, updatedGame);
         
-        // WEEK 4 UPDATE: Send alive traitor count to all players
         const aliveTraitorCount = game.getAliveTraitorCount(updatedGame);
         
         broadcastToSession(currentSessionId, {
@@ -272,10 +278,8 @@ wss.on('connection', (ws: WebSocket) => {
         const updatedGame = game.submitMurder(gameState, currentPlayerId, event.payload.targetId);
         games.set(currentSessionId, updatedGame);
         
-        // WEEK 4 UPDATE: Send vote progress to traitors
         const progress = game.getMurderVoteProgress(updatedGame);
         
-        // Send to all traitors
         updatedGame.players.forEach((player) => {
           if (player.role === 'TRAITOR' && player.isAlive) {
             const connection = playerConnections.get(player.id);

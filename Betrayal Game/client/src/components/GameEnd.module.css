@@ -1,0 +1,175 @@
+.container {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  color: #fff;
+}
+
+.container.traitorWin {
+  background: linear-gradient(135deg, #1a0a0a 0%, #2e0a1a 100%);
+}
+
+.container.faithfulWin {
+  background: linear-gradient(135deg, #0a1a0a 0%, #0a2e1a 100%);
+}
+
+.title {
+  font-size: 3rem;
+  margin-bottom: 1rem;
+  text-shadow: 0 0 20px rgba(255, 255, 255, 0.3);
+}
+
+.winnerBanner {
+  text-align: center;
+  padding: 30px 50px;
+  border-radius: 20px;
+  margin-bottom: 2rem;
+}
+
+.traitorWin .winnerBanner {
+  background: linear-gradient(135deg, rgba(139, 0, 0, 0.5), rgba(255, 0, 0, 0.2));
+  border: 3px solid #ff0000;
+}
+
+.faithfulWin .winnerBanner {
+  background: linear-gradient(135deg, rgba(0, 100, 0, 0.5), rgba(0, 255, 0, 0.2));
+  border: 3px solid #00ff00;
+}
+
+.winnerBanner h2 {
+  font-size: 2rem;
+  margin-bottom: 10px;
+}
+
+.traitorWin .winnerBanner h2 {
+  color: #ff6b6b;
+}
+
+.faithfulWin .winnerBanner h2 {
+  color: #6bff6b;
+}
+
+.winnerSubtitle {
+  color: #888;
+  font-size: 1rem;
+}
+
+.victoryMessage {
+  background: rgba(255, 215, 0, 0.2);
+  padding: 15px 30px;
+  border-radius: 10px;
+  margin-bottom: 2rem;
+  border: 2px solid #ffd700;
+}
+
+.victoryMessage p {
+  color: #ffd700;
+  font-size: 1.3rem;
+  font-weight: bold;
+}
+
+.defeatMessage {
+  background: rgba(128, 128, 128, 0.2);
+  padding: 15px 30px;
+  border-radius: 10px;
+  margin-bottom: 2rem;
+}
+
+.defeatMessage p {
+  color: #888;
+  font-size: 1.1rem;
+}
+
+.rolesReveal {
+  display: flex;
+  gap: 40px;
+  margin-bottom: 2rem;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.teamSection {
+  min-width: 200px;
+}
+
+.traitorHeader {
+  color: #ff6b6b;
+  margin-bottom: 15px;
+  text-align: center;
+}
+
+.faithfulHeader {
+  color: #6bff6b;
+  margin-bottom: 15px;
+  text-align: center;
+}
+
+.playerList {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.playerCard {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 15px;
+  border-radius: 10px;
+}
+
+.traitorCard {
+  background: rgba(139, 0, 0, 0.3);
+}
+
+.faithfulCard {
+  background: rgba(0, 100, 0, 0.3);
+}
+
+.avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #555, #333);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.2rem;
+  font-weight: bold;
+}
+
+.traitorCard .avatar {
+  background: linear-gradient(135deg, #8b0000, #ff0000);
+}
+
+.faithfulCard .avatar {
+  background: linear-gradient(135deg, #006400, #00ff00);
+}
+
+.eliminated {
+  margin-left: auto;
+  font-size: 0.8rem;
+  color: #888;
+  text-decoration: line-through;
+}
+
+.playAgainBtn {
+  padding: 18px 50px;
+  background: linear-gradient(135deg, #e94560 0%, #ff6b6b 100%);
+  color: #fff;
+  border: none;
+  border-radius: 15px;
+  font-size: 1.3rem;
+  font-weight: bold;
+  cursor: pointer;
+  transition: transform 0.2s, box-shadow 0.3s;
+  box-shadow: 0 5px 20px rgba(233, 69, 96, 0.4);
+}
+
+.playAgainBtn:hover {
+  transform: scale(1.05);
+  box-shadow: 0 8px 30px rgba(233, 69, 96, 0.6);
+}
