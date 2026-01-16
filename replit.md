@@ -115,3 +115,14 @@ Start workflow: `cd "Betrayal Game" && npm run dev`
 - "AWAY" badge displayed for disconnected players (opacity + dashed border)
 - Grace period cleanup runs every 15 seconds
 - Supports reconnection during any game phase including mid-vote-reveal
+
+## Mobile PWA Optimization (Completed 2026-01-16)
+- **PWA Support**: manifest.json with app icons, theme colors, standalone display mode
+- **iOS Safari Fixes**: 100dvh viewport units, safe-area-inset padding, rubber-banding prevention
+- **Connection Status**: Visual indicator showing connected/reconnecting state (green ring/yellow pulse)
+- **Haptic Feedback**: Vibration API integration for role reveal, voting, murder, game end
+- **Touch Targets**: Minimum 48px touch targets on all interactive elements
+- **Keyboard Handling**: dvh units prevent iOS keyboard from covering chat input
+- **Audio**: Web Audio API with user interaction requirement for autoplay compliance
+- **Install Prompt**: "Add to Home Screen" meta tags for iOS/Android
+- Key files: client/public/manifest.json, client/src/utils/haptics.ts, client/src/components/ConnectionStatus.tsx
