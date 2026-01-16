@@ -1,6 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import type { Role, Player, C2SEvent } from '../types';
 import styles from './RoleReveal.module.css';
+import { useSoundContext } from '../contexts/SoundContext';
 
 interface RoleRevealProps {
   myRole?: Role;
@@ -15,6 +16,8 @@ export function RoleReveal({ myRole, traitorIds, players, myPlayerId, phase, onS
   const [revealed, setRevealed] = useState(false);
   const [showTraitors, setShowTraitors] = useState(false);
   const isHost = players.find((p) => p.id === myPlayerId)?.isHost;
+  const { play } = useSoundContext();
+  const soundPlayedRef = useRef(false);
 
   useEffect(() => {
     if (phase === 'ROLE_REVEAL' && myRole) {
@@ -22,6 +25,16 @@ export function RoleReveal({ myRole, traitorIds, players, myPlayerId, phase, onS
       return () => clearTimeout(timer);
     }
   }, [phase, myRole]);
+
+  useEffect(() => {
+    if (revealed && myRole && !soundPlayedRef.current) {
+      soundPlayedRef.current = true;
+      play('roleReveal');
+      setTimeout(() => {
+        play(myRole === 'TRAITOR' ? 'traitorReveal' : 'faithfulReveal');
+      }, 600);
+    }
+  }, [revealed, myRole, play]);
 
   useEffect(() => {
     if (revealed && myRole === 'TRAITOR' && traitorIds) {

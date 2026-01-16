@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useWebSocket } from './hooks/useWebSocket';
 import { Lobby } from './components/Lobby';
 import { RoleReveal } from './components/RoleReveal';
@@ -6,10 +7,29 @@ import { NightPhase } from './components/NightPhase';
 import { GameEnd } from './components/GameEnd';
 import { ChatBox } from './components/ChatBox';
 import { Timer } from './components/Timer';
+import { useSoundContext } from './contexts/SoundContext';
 import './App.css';
 
 function App() {
   const { connected, gameState, error, send } = useWebSocket();
+  const { setEnabled } = useSoundContext();
+  const [soundOn, setSoundOn] = useState(true);
+
+  const toggleSound = () => {
+    const newValue = !soundOn;
+    setSoundOn(newValue);
+    setEnabled(newValue);
+  };
+
+  const soundToggle = (
+    <button 
+      className={`sound-toggle ${soundOn ? 'sound-on' : 'sound-off'}`}
+      onClick={toggleSound}
+      aria-label={soundOn ? 'Mute sounds' : 'Unmute sounds'}
+    >
+      {soundOn ? '🔊' : '🔇'}
+    </button>
+  );
 
   if (!connected) {
     return (
@@ -52,6 +72,7 @@ function App() {
   if (phase === 'GAME_END') {
     return (
       <>
+        {soundToggle}
         <GameEnd
           winner={gameState?.winner}
           players={gameState?.players || []}
@@ -65,6 +86,7 @@ function App() {
   if (phase === 'NIGHT' || phase === 'MORNING') {
     return (
       <>
+        {soundToggle}
         {timer}
         <NightPhase
           players={gameState?.players || []}
@@ -86,6 +108,7 @@ function App() {
   if (phase === 'ROUNDTABLE' || phase === 'VOTING' || phase === 'VOTE_REVEAL' || phase === 'TIE_DETECTED' || phase === 'REVOTE' || phase === 'TIEBREAKER_REVEAL' || phase === 'BANISH_REVEAL' || phase === 'CHECK_WIN') {
     return (
       <>
+        {soundToggle}
         {timer}
         <Voting
           players={gameState?.players || []}
@@ -114,6 +137,7 @@ function App() {
   if (phase === 'ROLE_ASSIGN' || phase === 'ROLE_REVEAL') {
     return (
       <>
+        {soundToggle}
         <RoleReveal
           myRole={gameState?.myRole}
           traitorIds={gameState?.traitorIds}
@@ -128,12 +152,15 @@ function App() {
   }
 
   return (
-    <Lobby
-      sessionId={gameState?.sessionId}
-      players={gameState?.players || []}
-      myPlayerId={gameState?.myPlayerId}
-      onSend={send}
-    />
+    <>
+      {soundToggle}
+      <Lobby
+        sessionId={gameState?.sessionId}
+        players={gameState?.players || []}
+        myPlayerId={gameState?.myPlayerId}
+        onSend={send}
+      />
+    </>
   );
 }
 

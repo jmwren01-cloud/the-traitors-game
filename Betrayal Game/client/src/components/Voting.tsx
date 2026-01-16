@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import type { Player, C2SEvent, Role, Vote, VoteTally } from '../types';
 import styles from './Voting.module.css';
+import { useSoundContext } from '../contexts/SoundContext';
 
 interface VotingProps {
   players: Player[];
@@ -34,15 +35,44 @@ export function Voting({ players, myPlayerId, phase, votes: _votes, banishedPlay
   const [reasonText, setReasonText] = useState('');
   const [hasVoted, setHasVoted] = useState(false);
   const prevPhaseRef = useRef(phase);
+  const prevRevealIndexRef = useRef<number | undefined>(undefined);
+  const banishSoundPlayedRef = useRef(false);
+  const tieSoundPlayedRef = useRef(false);
+  const { play } = useSoundContext();
 
   useEffect(() => {
     if ((phase === 'VOTING' || phase === 'REVOTE') && prevPhaseRef.current !== phase) {
       setHasVoted(false);
       setSelectedTarget(null);
       setReasonText('');
+      banishSoundPlayedRef.current = false;
+      tieSoundPlayedRef.current = false;
     }
     prevPhaseRef.current = phase;
   }, [phase]);
+
+  useEffect(() => {
+    if (phase === 'VOTE_REVEAL' && revealIndex !== undefined && revealIndex !== prevRevealIndexRef.current) {
+      if (revealIndex > 0) {
+        play('voteReveal');
+      }
+      prevRevealIndexRef.current = revealIndex;
+    }
+  }, [phase, revealIndex, play]);
+
+  useEffect(() => {
+    if (phase === 'BANISH_REVEAL' && banishedPlayer && !banishSoundPlayedRef.current) {
+      banishSoundPlayedRef.current = true;
+      play('banishment');
+    }
+  }, [phase, banishedPlayer, play]);
+
+  useEffect(() => {
+    if (phase === 'TIE_DETECTED' && !tieSoundPlayedRef.current) {
+      tieSoundPlayedRef.current = true;
+      play('tieDetected');
+    }
+  }, [phase, play]);
 
   const isHost = players.find((p) => p.id === myPlayerId)?.isHost;
   const alivePlayers = players.filter((p) => p.isAlive);
@@ -53,6 +83,7 @@ export function Voting({ players, myPlayerId, phase, votes: _votes, banishedPlay
 
   const handleVote = () => {
     if (selectedTarget) {
+      play('voteSubmit');
       if (phase === 'REVOTE') {
         onSend({ type: 'C2S_SUBMIT_REVOTE', payload: { targetId: selectedTarget } });
       } else {

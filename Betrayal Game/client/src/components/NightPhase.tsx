@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import type { Player, C2SEvent, Role } from '../types';
 import styles from './NightPhase.module.css';
+import { useSoundContext } from '../contexts/SoundContext';
 
 interface NightPhaseProps {
   players: Player[];
@@ -29,6 +30,26 @@ export function NightPhase({
 }: NightPhaseProps) {
   const [selectedTarget, setSelectedTarget] = useState<string | null>(null);
   const [hasVoted, setHasVoted] = useState(false);
+  const { play } = useSoundContext();
+  const nightSoundPlayedRef = useRef(false);
+  const morningSoundPlayedRef = useRef(false);
+
+  useEffect(() => {
+    if (phase === 'NIGHT' && !nightSoundPlayedRef.current) {
+      nightSoundPlayedRef.current = true;
+      play('nightStart');
+    }
+  }, [phase, play]);
+
+  useEffect(() => {
+    if (phase === 'MORNING' && !morningSoundPlayedRef.current) {
+      morningSoundPlayedRef.current = true;
+      play('morningStart');
+      if (murderedPlayer) {
+        setTimeout(() => play('murder'), 500);
+      }
+    }
+  }, [phase, murderedPlayer, play]);
 
   const isHost = players.find((p) => p.id === myPlayerId)?.isHost;
   const isTraitor = myRole === 'TRAITOR';

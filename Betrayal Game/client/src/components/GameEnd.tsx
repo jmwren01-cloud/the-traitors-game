@@ -1,5 +1,7 @@
+import { useEffect, useRef } from 'react';
 import type { Player } from '../types';
 import styles from './GameEnd.module.css';
+import { useSoundContext } from '../contexts/SoundContext';
 
 interface GameEndProps {
   winner?: 'TRAITORS' | 'FAITHFUL';
@@ -10,6 +12,15 @@ interface GameEndProps {
 export function GameEnd({ winner, players, myRole }: GameEndProps) {
   const traitors = players.filter((p) => p.role === 'TRAITOR');
   const faithful = players.filter((p) => p.role === 'FAITHFUL');
+  const { play } = useSoundContext();
+  const soundPlayedRef = useRef(false);
+
+  useEffect(() => {
+    if (winner && !soundPlayedRef.current) {
+      soundPlayedRef.current = true;
+      play(winner === 'TRAITORS' ? 'traitorWin' : 'faithfulWin');
+    }
+  }, [winner, play]);
   const isWinner =
     (winner === 'TRAITORS' && myRole === 'TRAITOR') ||
     (winner === 'FAITHFUL' && myRole === 'FAITHFUL');
