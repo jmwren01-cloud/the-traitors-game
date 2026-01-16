@@ -31,16 +31,17 @@ function App() {
   const phase = gameState?.phase || 'LOBBY';
   const showChat = gameState && phase !== 'LOBBY' && phase !== 'ROLE_ASSIGN';
   const isChatDisabled = phase === 'ROLE_REVEAL';
-  const isNightPhase = phase === 'NIGHT';
+  const myPlayer = gameState?.players?.find((p) => p.id === gameState?.myPlayerId);
+  const isAlive = myPlayer?.isAlive ?? true;
 
   const chatBox = showChat ? (
     <ChatBox
       messages={gameState?.messages || []}
       myPlayerId={gameState?.myPlayerId}
       myRole={gameState?.myRole}
+      isAlive={isAlive}
       onSend={send}
       disabled={isChatDisabled}
-      isNightPhase={isNightPhase}
     />
   ) : null;
 

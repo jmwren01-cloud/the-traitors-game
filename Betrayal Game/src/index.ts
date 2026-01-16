@@ -6,7 +6,7 @@ import { readFileSync, existsSync, statSync } from 'fs';
 import { join, dirname, extname } from 'path';
 import { fileURLToPath } from 'url';
 import * as game from './game/manager.js';
-import type { GameState, C2SEvent, S2CEvent } from './game/types.js';
+import type { GameState, C2SEvent, S2CEvent, ChatMessage } from './game/types.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PORT = 5000;
@@ -560,15 +560,33 @@ wss.on('connection', (ws: WebSocket) => {
         const message = event.payload.message.trim().slice(0, 200);
         if (!message) return;
 
-        const isTraitorOnly = event.payload.traitorOnly === true && player.role === 'TRAITOR';
+        // Handle both new 'channel' field and legacy 'traitorOnly' field for backward compatibility
+        type PayloadType = { message: string; channel?: string; traitorOnly?: boolean };
+        const payload = event.payload as PayloadType;
+        let requestedChannel: 'general' | 'traitor' = 'general';
+        if (payload.channel === 'traitor' || payload.traitorOnly === true) {
+          requestedChannel = 'traitor';
+        }
         
-        const chatMessage = {
+        // Validate traitor channel access: must be alive traitor
+        if (requestedChannel === 'traitor') {
+          if (player.role !== 'TRAITOR') {
+            sendError(ws, 'Only traitors can use traitor chat');
+            return;
+          }
+          if (!player.isAlive) {
+            sendError(ws, 'Dead players cannot use traitor chat');
+            return;
+          }
+        }
+        
+        const chatMessage: ChatMessage = {
           id: `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
           playerId: player.id,
           playerName: player.name,
           message,
           timestamp: Date.now(),
-          isTraitorOnly
+          channel: requestedChannel
         };
 
         const updatedGame = {
@@ -577,7 +595,8 @@ wss.on('connection', (ws: WebSocket) => {
         };
         games.set(currentSessionId, updatedGame);
 
-        if (isTraitorOnly) {
+        if (requestedChannel === 'traitor') {
+          // Only send to alive traitors
           gameState.players.forEach((p) => {
             if (p.role === 'TRAITOR' && p.isAlive) {
               const connection = playerConnections.get(p.id);
@@ -590,6 +609,7 @@ wss.on('connection', (ws: WebSocket) => {
             }
           });
         } else {
+          // General channel - send to everyone
           broadcastToSession(currentSessionId, {
             type: 'S2C_CHAT_MESSAGE',
             payload: chatMessage
