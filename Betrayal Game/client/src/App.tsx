@@ -81,7 +81,7 @@ function App() {
     );
   }
 
-  if (phase === 'ROUNDTABLE' || phase === 'VOTING' || phase === 'VOTE_REVEAL' || phase === 'TIE_DETECTED' || phase === 'REVOTE' || phase === 'BANISH_REVEAL' || phase === 'CHECK_WIN') {
+  if (phase === 'ROUNDTABLE' || phase === 'VOTING' || phase === 'VOTE_REVEAL' || phase === 'TIE_DETECTED' || phase === 'REVOTE' || phase === 'TIEBREAKER_REVEAL' || phase === 'BANISH_REVEAL' || phase === 'CHECK_WIN') {
     return (
       <>
         {timer}
@@ -95,6 +95,7 @@ function App() {
           voteCount={gameState?.voteCount}
           tiedPlayerIds={gameState?.tiedPlayerIds}
           tiedPlayerNames={gameState?.tiedPlayerNames}
+          randomlySelectedPlayer={gameState?.randomlySelectedPlayer}
           onSend={send}
         />
         {chatBox}

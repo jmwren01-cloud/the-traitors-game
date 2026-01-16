@@ -181,6 +181,8 @@ export interface BanishResult {
   game: GameState;
   isTie: boolean;
   tiedPlayerIds?: string[];
+  isRandomSelection?: boolean;
+  randomlySelectedPlayerId?: string;
 }
 
 export function banishPlayer(game: GameState): BanishResult {
@@ -212,15 +214,42 @@ export function banishPlayer(game: GameState): BanishResult {
     throw new Error('No votes cast');
   }
 
-  // Handle tie: transition to REVOTE phase
+  // Handle tie
   if (topCandidates.length > 1) {
+    // If this is a revote tie, do random selection
+    if (game.isRevote) {
+      const randomIndex = Math.floor(Math.random() * topCandidates.length);
+      const randomlySelectedId = topCandidates[randomIndex];
+      const updatedPlayers = game.players.map((p: Player) =>
+        p.id === randomlySelectedId ? { ...p, isAlive: false } : p
+      );
+
+      return {
+        game: {
+          ...game,
+          phase: 'TIEBREAKER_REVEAL',
+          players: updatedPlayers,
+          banishedPlayerId: randomlySelectedId,
+          randomlySelectedPlayerId: randomlySelectedId,
+          tiedPlayerIds: topCandidates,
+          isRevote: false
+        },
+        isTie: false,
+        isRandomSelection: true,
+        randomlySelectedPlayerId: randomlySelectedId,
+        tiedPlayerIds: topCandidates
+      };
+    }
+
+    // First tie: transition to REVOTE phase
     return {
       game: {
         ...game,
         phase: 'TIE_DETECTED',
         tiedPlayerIds: topCandidates,
         votes: [],
-        revealedVotes: []
+        revealedVotes: [],
+        isRevote: false
       },
       isTie: true,
       tiedPlayerIds: topCandidates
@@ -256,7 +285,8 @@ export function startRevote(game: GameState): GameState {
     ...game,
     phase: 'REVOTE',
     votes: [],
-    revealedVotes: []
+    revealedVotes: [],
+    isRevote: true
   };
 }
 
@@ -293,7 +323,7 @@ export function isGameEmpty(game: GameState): boolean {
 // ============= WIN CONDITION =============
 
 export function checkWinCondition(game: GameState): GameState {
-  if (game.phase !== 'BANISH_REVEAL' && game.phase !== 'CHECK_WIN') {
+  if (game.phase !== 'BANISH_REVEAL' && game.phase !== 'CHECK_WIN' && game.phase !== 'TIEBREAKER_REVEAL') {
     throw new Error('Cannot check win condition in current phase');
   }
 

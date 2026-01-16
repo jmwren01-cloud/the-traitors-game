@@ -69,9 +69,9 @@ Start workflow: `cd "Betrayal Game" && npm run dev`
 - 2026-01-16: Auto-reveal votes when all votes received, live vote counter
 - 2026-01-16: Tie-breaking revote system (TIE_DETECTED → REVOTE phases)
 - 2026-01-16: Round 1 discussion-only mode (no banishment, traitors still murder)
+- 2026-01-16: Random tiebreaker selection when revote still ties (TIEBREAKER_REVEAL phase)
 
 ## Remaining Tasks
 - Reconnection handling with session tokens
 - Sound effects for game events
 - Animation polish pass
-- Tiebreaker random selection after revote still ties

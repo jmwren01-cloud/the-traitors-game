@@ -172,7 +172,42 @@ export function useWebSocket() {
               p.id === payload.banishedPlayerId ? { ...p, isAlive: false } : p
             ),
             tiedPlayerIds: undefined,
-            tiedPlayerNames: undefined
+            tiedPlayerNames: undefined,
+            randomlySelectedPlayer: undefined
+          };
+        });
+        break;
+      }
+
+      case 'S2C_TIEBREAKER_RESOLVED': {
+        const payload = msg.payload as { 
+          selectedPlayerId: string; 
+          selectedPlayerName: string; 
+          selectedPlayerRole: Role; 
+          tiedPlayerIds: string[];
+          tiedPlayerNames: string[];
+          phase: string 
+        };
+        setGameState((prev) => {
+          if (!prev) return null;
+          return {
+            ...prev,
+            phase: payload.phase as GameState['phase'],
+            randomlySelectedPlayer: {
+              id: payload.selectedPlayerId,
+              name: payload.selectedPlayerName,
+              role: payload.selectedPlayerRole,
+            },
+            banishedPlayer: {
+              id: payload.selectedPlayerId,
+              name: payload.selectedPlayerName,
+              role: payload.selectedPlayerRole,
+            },
+            tiedPlayerIds: payload.tiedPlayerIds,
+            tiedPlayerNames: payload.tiedPlayerNames,
+            players: prev.players.map((p) =>
+              p.id === payload.selectedPlayerId ? { ...p, isAlive: false } : p
+            ),
           };
         });
         break;

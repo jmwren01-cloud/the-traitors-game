@@ -305,6 +305,26 @@ wss.on('connection', (ws: WebSocket) => {
               phase: 'TIE_DETECTED'
             }
           });
+        } else if (result.isRandomSelection && result.randomlySelectedPlayerId) {
+          const selectedPlayer = result.game.players.find((p) => p.id === result.randomlySelectedPlayerId);
+          const tiedPlayerNames = result.tiedPlayerIds?.map((id) => {
+            const player = result.game.players.find((p) => p.id === id);
+            return player?.name || 'Unknown';
+          }) || [];
+          
+          if (selectedPlayer && selectedPlayer.role) {
+            broadcastToSession(currentSessionId, {
+              type: 'S2C_TIEBREAKER_RESOLVED',
+              payload: {
+                selectedPlayerId: selectedPlayer.id,
+                selectedPlayerName: selectedPlayer.name,
+                selectedPlayerRole: selectedPlayer.role,
+                tiedPlayerIds: result.tiedPlayerIds || [],
+                tiedPlayerNames,
+                phase: 'TIEBREAKER_REVEAL'
+              }
+            });
+          }
         } else {
           const banishedPlayer = result.game.players.find((p) => p.id === result.game.banishedPlayerId);
           if (banishedPlayer && banishedPlayer.role) {

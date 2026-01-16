@@ -12,10 +12,11 @@ interface VotingProps {
   voteCount?: { received: number; needed: number };
   tiedPlayerIds?: string[];
   tiedPlayerNames?: string[];
+  randomlySelectedPlayer?: { id: string; name: string; role: Role };
   onSend: (event: C2SEvent) => void;
 }
 
-export function Voting({ players, myPlayerId, phase, votes, banishedPlayer, currentRound, voteCount, tiedPlayerIds, tiedPlayerNames, onSend }: VotingProps) {
+export function Voting({ players, myPlayerId, phase, votes, banishedPlayer, currentRound, voteCount, tiedPlayerIds, tiedPlayerNames, randomlySelectedPlayer, onSend }: VotingProps) {
   const [selectedTarget, setSelectedTarget] = useState<string | null>(null);
   const [hasVoted, setHasVoted] = useState(false);
   const prevPhaseRef = useRef(phase);
@@ -237,6 +238,48 @@ export function Voting({ players, myPlayerId, phase, votes, banishedPlayer, curr
           </p>
         )}
         {hasVoted && !voteCount && <p className={styles.votedText}>Vote submitted. Waiting for others...</p>}
+      </div>
+    );
+  }
+
+  if (phase === 'TIEBREAKER_REVEAL' && randomlySelectedPlayer && tiedPlayerNames) {
+    return (
+      <div className={styles.container}>
+        <h1 className={styles.title}>Tiebreaker!</h1>
+        <div className={styles.tiebreakerBanner}>
+          The revote resulted in another tie. Fate has decided...
+        </div>
+
+        <div className={styles.tiedPlayersList}>
+          {tiedPlayerNames.map((name, index) => (
+            <span 
+              key={index} 
+              className={`${styles.tiedPlayerName} ${name === randomlySelectedPlayer.name ? styles.selectedTiedPlayer : ''}`}
+            >
+              {name}
+            </span>
+          ))}
+        </div>
+
+        <div className={`${styles.revealCard} ${randomlySelectedPlayer.role === 'TRAITOR' ? styles.traitor : styles.faithful}`}>
+          <div className={styles.bigAvatar}>{randomlySelectedPlayer.name[0]?.toUpperCase()}</div>
+          <h2>{randomlySelectedPlayer.name}</h2>
+          <p className={styles.roleReveal}>
+            was randomly selected and was a <strong>{randomlySelectedPlayer.role}</strong>
+          </p>
+        </div>
+
+        {randomlySelectedPlayer.role === 'TRAITOR' ? (
+          <p className={styles.successMessage}>A traitor has been eliminated!</p>
+        ) : (
+          <p className={styles.failMessage}>An innocent has been banished by fate...</p>
+        )}
+
+        {isHost && (
+          <button className={styles.primaryBtn} onClick={handleCheckWin}>
+            Continue
+          </button>
+        )}
       </div>
     );
   }

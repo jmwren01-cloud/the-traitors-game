@@ -73,6 +73,7 @@ export interface GameState {
   tiedPlayerNames?: string[];
   tiebreakerResults?: TiebreakerResult[];
   voteCount?: { received: number; needed: number };
+  randomlySelectedPlayer?: { id: string; name: string; role: Role };
 }
 
 export type C2SEvent =

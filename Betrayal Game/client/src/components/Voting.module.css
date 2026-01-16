@@ -66,6 +66,29 @@
   color: #f39c12;
 }
 
+.selectedTiedPlayer {
+  background: rgba(231, 76, 60, 0.3);
+  border-color: #e74c3c;
+  color: #e74c3c;
+  animation: pulse 1s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.05); }
+}
+
+.tiebreakerBanner {
+  background: linear-gradient(135deg, #9b59b6, #8e44ad);
+  color: #fff;
+  padding: 12px 24px;
+  border-radius: 8px;
+  margin-bottom: 1.5rem;
+  font-weight: 600;
+  text-align: center;
+  box-shadow: 0 4px 12px rgba(155, 89, 182, 0.3);
+}
+
 .playerGrid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));

@@ -71,6 +71,8 @@ export interface GameState {
   tiebreakerResults?: TiebreakerResult[];
   votesNeededCount?: number;
   votesReceivedCount?: number;
+  isRevote?: boolean;
+  randomlySelectedPlayerId?: string;
 }
 
 // Client-to-Server Events
