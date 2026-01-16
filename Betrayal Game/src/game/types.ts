@@ -30,6 +30,8 @@ export interface Player {
 export interface Vote {
   voterId: string;
   targetId: string;
+  reasonText?: string;
+  timestamp?: number;
 }
 
 export type ChatChannel = 'general' | 'traitor';
@@ -55,6 +57,12 @@ export interface TiebreakerResult {
   hasShield: boolean;
 }
 
+export interface VoteTally {
+  playerId: string;
+  playerName: string;
+  voteCount: number;
+}
+
 export interface GameState {
   sessionId: string;
   phase: GamePhase;
@@ -75,6 +83,10 @@ export interface GameState {
   votesReceivedCount?: number;
   isRevote?: boolean;
   randomlySelectedPlayerId?: string;
+  revealIndex?: number;
+  revealOrder?: string[];
+  currentTally?: VoteTally[];
+  votingLocked?: boolean;
 }
 
 // Client-to-Server Events
@@ -85,7 +97,7 @@ export type C2SEvent =
   | { type: 'C2S_ASSIGN_ROLES'; payload: Record<string, never> }
   | { type: 'C2S_START_ROUNDTABLE'; payload: Record<string, never> }
   | { type: 'C2S_START_VOTING'; payload: Record<string, never> }
-  | { type: 'C2S_SUBMIT_VOTE'; payload: { targetId: string } }
+  | { type: 'C2S_SUBMIT_VOTE'; payload: { targetId: string; reasonText?: string } }
   | { type: 'C2S_REVEAL_VOTES'; payload: Record<string, never> }
   | { type: 'C2S_BANISH_PLAYER'; payload: Record<string, never> }
   | { type: 'C2S_START_REVOTE'; payload: Record<string, never> }
@@ -115,6 +127,22 @@ export type S2CEvent =
   | { type: 'S2C_VOTING_STARTED'; payload: { phase: GamePhase } }
   | { type: 'S2C_VOTE_SUBMITTED'; payload: { voterId: string } }
   | { type: 'S2C_VOTES_REVEALED'; payload: { votes: Vote[]; phase: GamePhase } }
+  | { type: 'S2C_VOTE_REVEAL_STARTED'; payload: { 
+      phase: GamePhase; 
+      revealOrder: string[];
+      totalVotes: number;
+    } }
+  | { type: 'S2C_VOTE_REVEAL_STEP'; payload: { 
+      revealIndex: number;
+      vote: Vote;
+      voterName: string;
+      targetName: string;
+      currentTally: VoteTally[];
+    } }
+  | { type: 'S2C_VOTE_REVEAL_COMPLETE'; payload: { 
+      allVotes: Vote[];
+      finalTally: VoteTally[];
+    } }
   | { type: 'S2C_VOTE_COUNT_UPDATE'; payload: { received: number; needed: number } }
   | { type: 'S2C_TIE_DETECTED'; payload: { tiedPlayerIds: string[]; tiedPlayerNames: string[]; phase: GamePhase } }
   | { type: 'S2C_REVOTE_STARTED'; payload: { tiedPlayerIds: string[]; phase: GamePhase } }

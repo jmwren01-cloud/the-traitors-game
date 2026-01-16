@@ -28,6 +28,8 @@ export interface Player {
 export interface Vote {
   voterId: string;
   targetId: string;
+  reasonText?: string;
+  timestamp?: number;
 }
 
 export type ChatChannel = 'general' | 'traitor';
@@ -53,6 +55,12 @@ export interface TiebreakerResult {
   hasShield: boolean;
 }
 
+export interface VoteTally {
+  playerId: string;
+  playerName: string;
+  voteCount: number;
+}
+
 export interface GameState {
   sessionId: string;
   phase: GamePhase;
@@ -76,6 +84,15 @@ export interface GameState {
   tiebreakerResults?: TiebreakerResult[];
   voteCount?: { received: number; needed: number };
   randomlySelectedPlayer?: { id: string; name: string; role: Role };
+  revealIndex?: number;
+  revealOrder?: string[];
+  currentTally?: VoteTally[];
+  revealedVotes?: Vote[];
+  currentReveal?: {
+    vote: Vote;
+    voterName: string;
+    targetName: string;
+  };
 }
 
 export type C2SEvent =
@@ -85,7 +102,7 @@ export type C2SEvent =
   | { type: 'C2S_ASSIGN_ROLES'; payload: Record<string, never> }
   | { type: 'C2S_START_ROUNDTABLE'; payload: Record<string, never> }
   | { type: 'C2S_START_VOTING'; payload: Record<string, never> }
-  | { type: 'C2S_SUBMIT_VOTE'; payload: { targetId: string } }
+  | { type: 'C2S_SUBMIT_VOTE'; payload: { targetId: string; reasonText?: string } }
   | { type: 'C2S_REVEAL_VOTES'; payload: Record<string, never> }
   | { type: 'C2S_BANISH_PLAYER'; payload: Record<string, never> }
   | { type: 'C2S_START_REVOTE'; payload: Record<string, never> }
