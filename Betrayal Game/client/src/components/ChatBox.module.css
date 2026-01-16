@@ -285,16 +285,20 @@
     width: calc(100% - 20px);
     right: 10px;
     bottom: 10px;
+    bottom: calc(10px + env(safe-area-inset-bottom, 0px));
     max-height: 50vh;
+    max-height: 50dvh;
   }
 
   .minimizedBtn {
     right: 10px;
     bottom: 10px;
+    bottom: calc(10px + env(safe-area-inset-bottom, 0px));
   }
 
   .messages {
     max-height: 35vh;
+    max-height: 35dvh;
     min-height: 100px;
   }
 
@@ -313,5 +317,15 @@
   .sendBtn {
     padding: 12px 14px;
     min-height: 48px;
+  }
+}
+
+@supports (height: 100dvh) {
+  .container {
+    max-height: 50dvh;
+  }
+  
+  .messages {
+    max-height: 35dvh;
   }
 }

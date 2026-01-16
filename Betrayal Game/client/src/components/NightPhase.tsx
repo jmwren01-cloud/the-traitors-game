@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import type { Player, C2SEvent, Role } from '../types';
 import styles from './NightPhase.module.css';
 import { useSoundContext } from '../contexts/SoundContext';
+import { vibrate } from '../utils/haptics';
 
 interface NightPhaseProps {
   players: Player[];
@@ -72,6 +73,7 @@ export function NightPhase({
 
   const handleSubmitMurder = () => {
     if (selectedTarget) {
+      vibrate('heavy');
       onSend({ type: 'C2S_SUBMIT_MURDER', payload: { targetId: selectedTarget } });
       setHasVoted(true);
     }

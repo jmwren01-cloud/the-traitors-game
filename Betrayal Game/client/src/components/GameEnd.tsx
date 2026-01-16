@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import type { Player } from '../types';
 import styles from './GameEnd.module.css';
 import { useSoundContext } from '../contexts/SoundContext';
+import { vibrate } from '../utils/haptics';
 
 interface GameEndProps {
   winner?: 'TRAITORS' | 'FAITHFUL';
@@ -19,6 +20,7 @@ export function GameEnd({ winner, players, myRole }: GameEndProps) {
     if (winner && !soundPlayedRef.current) {
       soundPlayedRef.current = true;
       play(winner === 'TRAITORS' ? 'traitorWin' : 'faithfulWin');
+      vibrate('success');
     }
   }, [winner, play]);
   const isWinner =

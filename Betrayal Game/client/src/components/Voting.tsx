@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import type { Player, C2SEvent, Role, Vote, VoteTally } from '../types';
 import styles from './Voting.module.css';
 import { useSoundContext } from '../contexts/SoundContext';
+import { vibrate } from '../utils/haptics';
 
 interface VotingProps {
   players: Player[];
@@ -84,6 +85,7 @@ export function Voting({ players, myPlayerId, phase, votes: _votes, banishedPlay
   const handleVote = () => {
     if (selectedTarget) {
       play('voteSubmit');
+      vibrate('medium');
       if (phase === 'REVOTE') {
         onSend({ type: 'C2S_SUBMIT_REVOTE', payload: { targetId: selectedTarget } });
       } else {

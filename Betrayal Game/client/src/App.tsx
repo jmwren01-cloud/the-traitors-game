@@ -7,11 +7,12 @@ import { NightPhase } from './components/NightPhase';
 import { GameEnd } from './components/GameEnd';
 import { ChatBox } from './components/ChatBox';
 import { Timer } from './components/Timer';
+import { ConnectionStatus } from './components/ConnectionStatus';
 import { useSoundContext } from './contexts/SoundContext';
 import './App.css';
 
 function App() {
-  const { connected, gameState, error, send } = useWebSocket();
+  const { connected, gameState, error, send, reconnecting } = useWebSocket();
   const { setEnabled } = useSoundContext();
   const [soundOn, setSoundOn] = useState(true);
 
@@ -31,9 +32,10 @@ function App() {
     </button>
   );
 
-  if (!connected) {
+  if (!connected && !reconnecting) {
     return (
       <div className="loading-screen">
+        <ConnectionStatus connected={connected} reconnecting={reconnecting} />
         <div className="spinner"></div>
         <p>Connecting to server...</p>
       </div>
@@ -72,6 +74,7 @@ function App() {
   if (phase === 'GAME_END') {
     return (
       <>
+        <ConnectionStatus connected={connected} reconnecting={reconnecting} />
         {soundToggle}
         <GameEnd
           winner={gameState?.winner}
@@ -86,6 +89,7 @@ function App() {
   if (phase === 'NIGHT' || phase === 'MORNING') {
     return (
       <>
+        <ConnectionStatus connected={connected} reconnecting={reconnecting} />
         {soundToggle}
         {timer}
         <NightPhase
@@ -108,6 +112,7 @@ function App() {
   if (phase === 'ROUNDTABLE' || phase === 'VOTING' || phase === 'VOTE_REVEAL' || phase === 'TIE_DETECTED' || phase === 'REVOTE' || phase === 'TIEBREAKER_REVEAL' || phase === 'BANISH_REVEAL' || phase === 'CHECK_WIN') {
     return (
       <>
+        <ConnectionStatus connected={connected} reconnecting={reconnecting} />
         {soundToggle}
         {timer}
         <Voting
@@ -137,6 +142,7 @@ function App() {
   if (phase === 'ROLE_ASSIGN' || phase === 'ROLE_REVEAL') {
     return (
       <>
+        <ConnectionStatus connected={connected} reconnecting={reconnecting} />
         {soundToggle}
         <RoleReveal
           myRole={gameState?.myRole}
@@ -153,6 +159,7 @@ function App() {
 
   return (
     <>
+      <ConnectionStatus connected={connected} reconnecting={reconnecting} />
       {soundToggle}
       <Lobby
         sessionId={gameState?.sessionId}

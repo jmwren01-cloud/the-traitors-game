@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import type { Role, Player, C2SEvent } from '../types';
 import styles from './RoleReveal.module.css';
 import { useSoundContext } from '../contexts/SoundContext';
+import { vibrate } from '../utils/haptics';
 
 interface RoleRevealProps {
   myRole?: Role;
@@ -30,6 +31,7 @@ export function RoleReveal({ myRole, traitorIds, players, myPlayerId, phase, onS
     if (revealed && myRole && !soundPlayedRef.current) {
       soundPlayedRef.current = true;
       play('roleReveal');
+      vibrate(myRole === 'TRAITOR' ? 'warning' : 'success');
       setTimeout(() => {
         play(myRole === 'TRAITOR' ? 'traitorReveal' : 'faithfulReveal');
       }, 600);

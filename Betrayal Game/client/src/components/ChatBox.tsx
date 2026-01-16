@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import type { ChatMessage, Role, C2SEvent, ChatChannel } from '../types';
 import styles from './ChatBox.module.css';
+import { vibrateOnce } from '../utils/haptics';
 
 interface ChatBoxProps {
   messages: ChatMessage[];
@@ -114,6 +115,7 @@ export function ChatBox({ messages, myPlayerId, myRole, isAlive = true, onSend, 
       return;
     }
 
+    vibrateOnce(10);
     onSend({
       type: 'C2S_SEND_MESSAGE',
       payload: {
