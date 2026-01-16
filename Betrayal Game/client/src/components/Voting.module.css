@@ -584,6 +584,30 @@
   50% { box-shadow: 0 0 15px rgba(233, 69, 96, 0.6); }
 }
 
+.autoVoteCard {
+  border: 2px dashed #ff9800;
+  background: rgba(255, 152, 0, 0.1);
+}
+
+.autoVoteTag {
+  background: #ff9800;
+  color: #1a1a2e;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 0.7rem;
+  font-weight: bold;
+  text-transform: uppercase;
+  margin-left: 8px;
+}
+
+.autoVoteReason {
+  font-style: italic;
+  color: #ff9800;
+  font-size: 0.85rem;
+  margin-top: 10px;
+  text-align: center;
+}
+
 @media (max-width: 480px) {
   .container {
     padding: 15px;

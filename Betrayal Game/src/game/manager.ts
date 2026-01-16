@@ -49,7 +49,8 @@ export function createGame(hostName: string): GameState {
     hostId,
     currentRound: 0,
     murderVotes: [],
-    messages: []
+    messages: [],
+    lastManualVotes: {}
   };
 }
 
@@ -200,9 +201,77 @@ export function submitVoteWithReason(game: GameState, voterId: string, targetId:
     timestamp: Date.now()
   };
   
+  // Track this as a manual vote for future auto-vote fallback
+  const updatedLastManualVotes = { ...game.lastManualVotes, [voterId]: targetId };
+  
   return {
     ...game,
-    votes: [...filteredVotes, vote]
+    votes: [...filteredVotes, vote],
+    lastManualVotes: updatedLastManualVotes
+  };
+}
+
+export interface AutoVoteResult {
+  game: GameState;
+  autoVotes: Vote[];
+}
+
+export function generateAutoVotes(game: GameState): AutoVoteResult {
+  const alivePlayers = game.players.filter((p: Player) => p.isAlive);
+  const playersWhoVoted = new Set(game.votes.map((v: Vote) => v.voterId));
+  const playersWhoNeedAutoVote = alivePlayers.filter((p: Player) => !playersWhoVoted.has(p.id));
+  
+  const autoVotes: Vote[] = [];
+  let updatedVotes = [...game.votes];
+  
+  for (const player of playersWhoNeedAutoVote) {
+    // Get valid targets (alive players excluding self)
+    let validTargets = alivePlayers.filter((p: Player) => p.id !== player.id);
+    
+    // For revotes, only allow voting for tied candidates
+    if (game.phase === 'REVOTE' && game.tiedPlayerIds) {
+      validTargets = validTargets.filter((p: Player) => game.tiedPlayerIds!.includes(p.id));
+    }
+    
+    if (validTargets.length === 0) continue;
+    
+    let targetId: string;
+    
+    if (game.currentRound === 1) {
+      // Round 1: always random
+      targetId = validTargets[Math.floor(Math.random() * validTargets.length)]!.id;
+    } else {
+      // Round 2+: check if they have a previous manual vote
+      const lastVoteTarget = game.lastManualVotes[player.id];
+      const lastTargetStillValid = lastVoteTarget && validTargets.some((p: Player) => p.id === lastVoteTarget);
+      
+      if (lastTargetStillValid) {
+        // Vote for the same player as last round
+        targetId = lastVoteTarget;
+      } else {
+        // Random selection
+        targetId = validTargets[Math.floor(Math.random() * validTargets.length)]!.id;
+      }
+    }
+    
+    const autoVote: Vote = {
+      voterId: player.id,
+      targetId,
+      reasonText: '[Auto-vote: player did not vote in time]',
+      timestamp: Date.now(),
+      isAutoVote: true
+    };
+    
+    autoVotes.push(autoVote);
+    updatedVotes.push(autoVote);
+  }
+  
+  return {
+    game: {
+      ...game,
+      votes: updatedVotes
+    },
+    autoVotes
   };
 }
 

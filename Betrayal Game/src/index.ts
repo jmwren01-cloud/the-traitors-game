@@ -408,6 +408,45 @@ wss.on('connection', (ws: WebSocket) => {
         return;
       }
 
+      if (event.type === 'C2S_FORCE_RESOLVE_VOTING') {
+        // Host forces voting to complete - generate auto-votes for non-voters
+        if (gameState.phase !== 'VOTING' && gameState.phase !== 'REVOTE') {
+          sendError(ws, 'Can only force resolve during voting phase');
+          return;
+        }
+        
+        const currentPlayer = gameState.players.find((p) => p.id === currentPlayerId);
+        if (!currentPlayer?.isHost) {
+          sendError(ws, 'Only host can force resolve voting');
+          return;
+        }
+        
+        const { game: gameWithAutoVotes, autoVotes } = game.generateAutoVotes(gameState);
+        
+        // Notify about auto-votes
+        for (const autoVote of autoVotes) {
+          const voter = gameWithAutoVotes.players.find((p) => p.id === autoVote.voterId);
+          broadcastToSession(currentSessionId, {
+            type: 'S2C_VOTE_SUBMITTED',
+            payload: { voterId: autoVote.voterId, isAutoVote: true, voterName: voter?.name || 'Unknown' }
+          });
+        }
+        
+        const alivePlayerCount = gameWithAutoVotes.players.filter((p) => p.isAlive).length;
+        broadcastToSession(currentSessionId, {
+          type: 'S2C_VOTE_COUNT_UPDATE',
+          payload: { received: gameWithAutoVotes.votes.length, needed: alivePlayerCount }
+        });
+        
+        // Lock and reveal votes
+        const lockedGame = { ...gameWithAutoVotes, votingLocked: true };
+        const revealedGame = game.revealVotes(lockedGame);
+        games.set(currentSessionId, revealedGame);
+        
+        startVoteRevealSequence(currentSessionId);
+        return;
+      }
+
       if (event.type === 'C2S_REVEAL_VOTES') {
         const updatedGame = game.revealVotes(gameState);
         games.set(currentSessionId, updatedGame);

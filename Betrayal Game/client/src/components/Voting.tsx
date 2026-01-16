@@ -173,6 +173,15 @@ export function Voting({ players, myPlayerId, phase, votes: _votes, banishedPlay
           </p>
         )}
         {hasVoted && !voteCount && <p className={styles.votedText}>Vote submitted. Waiting for others...</p>}
+        
+        {isHost && voteCount && voteCount.received < voteCount.needed && (
+          <button 
+            className={styles.secondaryBtn} 
+            onClick={() => onSend({ type: 'C2S_FORCE_RESOLVE_VOTING', payload: {} })}
+          >
+            Force Resolve ({voteCount.needed - voteCount.received} auto-votes)
+          </button>
+        )}
       </div>
     );
   }
@@ -206,11 +215,12 @@ export function Voting({ players, myPlayerId, phase, votes: _votes, banishedPlay
         </p>
 
         {currentReveal && !revealComplete && (
-          <div className={styles.currentRevealCard}>
+          <div className={`${styles.currentRevealCard} ${currentReveal.vote.isAutoVote ? styles.autoVoteCard : ''}`}>
             <div className={styles.revealHeader}>
               <div className={styles.voterSection}>
                 <div className={styles.avatar}>{currentReveal.voterName[0]?.toUpperCase()}</div>
                 <span className={styles.voterName}>{currentReveal.voterName}</span>
+                {currentReveal.vote.isAutoVote && <span className={styles.autoVoteTag}>Auto</span>}
               </div>
               <span className={styles.votedFor}>voted for</span>
               <div className={styles.targetSection}>
@@ -218,9 +228,14 @@ export function Voting({ players, myPlayerId, phase, votes: _votes, banishedPlay
                 <span className={styles.targetName}>{currentReveal.targetName}</span>
               </div>
             </div>
-            {currentReveal.vote.reasonText && (
+            {currentReveal.vote.reasonText && !currentReveal.vote.isAutoVote && (
               <div className={styles.reasonReveal}>
                 "{currentReveal.vote.reasonText}"
+              </div>
+            )}
+            {currentReveal.vote.isAutoVote && (
+              <div className={styles.autoVoteReason}>
+                This vote was automatically assigned
               </div>
             )}
           </div>
@@ -339,6 +354,15 @@ export function Voting({ players, myPlayerId, phase, votes: _votes, banishedPlay
           </p>
         )}
         {hasVoted && !voteCount && <p className={styles.votedText}>Vote submitted. Waiting for others...</p>}
+        
+        {isHost && voteCount && voteCount.received < voteCount.needed && (
+          <button 
+            className={styles.secondaryBtn} 
+            onClick={() => onSend({ type: 'C2S_FORCE_RESOLVE_VOTING', payload: {} })}
+          >
+            Force Resolve ({voteCount.needed - voteCount.received} auto-votes)
+          </button>
+        )}
       </div>
     );
   }

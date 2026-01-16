@@ -30,6 +30,7 @@ export interface Vote {
   targetId: string;
   reasonText?: string;
   timestamp?: number;
+  isAutoVote?: boolean;
 }
 
 export type ChatChannel = 'general' | 'traitor';
@@ -104,6 +105,7 @@ export type C2SEvent =
   | { type: 'C2S_START_ROUNDTABLE'; payload: Record<string, never> }
   | { type: 'C2S_START_VOTING'; payload: Record<string, never> }
   | { type: 'C2S_SUBMIT_VOTE'; payload: { targetId: string; reasonText?: string } }
+  | { type: 'C2S_FORCE_RESOLVE_VOTING'; payload: Record<string, never> }
   | { type: 'C2S_REVEAL_VOTES'; payload: Record<string, never> }
   | { type: 'C2S_BANISH_PLAYER'; payload: Record<string, never> }
   | { type: 'C2S_START_REVOTE'; payload: Record<string, never> }
