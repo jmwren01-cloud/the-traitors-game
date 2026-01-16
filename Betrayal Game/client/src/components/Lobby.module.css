@@ -264,6 +264,15 @@
   }
 }
 
+@media (prefers-reduced-motion: reduce) {
+  .playerCard,
+  .startBtn,
+  .waitingText,
+  .disconnected {
+    animation: none;
+  }
+}
+
 @media (max-width: 480px) {
   .title {
     font-size: 2rem;

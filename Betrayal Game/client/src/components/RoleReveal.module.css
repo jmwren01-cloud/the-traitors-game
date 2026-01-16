@@ -244,3 +244,14 @@
     max-width: 280px;
   }
 }
+
+@media (prefers-reduced-motion: reduce) {
+  .card.revealed .cardInner {
+    transition: none;
+  }
+  .traitorList,
+  .continueBtn,
+  .waiting {
+    animation: none;
+  }
+}

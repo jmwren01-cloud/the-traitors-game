@@ -301,3 +301,12 @@
     max-width: 280px;
   }
 }
+
+@media (prefers-reduced-motion: reduce) {
+  .winnerBanner,
+  .victoryMessage,
+  .playerCard,
+  .playAgainBtn {
+    animation: none;
+  }
+}

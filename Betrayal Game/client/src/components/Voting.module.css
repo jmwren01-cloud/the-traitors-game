@@ -746,3 +746,16 @@
     text-align: center;
   }
 }
+
+@media (prefers-reduced-motion: reduce) {
+  .deadPlayerCard,
+  .voteCard.selected,
+  .dangerBtn,
+  .waiting,
+  .topTallyItem,
+  .currentRevealCard,
+  .revealCard,
+  .selectedTiedPlayer {
+    animation: none;
+  }
+}
