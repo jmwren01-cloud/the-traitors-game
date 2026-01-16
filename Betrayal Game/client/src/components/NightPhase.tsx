@@ -33,6 +33,18 @@ export function NightPhase({
   const { play } = useSoundContext();
   const nightSoundPlayedRef = useRef(false);
   const morningSoundPlayedRef = useRef(false);
+  const prevPhaseRef = useRef(phase);
+
+  useEffect(() => {
+    if (phase !== prevPhaseRef.current) {
+      if (phase === 'NIGHT') {
+        nightSoundPlayedRef.current = false;
+      } else if (phase === 'MORNING') {
+        morningSoundPlayedRef.current = false;
+      }
+      prevPhaseRef.current = phase;
+    }
+  }, [phase]);
 
   useEffect(() => {
     if (phase === 'NIGHT' && !nightSoundPlayedRef.current) {

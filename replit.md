@@ -90,8 +90,14 @@ Start workflow: `cd "Betrayal Game" && npm run dev`
   - Auto-votes shown with orange dashed border and "Auto" badge during reveal
 
 ## Remaining Tasks
-- Sound effects for game events
 - Animation polish pass
+
+## Sound Effects (Completed 2026-01-16)
+- Web Audio API oscillator-based sound generation (no external audio files)
+- SoundContext for global sound management with mute/unmute toggle
+- Floating sound button (🔊/🔇) in top-right corner
+- Sound types: roleReveal, traitorReveal, faithfulReveal, voteSubmit, voteReveal, banishment, murder, timerWarning, timerEnd, traitorWin, faithfulWin, nightStart, morningStart, tieDetected, chat
+- Triggers integrated into RoleReveal, Voting, NightPhase, and GameEnd components
 
 ## Reconnection System (Completed 2026-01-16)
 - Server generates UUID session tokens on create/join
