@@ -90,6 +90,14 @@ Start workflow: `cd "Betrayal Game" && npm run dev`
   - Auto-votes shown with orange dashed border and "Auto" badge during reveal
 
 ## Remaining Tasks
-- Reconnection handling with session tokens
 - Sound effects for game events
 - Animation polish pass
+
+## Reconnection System (Completed 2026-01-16)
+- Server generates UUID session tokens on create/join
+- Tokens stored client-side in localStorage
+- 60-second grace period for disconnected players
+- Full state sync on reconnection (role, votes, chat, timers, reveal state, tiebreaker data)
+- "AWAY" badge displayed for disconnected players (opacity + dashed border)
+- Grace period cleanup runs every 15 seconds
+- Supports reconnection during any game phase including mid-vote-reveal
