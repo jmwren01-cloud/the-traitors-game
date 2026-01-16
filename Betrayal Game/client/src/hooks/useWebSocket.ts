@@ -101,8 +101,12 @@ export function useWebSocket() {
       }
 
       case 'S2C_ROUNDTABLE_STARTED': {
-        const payload = msg.payload as { phase: string };
-        setGameState((prev) => prev ? { ...prev, phase: payload.phase as GameState['phase'] } : null);
+        const payload = msg.payload as { phase: string; currentRound?: number };
+        setGameState((prev) => prev ? { 
+          ...prev, 
+          phase: payload.phase as GameState['phase'],
+          currentRound: payload.currentRound ?? prev.currentRound
+        } : null);
         break;
       }
 

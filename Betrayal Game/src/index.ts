@@ -196,7 +196,7 @@ wss.on('connection', (ws: WebSocket) => {
         
         broadcastToSession(currentSessionId, {
           type: 'S2C_ROUNDTABLE_STARTED',
-          payload: { phase: 'ROUNDTABLE' }
+          payload: { phase: 'ROUNDTABLE', currentRound: updatedGame.currentRound }
         });
 
         const timer = game.createTimer('ROUNDTABLE');

@@ -60,6 +60,12 @@ export function addPlayer(game: GameState, playerName: string): { game: GameStat
   if (game.players.length >= 22) {
     throw new Error('Game is full (max 22 players)');
   }
+  
+  const normalizedName = playerName.trim().toLowerCase();
+  const duplicateName = game.players.some((p: Player) => p.name.toLowerCase() === normalizedName);
+  if (duplicateName) {
+    throw new Error('A player with that name already exists');
+  }
 
   const playerId = generatePlayerId();
   const newPlayer: Player = {
@@ -121,9 +127,13 @@ export function startRoundtable(game: GameState): GameState {
     throw new Error('Cannot start roundtable from current phase');
   }
 
+  // First roundtable after role reveal is Round 1
+  const newRound = game.phase === 'ROLE_REVEAL' ? 1 : game.currentRound;
+
   return {
     ...game,
-    phase: 'ROUNDTABLE'
+    phase: 'ROUNDTABLE',
+    currentRound: newRound
   };
 }
 
