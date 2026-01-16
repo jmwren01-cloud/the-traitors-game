@@ -83,6 +83,11 @@ Start workflow: `cd "Betrayal Game" && npm run dev`
 - 2026-01-16: Live tally leaderboard with animated progress bars and pulsing highlights for top candidates
 - 2026-01-16: Vote locking after all votes received, double-submission prevention, phase guards
 - 2026-01-16: Server-authoritative reveal timing with client state sync (totalVotes, revealIndex)
+- 2026-01-16: Auto-vote safety mechanism for players who don't vote in time
+  - Round 1: Random selection from valid targets
+  - Round 2+: Repeats player's last manual vote if target still valid, otherwise random
+  - Host can force resolve voting with pending auto-votes
+  - Auto-votes shown with orange dashed border and "Auto" badge during reveal
 
 ## Remaining Tasks
 - Reconnection handling with session tokens
