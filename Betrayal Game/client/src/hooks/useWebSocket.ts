@@ -158,6 +158,7 @@ export function useWebSocket() {
           revealedVotes: [],
           currentTally: [],
           currentReveal: undefined,
+          totalVotes: payload.totalVotes,
         } : null);
         break;
       }
@@ -189,11 +190,21 @@ export function useWebSocket() {
       }
 
       case 'S2C_VOTE_REVEAL_COMPLETE': {
-        const payload = msg.payload as { allVotes: Vote[]; finalTally: VoteTally[] };
+        const payload = msg.payload as { 
+          allVotes: Vote[]; 
+          finalTally: VoteTally[]; 
+          totalVotes: number;
+          revealIndex: number;
+          phase: string;
+        };
         setGameState((prev) => prev ? {
           ...prev,
           votes: payload.allVotes,
           currentTally: payload.finalTally,
+          revealedVotes: payload.allVotes,
+          revealIndex: payload.totalVotes,
+          totalVotes: payload.totalVotes,
+          phase: payload.phase as GameState['phase'],
           currentReveal: undefined,
         } : null);
         break;

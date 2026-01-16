@@ -102,6 +102,7 @@ function App() {
           revealOrder={gameState?.revealOrder}
           currentTally={gameState?.currentTally}
           revealedVotes={gameState?.revealedVotes}
+          totalVotes={gameState?.totalVotes}
           currentReveal={gameState?.currentReveal}
           onSend={send}
         />

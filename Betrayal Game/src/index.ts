@@ -123,7 +123,10 @@ function startVoteRevealSequence(sessionId: string) {
         type: 'S2C_VOTE_REVEAL_COMPLETE',
         payload: {
           allVotes: votes,
-          finalTally
+          finalTally,
+          totalVotes: votes.length,
+          revealIndex: votes.length,
+          phase: 'VOTE_REVEAL'
         }
       });
       return;
@@ -357,6 +360,10 @@ wss.on('connection', (ws: WebSocket) => {
       }
 
       if (event.type === 'C2S_SUBMIT_VOTE') {
+        if (gameState.phase !== 'VOTING') {
+          sendError(ws, 'Can only vote during voting phase');
+          return;
+        }
         if (gameState.votingLocked) {
           sendError(ws, 'Voting has ended');
           return;
@@ -468,6 +475,14 @@ wss.on('connection', (ws: WebSocket) => {
       }
 
       if (event.type === 'C2S_SUBMIT_REVOTE') {
+        if (gameState.phase !== 'REVOTE') {
+          sendError(ws, 'Can only submit revotes during revote phase');
+          return;
+        }
+        if (gameState.votingLocked) {
+          sendError(ws, 'Voting has ended');
+          return;
+        }
         if (!gameState.tiedPlayerIds?.includes(event.payload.targetId)) {
           sendError(ws, 'Can only vote for tied candidates in revote');
           return;

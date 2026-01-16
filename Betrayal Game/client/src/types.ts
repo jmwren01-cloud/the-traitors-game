@@ -88,6 +88,7 @@ export interface GameState {
   revealOrder?: string[];
   currentTally?: VoteTally[];
   revealedVotes?: Vote[];
+  totalVotes?: number;
   currentReveal?: {
     vote: Vote;
     voterName: string;

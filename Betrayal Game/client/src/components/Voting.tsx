@@ -17,6 +17,7 @@ interface VotingProps {
   revealOrder?: string[];
   currentTally?: VoteTally[];
   revealedVotes?: Vote[];
+  totalVotes?: number;
   currentReveal?: {
     vote: Vote;
     voterName: string;
@@ -27,7 +28,7 @@ interface VotingProps {
 
 const REASON_MAX_LENGTH = 120;
 
-export function Voting({ players, myPlayerId, phase, votes: _votes, banishedPlayer, currentRound, voteCount, tiedPlayerIds, tiedPlayerNames, randomlySelectedPlayer, revealIndex, currentTally, revealedVotes, currentReveal, onSend }: VotingProps) {
+export function Voting({ players, myPlayerId, phase, votes: _votes, banishedPlayer, currentRound, voteCount, tiedPlayerIds, tiedPlayerNames, randomlySelectedPlayer, revealIndex, currentTally, revealedVotes, totalVotes: serverTotalVotes, currentReveal, onSend }: VotingProps) {
   void _votes;
   const [selectedTarget, setSelectedTarget] = useState<string | null>(null);
   const [reasonText, setReasonText] = useState('');
@@ -177,10 +178,11 @@ export function Voting({ players, myPlayerId, phase, votes: _votes, banishedPlay
   }
 
   if (phase === 'VOTE_REVEAL') {
-    const totalVotes = revealedVotes?.length || 0;
-    const revealOrderLength = players.filter((p) => p.isAlive).length;
-    const isRevealing = revealIndex !== undefined && revealIndex < revealOrderLength;
-    const revealComplete = revealIndex !== undefined && revealIndex >= revealOrderLength;
+    const revealOrderLength = serverTotalVotes ?? players.filter((p) => p.isAlive).length;
+    const currentIndex = revealIndex ?? 0;
+    const isRevealing = currentIndex < revealOrderLength && revealOrderLength > 0;
+    const revealComplete = currentIndex >= revealOrderLength && revealOrderLength > 0;
+    const totalVotes = revealedVotes?.length || revealOrderLength;
 
     const sortedTally = currentTally ? [...currentTally].sort((a, b) => b.voteCount - a.voteCount) : [];
     const topVoteCount = sortedTally[0]?.voteCount || 0;
@@ -196,11 +198,11 @@ export function Voting({ players, myPlayerId, phase, votes: _votes, banishedPlay
         <div className={styles.progressBar}>
           <div 
             className={styles.progressFill} 
-            style={{ width: `${((revealIndex || 0) / revealOrderLength) * 100}%` }}
+            style={{ width: `${(currentIndex / revealOrderLength) * 100}%` }}
           />
         </div>
         <p className={styles.progressText}>
-          {revealIndex || 0} of {revealOrderLength} votes revealed
+          {currentIndex} of {revealOrderLength} votes revealed
         </p>
 
         {currentReveal && !revealComplete && (
