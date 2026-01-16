@@ -1,0 +1,89 @@
+You are working on my “Traitors” style social deduction game (mobile-first, co-located). The MVP is mostly working.
+
+CURRENT BEHAVIOUR (what exists today)
+- During the Roundtable / Voting phase, players vote to banish someone.
+- After voting ends, the game immediately reveals who was banished and removes them from the game.
+
+REQUESTED CHANGE (new behaviour)
+Instead of immediately revealing the banished player, I want a “Vote Reveal Sequence” that:
+1) Reveals each player’s vote one-by-one, in a fixed order, pausing ~4 seconds between each reveal.
+2) After each vote reveal, show a live “leaderboard / tally” of votes so far (who has how many).
+3) Optionally (but ideally): show the voter’s “reason” for their vote (short text).
+4) Only after the sequence finishes should the game reveal the final banished result and then remove them from the game.
+
+NEW INPUT REQUIRED
+- At the voting stage, each voter must submit:
+  a) selectedPlayerId (who they voted for)
+  b) reasonText (short free text explaining why)
+- reasonText should be optional if it reduces friction, but the UI and server should support it.
+- Add sensible constraints: max length (e.g. 120 chars), trim whitespace, disallow empty reasons if we choose to require it, and prevent abusive payload sizes.
+
+STATE / PHASE REQUIREMENTS
+- Introduce a new phase/state between VOTING and BANISH_REVEAL, e.g. VOTE_REVEAL.
+- The system must be server-authoritative: the server controls timing and broadcast order.
+- The reveal order should be deterministic and consistent across clients (e.g. join order, or a stored playerOrder array). If a player is dead/disconnected, the reveal should still proceed correctly.
+
+WHAT THE CLIENT SHOULD DISPLAY
+During VOTE_REVEAL:
+- “Now revealing votes…” header
+- For the current reveal step:
+  - Voter name (or avatar)
+  - Who they voted for
+  - Their reasonText (if provided)
+- A running tally leaderboard that updates after each reveal
+- A countdown / progress indicator (optional but nice)
+
+AFTER VOTE_REVEAL COMPLETES:
+- Proceed to BANISH_REVEAL (or equivalent)
+- Determine banished player (handle ties with a clear rule)
+- Remove banished player (mark alive=false) and broadcast updated state
+- Then move to next phase (e.g. NIGHT / MORNING depending on your flow)
+
+TIE-BREAK RULES (must be explicit)
+If there’s a tie for most votes:
+- Propose a tie-break approach and implement it cleanly.
+Examples:
+  - Host decides
+  - Random among tied players (seeded for determinism)
+  - Revote among tied players
+Pick one approach and implement with minimal complexity. Include the UX.
+
+CRITICAL RELIABILITY / BUG RISKS TO CONSIDER (you MUST address these)
+1) Late votes / vote changes: ensure voting locks at deadline; ignore late submissions.
+2) Double-submission: prevent a player voting twice; last-write-wins only if allowed, otherwise reject.
+3) Disconnections during reveal: reveal sequence must not stall if a client disconnects.
+4) Reconnects mid-reveal: reconnecting client must be able to “catch up” and see current reveal step + current tally.
+5) Race conditions: multiple timers / multiple reveals should not run concurrently. Make the reveal sequence idempotent.
+6) Time sync: do NOT rely on client timers for authoritative sequence; server broadcasts revealStep updates.
+7) Data integrity: validate reasonText length and content server-side; never trust the client.
+8) Security/cheating: ensure votes remain secret until reveal; prevent clients from requesting votes early.
+9) Persistence: if server restarts mid-reveal, define how to resume or safely reset without corrupting game state.
+10) Performance: keep payloads small; don’t broadcast entire history every tick unless necessary.
+
+IMPLEMENTATION DELIVERABLES
+Please do the following:
+A) Propose the updated state machine phases and transitions (including VOTE_REVEAL).
+B) Define/adjust the data model:
+   - Vote object: voterId, targetId, reasonText, timestamp
+   - GameState fields needed for reveal: revealIndex, revealOrder, currentTally, revealedVotes list (or equivalent)
+C) Implement the server logic for:
+   - collecting votes + reasons
+   - locking votes at deadline
+   - starting the reveal sequence (one vote every ~4 seconds)
+   - broadcasting “reveal step” messages + updated tally after each step
+   - finishing and moving to banish resolution
+D) Implement the client UI changes for:
+   - entering reasonText in the vote screen
+   - showing the vote reveal animation/sequence and live tally
+E) Add tests or a lightweight simulation harness to verify:
+   - correct tallying
+   - tie-break behaviour
+   - reconnect catch-up
+   - no duplicate reveal loops can start
+F) Provide a short “risk checklist” explaining how you mitigated the bug risks above.
+
+IMPORTANT CONSTRAINTS
+- Keep this minimal and robust — don’t over-engineer.
+- Assume WebSocket messaging with a server-authoritative game state.
+- Do not remove existing phases unless necessary; integrate into current architecture cleanly.
+- If you need to change message types/events, list them explicitly (C2S_*, S2C_*), and keep backwards compatibility where possible.
