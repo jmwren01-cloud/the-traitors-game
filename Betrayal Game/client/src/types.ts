@@ -1,5 +1,17 @@
 export type Role = 'TRAITOR' | 'FAITHFUL';
 
+export interface GameSettings {
+  timerDurations: {
+    roundtable: number;
+    voting: number;
+    night: number;
+  };
+  traitorMode: 'auto' | 'fixed';
+  traitorCount: number;
+  minPlayers: number;
+  round1DiscussionOnly: boolean;
+}
+
 export type GamePhase = 
   | 'LOBBY'
   | 'ROLE_ASSIGN'
@@ -95,12 +107,14 @@ export interface GameState {
     voterName: string;
     targetName: string;
   };
+  settings?: GameSettings;
 }
 
 export type C2SEvent =
   | { type: 'C2S_CREATE_GAME'; payload: { playerName: string } }
   | { type: 'C2S_JOIN_GAME'; payload: { sessionId: string; playerName: string } }
   | { type: 'C2S_RECONNECT'; payload: { sessionToken: string } }
+  | { type: 'C2S_UPDATE_SETTINGS'; payload: { settings: Partial<GameSettings> } }
   | { type: 'C2S_START_GAME'; payload: Record<string, never> }
   | { type: 'C2S_ASSIGN_ROLES'; payload: Record<string, never> }
   | { type: 'C2S_START_ROUNDTABLE'; payload: Record<string, never> }

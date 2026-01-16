@@ -234,7 +234,8 @@ wss.on('connection', (ws: WebSocket) => {
             sessionId: gameState.sessionId,
             playerId: currentPlayerId,
             playerName: event.payload.playerName,
-            sessionToken
+            sessionToken,
+            settings: gameState.settings
           }
         };
         ws.send(JSON.stringify(response));
@@ -269,7 +270,8 @@ wss.on('connection', (ws: WebSocket) => {
             playerId: playerId,
             playerName: event.payload.playerName,
             players: updatedGame.players,
-            sessionToken
+            sessionToken,
+            settings: updatedGame.settings
           }
         };
         ws.send(JSON.stringify(joinResponse));
@@ -396,7 +398,8 @@ wss.on('connection', (ws: WebSocket) => {
             randomlySelectedPlayerRole: updatedGame.randomlySelectedPlayerId
               ? updatedGame.players.find((p) => p.id === updatedGame.randomlySelectedPlayerId)?.role
               : undefined,
-            totalVotes: updatedGame.votes.length
+            totalVotes: updatedGame.votes.length,
+            settings: updatedGame.settings
           }
         };
         ws.send(JSON.stringify(reconnectResponse));
@@ -422,7 +425,28 @@ wss.on('connection', (ws: WebSocket) => {
         return;
       }
 
+      if (event.type === 'C2S_UPDATE_SETTINGS') {
+        if (currentPlayerId !== gameState.hostId) {
+          sendError(ws, 'Only the host can change settings');
+          return;
+        }
+        
+        const updatedGame = game.updateSettings(gameState, event.payload.settings);
+        games.set(currentSessionId, updatedGame);
+        
+        broadcastToSession(currentSessionId, {
+          type: 'S2C_SETTINGS_UPDATED',
+          payload: { settings: updatedGame.settings }
+        });
+        return;
+      }
+
       if (event.type === 'C2S_START_GAME') {
+        if (gameState.players.length < gameState.settings.minPlayers) {
+          sendError(ws, `Need at least ${gameState.settings.minPlayers} players to start`);
+          return;
+        }
+        
         const updatedGame = { ...gameState, phase: 'ROLE_ASSIGN' as const };
         games.set(currentSessionId, updatedGame);
         
@@ -473,8 +497,10 @@ wss.on('connection', (ws: WebSocket) => {
           payload: { phase: 'ROUNDTABLE', currentRound: updatedGame.currentRound }
         });
 
-        const timer = game.createTimer('ROUNDTABLE');
+        const timer = game.createTimer('ROUNDTABLE', updatedGame.settings);
         if (timer) {
+          const gameWithTimer = { ...updatedGame, timer };
+          games.set(currentSessionId, gameWithTimer);
           broadcastToSession(currentSessionId, {
             type: 'S2C_TIMER_UPDATE',
             payload: { endTime: timer.endTime, duration: timer.duration, phase: 'ROUNDTABLE' }
@@ -492,8 +518,10 @@ wss.on('connection', (ws: WebSocket) => {
           payload: { phase: 'VOTING' }
         });
 
-        const timer = game.createTimer('VOTING');
+        const timer = game.createTimer('VOTING', updatedGame.settings);
         if (timer) {
+          const gameWithTimer = { ...updatedGame, timer };
+          games.set(currentSessionId, gameWithTimer);
           broadcastToSession(currentSessionId, {
             type: 'S2C_TIMER_UPDATE',
             payload: { endTime: timer.endTime, duration: timer.duration, phase: 'VOTING' }
@@ -511,8 +539,10 @@ wss.on('connection', (ws: WebSocket) => {
           payload: { tiedPlayerIds: updatedGame.tiedPlayerIds || [], phase: 'REVOTE' }
         });
 
-        const timer = game.createTimer('VOTING');
+        const timer = game.createTimer('REVOTE', updatedGame.settings);
         if (timer) {
+          const gameWithTimer = { ...updatedGame, timer };
+          games.set(currentSessionId, gameWithTimer);
           broadcastToSession(currentSessionId, {
             type: 'S2C_TIMER_UPDATE',
             payload: { endTime: timer.endTime, duration: timer.duration, phase: 'REVOTE' }
@@ -741,8 +771,10 @@ wss.on('connection', (ws: WebSocket) => {
           });
 
           if (updatedGame.phase === 'ROUNDTABLE') {
-            const timer = game.createTimer('ROUNDTABLE');
+            const timer = game.createTimer('ROUNDTABLE', updatedGame.settings);
             if (timer) {
+              const gameWithTimer = { ...updatedGame, timer };
+              games.set(currentSessionId, gameWithTimer);
               broadcastToSession(currentSessionId, {
                 type: 'S2C_TIMER_UPDATE',
                 payload: { endTime: timer.endTime, duration: timer.duration, phase: 'ROUNDTABLE' }
@@ -768,8 +800,10 @@ wss.on('connection', (ws: WebSocket) => {
           }
         });
 
-        const timer = game.createTimer('NIGHT');
+        const timer = game.createTimer('NIGHT', updatedGame.settings);
         if (timer) {
+          const gameWithTimer = { ...updatedGame, timer };
+          games.set(currentSessionId, gameWithTimer);
           broadcastToSession(currentSessionId, {
             type: 'S2C_TIMER_UPDATE',
             payload: { endTime: timer.endTime, duration: timer.duration, phase: 'NIGHT' }

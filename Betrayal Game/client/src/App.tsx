@@ -158,6 +158,7 @@ function App() {
         sessionId={gameState?.sessionId}
         players={gameState?.players || []}
         myPlayerId={gameState?.myPlayerId}
+        settings={gameState?.settings}
         onSend={send}
       />
     </>

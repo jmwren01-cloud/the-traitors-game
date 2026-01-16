@@ -1,5 +1,29 @@
 // Game Types and Interfaces
 
+export interface GameSettings {
+  timerDurations: {
+    roundtable: number; // 30-300 seconds
+    voting: number;     // 30-120 seconds
+    night: number;      // 30-180 seconds
+  };
+  traitorMode: 'auto' | 'fixed'; // auto = 1 per 5 players, fixed = use traitorCount
+  traitorCount: number;          // 1-4 (only used when mode is 'fixed')
+  minPlayers: number;            // 5-10
+  round1DiscussionOnly: boolean; // Skip banishment in round 1
+}
+
+export const DEFAULT_SETTINGS: GameSettings = {
+  timerDurations: {
+    roundtable: 120,
+    voting: 60,
+    night: 90
+  },
+  traitorMode: 'auto',
+  traitorCount: 1,
+  minPlayers: 5,
+  round1DiscussionOnly: true
+};
+
 export type GamePhase = 
   | 'LOBBY'
   | 'ROLE_ASSIGN'
@@ -89,6 +113,7 @@ export interface GameState {
   currentTally?: VoteTally[];
   votingLocked?: boolean;
   lastManualVotes: Record<string, string>;
+  settings: GameSettings;
 }
 
 // Client-to-Server Events
@@ -96,6 +121,7 @@ export type C2SEvent =
   | { type: 'C2S_CREATE_GAME'; payload: { playerName: string } }
   | { type: 'C2S_JOIN_GAME'; payload: { sessionId: string; playerName: string } }
   | { type: 'C2S_RECONNECT'; payload: { sessionToken: string } }
+  | { type: 'C2S_UPDATE_SETTINGS'; payload: { settings: Partial<GameSettings> } }
   | { type: 'C2S_START_GAME'; payload: Record<string, never> }
   | { type: 'C2S_ASSIGN_ROLES'; payload: Record<string, never> }
   | { type: 'C2S_START_ROUNDTABLE'; payload: Record<string, never> }
@@ -117,8 +143,9 @@ export type C2SEvent =
 
 // Server-to-Client Events
 export type S2CEvent =
-  | { type: 'S2C_GAME_CREATED'; payload: { sessionId: string; playerId: string; playerName: string; sessionToken: string } }
-  | { type: 'S2C_GAME_JOINED'; payload: { sessionId: string; playerId: string; playerName: string; players: Player[]; sessionToken: string } }
+  | { type: 'S2C_GAME_CREATED'; payload: { sessionId: string; playerId: string; playerName: string; sessionToken: string; settings: GameSettings } }
+  | { type: 'S2C_GAME_JOINED'; payload: { sessionId: string; playerId: string; playerName: string; players: Player[]; sessionToken: string; settings: GameSettings } }
+  | { type: 'S2C_SETTINGS_UPDATED'; payload: { settings: GameSettings } }
   | { type: 'S2C_RECONNECTED'; payload: { 
       sessionId: string; 
       playerId: string; 
@@ -155,6 +182,7 @@ export type S2CEvent =
       randomlySelectedPlayerName?: string;
       randomlySelectedPlayerRole?: Role;
       totalVotes?: number;
+      settings: GameSettings;
     } }
   | { type: 'S2C_PLAYER_RECONNECTED'; payload: { playerId: string; players: Player[] } }
   | { type: 'S2C_PLAYER_DISCONNECTED'; payload: { playerId: string; players: Player[] } }

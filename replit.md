@@ -88,6 +88,14 @@ Start workflow: `cd "Betrayal Game" && npm run dev`
   - Round 2+: Repeats player's last manual vote if target still valid, otherwise random
   - Host can force resolve voting with pending auto-votes
   - Auto-votes shown with orange dashed border and "Auto" badge during reveal
+- 2026-01-16: Configurable game settings system
+  - Host-only settings panel in lobby with toggle visibility
+  - Adjustable timer durations (30-300s roundtable, 30-120s voting, 30-180s night)
+  - Traitor assignment mode: auto (1 per 5 players) or fixed count (1-4 traitors)
+  - Minimum players to start (5-10)
+  - Round 1 discussion-only toggle
+  - Settings synced via WebSocket to all players
+  - Non-host players see settings preview
 
 ## Remaining Tasks
 - None - Phase 1 complete!

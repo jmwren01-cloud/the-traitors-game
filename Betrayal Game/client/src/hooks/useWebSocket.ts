@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import type { GameState, C2SEvent, Player, Role, Vote, ChatMessage, TimerState, VoteTally } from '../types';
+import type { GameState, C2SEvent, Player, Role, Vote, ChatMessage, TimerState, VoteTally, GameSettings } from '../types';
 
 const getWebSocketUrl = () => {
   const domain = window.location.host;
@@ -76,7 +76,7 @@ export function useWebSocket() {
   const handleMessage = useCallback((msg: { type: string; payload: Record<string, unknown> }) => {
     switch (msg.type) {
       case 'S2C_GAME_CREATED': {
-        const payload = msg.payload as { sessionId: string; playerId: string; playerName: string; sessionToken: string };
+        const payload = msg.payload as { sessionId: string; playerId: string; playerName: string; sessionToken: string; settings: GameSettings };
         myPlayerIdRef.current = payload.playerId;
         saveSessionToken(payload.sessionToken);
         setGameState({
@@ -84,12 +84,13 @@ export function useWebSocket() {
           phase: 'LOBBY',
           players: [],
           myPlayerId: payload.playerId,
+          settings: payload.settings,
         });
         break;
       }
 
       case 'S2C_GAME_JOINED': {
-        const payload = msg.payload as { sessionId: string; playerId: string; playerName: string; players: Player[]; sessionToken: string };
+        const payload = msg.payload as { sessionId: string; playerId: string; playerName: string; players: Player[]; sessionToken: string; settings: GameSettings };
         myPlayerIdRef.current = payload.playerId;
         saveSessionToken(payload.sessionToken);
         setGameState({
@@ -97,7 +98,14 @@ export function useWebSocket() {
           phase: 'LOBBY',
           players: payload.players,
           myPlayerId: payload.playerId,
+          settings: payload.settings,
         });
+        break;
+      }
+
+      case 'S2C_SETTINGS_UPDATED': {
+        const payload = msg.payload as { settings: GameSettings };
+        setGameState((prev) => prev ? { ...prev, settings: payload.settings } : null);
         break;
       }
 
@@ -138,6 +146,7 @@ export function useWebSocket() {
           randomlySelectedPlayerName?: string;
           randomlySelectedPlayerRole?: Role;
           totalVotes?: number;
+          settings: GameSettings;
         };
         myPlayerIdRef.current = payload.playerId;
         setReconnecting(false);
@@ -195,6 +204,7 @@ export function useWebSocket() {
             ? { id: payload.randomlySelectedPlayerId, name: payload.randomlySelectedPlayerName, role: payload.randomlySelectedPlayerRole }
             : undefined,
           currentReveal,
+          settings: payload.settings,
         });
         break;
       }

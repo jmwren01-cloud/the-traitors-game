@@ -1,18 +1,27 @@
 // Game Manager - Core Game Logic
 
-import type { GameState, Player, Role, Vote, TimerState, GamePhase } from './types.js';
+import type { GameState, Player, Role, Vote, TimerState, GamePhase, GameSettings } from './types.js';
+import { DEFAULT_SETTINGS } from './types.js';
 
 // ============= TIMER CONFIGURATION =============
 
-export const TIMER_DURATIONS: Partial<Record<GamePhase, number>> = {
-  ROUNDTABLE: 120,
-  VOTING: 60,
-  NIGHT: 90,
-};
-
-export function createTimer(phase: GamePhase): TimerState | undefined {
-  const duration = TIMER_DURATIONS[phase];
-  if (!duration) return undefined;
+export function createTimer(phase: GamePhase, settings: GameSettings): TimerState | undefined {
+  let duration: number | undefined;
+  
+  switch (phase) {
+    case 'ROUNDTABLE':
+      duration = settings.timerDurations.roundtable;
+      break;
+    case 'VOTING':
+    case 'REVOTE':
+      duration = settings.timerDurations.voting;
+      break;
+    case 'NIGHT':
+      duration = settings.timerDurations.night;
+      break;
+    default:
+      return undefined;
+  }
   
   return {
     endTime: Date.now() + duration * 1000,
@@ -50,7 +59,45 @@ export function createGame(hostName: string): GameState {
     currentRound: 0,
     murderVotes: [],
     messages: [],
-    lastManualVotes: {}
+    lastManualVotes: {},
+    settings: { ...DEFAULT_SETTINGS }
+  };
+}
+
+export function updateSettings(game: GameState, partialSettings: Partial<GameSettings>): GameState {
+  if (game.phase !== 'LOBBY') {
+    throw new Error('Can only change settings in lobby');
+  }
+
+  const newSettings: GameSettings = { ...game.settings };
+
+  if (partialSettings.timerDurations) {
+    newSettings.timerDurations = {
+      roundtable: Math.min(300, Math.max(30, partialSettings.timerDurations.roundtable ?? game.settings.timerDurations.roundtable)),
+      voting: Math.min(120, Math.max(30, partialSettings.timerDurations.voting ?? game.settings.timerDurations.voting)),
+      night: Math.min(180, Math.max(30, partialSettings.timerDurations.night ?? game.settings.timerDurations.night))
+    };
+  }
+
+  if (partialSettings.traitorMode !== undefined) {
+    newSettings.traitorMode = partialSettings.traitorMode;
+  }
+
+  if (partialSettings.traitorCount !== undefined) {
+    newSettings.traitorCount = Math.min(4, Math.max(1, partialSettings.traitorCount));
+  }
+
+  if (partialSettings.minPlayers !== undefined) {
+    newSettings.minPlayers = Math.min(10, Math.max(5, partialSettings.minPlayers));
+  }
+
+  if (partialSettings.round1DiscussionOnly !== undefined) {
+    newSettings.round1DiscussionOnly = partialSettings.round1DiscussionOnly;
+  }
+
+  return {
+    ...game,
+    settings: newSettings
   };
 }
 
@@ -87,7 +134,7 @@ export function addPlayer(game: GameState, playerName: string): { game: GameStat
 
 /**
  * WEEK 4 UPDATE: Multiple traitors based on player count
- * Traitor ratio: 1 traitor per 5 players (rounded down)
+ * Traitor ratio: 1 traitor per 5 players (rounded down) OR fixed count from settings
  * - 5-9 players: 1 traitor
  * - 10-14 players: 2 traitors  
  * - 15-19 players: 3 traitors
@@ -99,7 +146,14 @@ export function assignRoles(game: GameState): GameState {
   }
 
   const playerCount = game.players.length;
-  const traitorCount = Math.floor(playerCount / 5);
+  let traitorCount: number;
+  
+  if (game.settings.traitorMode === 'fixed') {
+    traitorCount = Math.min(game.settings.traitorCount, Math.floor(playerCount / 2) - 1);
+    traitorCount = Math.max(1, traitorCount);
+  } else {
+    traitorCount = Math.floor(playerCount / 5);
+  }
   
   if (traitorCount === 0) {
     throw new Error('Need at least 5 players to assign roles');

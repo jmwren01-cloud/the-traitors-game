@@ -329,3 +329,172 @@
     padding: 14px 16px;
   }
 }
+
+.settingsSection {
+  width: 100%;
+  max-width: 400px;
+  margin-bottom: 1.5rem;
+}
+
+.settingsToggle {
+  width: 100%;
+  padding: 12px 20px;
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+  border: 1px solid rgba(233, 69, 96, 0.4);
+  border-radius: 8px;
+  font-size: 1rem;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.settingsToggle:hover {
+  background: rgba(233, 69, 96, 0.2);
+  border-color: #e94560;
+}
+
+.settingsPanel {
+  margin-top: 15px;
+  padding: 20px;
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.settingGroup {
+  margin-bottom: 18px;
+}
+
+.settingGroup:last-child {
+  margin-bottom: 0;
+}
+
+.settingGroup > label {
+  display: block;
+  color: #aaa;
+  font-size: 0.85rem;
+  margin-bottom: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.settingControl {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 15px;
+}
+
+.settingControl button {
+  width: 40px;
+  height: 40px;
+  background: rgba(233, 69, 96, 0.3);
+  color: #fff;
+  border: 1px solid #e94560;
+  border-radius: 8px;
+  font-size: 1.3rem;
+  font-weight: bold;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.settingControl button:hover:not(:disabled) {
+  background: #e94560;
+  transform: scale(1.05);
+}
+
+.settingControl button:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.settingControl span {
+  min-width: 80px;
+  text-align: center;
+  font-size: 1.1rem;
+  color: #fff;
+}
+
+.traitorModeToggle {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.traitorModeToggle button {
+  flex: 1;
+  padding: 10px 15px;
+  background: rgba(255, 255, 255, 0.1);
+  color: #aaa;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 6px;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.traitorModeToggle button:hover {
+  background: rgba(255, 255, 255, 0.15);
+  color: #fff;
+}
+
+.traitorModeToggle button.active {
+  background: rgba(233, 69, 96, 0.3);
+  color: #fff;
+  border-color: #e94560;
+}
+
+.checkboxLabel {
+  display: flex !important;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  color: #ccc !important;
+  font-size: 0.95rem !important;
+  text-transform: none !important;
+  letter-spacing: normal !important;
+}
+
+.checkboxLabel input[type="checkbox"] {
+  width: 20px;
+  height: 20px;
+  accent-color: #e94560;
+  cursor: pointer;
+}
+
+.settingsPreview {
+  width: 100%;
+  max-width: 400px;
+  padding: 12px 16px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 8px;
+  margin-bottom: 1.5rem;
+  text-align: center;
+}
+
+.settingsPreview p {
+  color: #888;
+  font-size: 0.85rem;
+  margin: 4px 0;
+}
+
+@media (max-width: 480px) {
+  .settingsSection {
+    max-width: 100%;
+    padding: 0 10px;
+  }
+
+  .settingsPanel {
+    padding: 15px;
+  }
+
+  .traitorModeToggle button {
+    padding: 12px 10px;
+    font-size: 0.8rem;
+  }
+
+  .settingControl button {
+    min-width: 48px;
+    min-height: 48px;
+  }
+}
