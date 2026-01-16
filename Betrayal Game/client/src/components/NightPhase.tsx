@@ -13,6 +13,7 @@ interface NightPhaseProps {
   aliveTraitorCount?: number;
   murderVoteProgress?: { received: number; needed: number };
   murderedPlayer?: { id: string; name: string };
+  murderBlocked?: { shieldedPlayerId: string; shieldedPlayerName: string };
   traitorIds?: string[];
   onSend: (event: C2SEvent) => void;
 }
@@ -26,6 +27,7 @@ export function NightPhase({
   aliveTraitorCount,
   murderVoteProgress,
   murderedPlayer,
+  murderBlocked,
   traitorIds,
   onSend,
 }: NightPhaseProps) {
@@ -115,10 +117,13 @@ export function NightPhase({
               {aliveFaithful.map((player) => (
                 <div
                   key={player.id}
-                  className={`${styles.targetCard} ${selectedTarget === player.id ? styles.selected : ''}`}
+                  className={`${styles.targetCard} ${selectedTarget === player.id ? styles.selected : ''} ${player.shieldRevealed ? styles.hasShield : ''}`}
                   onClick={() => !hasVoted && setSelectedTarget(player.id)}
                 >
-                  <div className={styles.avatar}>{player.name[0]?.toUpperCase()}</div>
+                  <div className={styles.avatar}>
+                    {player.name[0]?.toUpperCase()}
+                    {player.shieldRevealed && <span className={styles.shieldBadge}>🛡️</span>}
+                  </div>
                   <span className={styles.name}>{player.name}</span>
                 </div>
               ))}
@@ -176,6 +181,13 @@ export function NightPhase({
               <div className={styles.bigAvatar}>{murderedPlayer.name[0]?.toUpperCase()}</div>
               <h2>{murderedPlayer.name}</h2>
               <p className={styles.deathMessage}>was found dead this morning...</p>
+            </div>
+          ) : murderBlocked ? (
+            <div className={styles.shieldBlockReveal}>
+              <div className={styles.shieldIcon}>🛡️</div>
+              <h2>{murderBlocked.shieldedPlayerName}</h2>
+              <p className={styles.shieldMessage}>was protected by their Shield!</p>
+              <p className={styles.noDeathText}>No one was murdered last night.</p>
             </div>
           ) : (
             <div className={styles.noDeathMessage}>

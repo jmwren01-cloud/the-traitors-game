@@ -97,6 +97,22 @@ Start workflow: `cd "Betrayal Game" && npm run dev`
   - Settings synced via WebSocket to all players
   - Non-host players see settings preview
 
+## Shield Challenge System (Completed 2026-01-16)
+- Three mini-game types rotate randomly each morning (when enabled):
+  - **Time Estimate**: Tap when you think N seconds have passed (4-8s target)
+  - **Missing Player**: Memorize 6 players for 3 seconds, identify who disappeared
+  - **Word Scramble**: Unscramble a 4-5 letter word (typo-tolerant: Levenshtein ≤1)
+- Challenge phase flow: MORNING → CHALLENGE → CHALLENGE_RESULT → ROUNDTABLE
+- Shield mechanics:
+  - Max 1 shield per player at a time
+  - Blocks murder attempt and is consumed
+  - Players can reveal shields (or bluff during roundtable)
+  - Winners have 1-round cooldown before winning again
+  - Traitors can earn shields too
+- Host toggle in settings: `challengesEnabled` (default: on)
+- Visual indicators: 🛡️ icons on player avatars, shield block animation on morning reveal
+- Key files: Challenge.tsx, Challenge.module.css, manager.ts (createChallenge, submitChallengeAnswer, resolveChallenge)
+
 ## Remaining Tasks
 - None - Phase 1 complete!
 

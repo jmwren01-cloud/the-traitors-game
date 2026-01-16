@@ -467,12 +467,22 @@ export function useWebSocket() {
       }
 
       case 'S2C_MORNING_STARTED': {
-        const payload = msg.payload as { phase: string; lastMurderedPlayerId?: string; lastMurderedPlayerName?: string };
+        const payload = msg.payload as { 
+          phase: string; 
+          lastMurderedPlayerId?: string; 
+          lastMurderedPlayerName?: string;
+          murderBlocked?: boolean;
+          shieldedPlayerId?: string;
+          shieldedPlayerName?: string;
+        };
         setGameState((prev) => prev ? {
           ...prev,
           phase: payload.phase as GameState['phase'],
           murderedPlayer: payload.lastMurderedPlayerId
             ? { id: payload.lastMurderedPlayerId, name: payload.lastMurderedPlayerName || '' }
+            : undefined,
+          murderBlocked: payload.murderBlocked
+            ? { shieldedPlayerId: payload.shieldedPlayerId!, shieldedPlayerName: payload.shieldedPlayerName! }
             : undefined,
         } : null);
         break;
@@ -486,8 +496,101 @@ export function useWebSocket() {
           currentRound: payload.currentRound,
           banishedPlayer: undefined,
           murderedPlayer: undefined,
+          murderBlocked: undefined,
           votes: undefined,
         } : null);
+        break;
+      }
+
+      case 'S2C_CHALLENGE_STARTED': {
+        const payload = msg.payload as { 
+          phase: string; 
+          challengeType: 'TIME_ESTIMATE' | 'MISSING_PLAYER' | 'WORD_SCRAMBLE';
+          startTime: number;
+          targetTime?: number;
+          shownPlayerIds?: string[];
+          scrambledWord?: string;
+        };
+        setGameState((prev) => prev ? {
+          ...prev,
+          phase: payload.phase as GameState['phase'],
+          challenge: {
+            type: payload.challengeType,
+            startTime: payload.startTime,
+            targetTime: payload.targetTime,
+            shownPlayerIds: payload.shownPlayerIds,
+            scrambledWord: payload.scrambledWord,
+            completed: false
+          }
+        } : null);
+        break;
+      }
+
+      case 'S2C_CHALLENGE_ANSWER_RECEIVED': {
+        // Optional: could track who answered
+        break;
+      }
+
+      case 'S2C_CHALLENGE_PHASE_UPDATE': {
+        const payload = msg.payload as { hiddenPlayerId?: string };
+        setGameState((prev) => {
+          if (!prev || !prev.challenge) return prev;
+          return {
+            ...prev,
+            challenge: {
+              ...prev.challenge,
+              hiddenPlayerId: payload.hiddenPlayerId
+            }
+          };
+        });
+        break;
+      }
+
+      case 'S2C_CHALLENGE_RESULT': {
+        const payload = msg.payload as { 
+          phase: string;
+          winnerId?: string;
+          winnerName?: string;
+          correctAnswer?: string | number;
+          shieldAwarded: boolean;
+        };
+        setGameState((prev) => {
+          if (!prev) return null;
+          // Update player shields if winner was awarded
+          let updatedPlayers = prev.players;
+          if (payload.winnerId && payload.shieldAwarded) {
+            updatedPlayers = prev.players.map((p) =>
+              p.id === payload.winnerId ? { ...p, hasShield: true } : p
+            );
+          }
+          return {
+            ...prev,
+            phase: payload.phase as GameState['phase'],
+            players: updatedPlayers,
+            challenge: prev.challenge ? {
+              ...prev.challenge,
+              winnerId: payload.winnerId,
+              winnerName: payload.winnerName,
+              correctAnswer: payload.correctAnswer,
+              shieldAwarded: payload.shieldAwarded,
+              completed: true
+            } : undefined
+          };
+        });
+        break;
+      }
+
+      case 'S2C_SHIELD_REVEALED': {
+        const payload = msg.payload as { playerId: string; playerName: string };
+        setGameState((prev) => {
+          if (!prev) return null;
+          return {
+            ...prev,
+            players: prev.players.map((p) =>
+              p.id === payload.playerId ? { ...p, shieldRevealed: true } : p
+            )
+          };
+        });
         break;
       }
 

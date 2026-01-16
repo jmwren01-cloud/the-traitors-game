@@ -1,7 +1,16 @@
 // Game Manager - Core Game Logic
 
-import type { GameState, Player, Role, Vote, TimerState, GamePhase, GameSettings } from './types.js';
+import type { GameState, Player, Role, Vote, TimerState, GamePhase, GameSettings, ChallengeState, ChallengeType } from './types.js';
 import { DEFAULT_SETTINGS } from './types.js';
+
+// Word bank for Word Scramble challenge (simple 4-5 letter words)
+const WORD_BANK = [
+  'table', 'chair', 'house', 'water', 'light', 'music', 'party', 'dance',
+  'smile', 'happy', 'trust', 'peace', 'brave', 'quiet', 'lucky', 'magic',
+  'crown', 'royal', 'guard', 'night', 'storm', 'flame', 'ghost', 'manor',
+  'vote', 'game', 'play', 'team', 'hero', 'gold', 'star', 'moon', 'fire',
+  'king', 'lord', 'lady', 'duke', 'earl', 'hunt', 'mask', 'clue', 'trap'
+];
 
 // ============= TIMER CONFIGURATION =============
 
@@ -46,7 +55,9 @@ export function createGame(hostName: string): GameState {
     name: hostName,
     isAlive: true,
     isHost: true,
-    isConnected: true
+    isConnected: true,
+    hasShield: false,
+    shieldRevealed: false
   };
 
   return {
@@ -95,6 +106,10 @@ export function updateSettings(game: GameState, partialSettings: Partial<GameSet
     newSettings.round1DiscussionOnly = partialSettings.round1DiscussionOnly;
   }
 
+  if (partialSettings.challengesEnabled !== undefined) {
+    newSettings.challengesEnabled = partialSettings.challengesEnabled;
+  }
+
   return {
     ...game,
     settings: newSettings
@@ -121,7 +136,9 @@ export function addPlayer(game: GameState, playerName: string): { game: GameStat
     name: playerName,
     isAlive: true,
     isHost: false,
-    isConnected: true
+    isConnected: true,
+    hasShield: false,
+    shieldRevealed: false
   };
 
   return {
@@ -577,13 +594,24 @@ export function submitMurder(game: GameState, traitorId: string, targetId: strin
   };
 }
 
+export interface MurderResult {
+  game: GameState;
+  blocked: boolean;
+  shieldedPlayerId?: string;
+  shieldedPlayerName?: string;
+  murderedPlayerId?: string;
+  murderedPlayerName?: string;
+}
+
 /**
  * WEEK 4 UPDATE: Resolve murder with multiple traitors
  * Requires ALL alive traitors to vote
- * If unanimous → murder happens
+ * If unanimous → murder happens (unless target has shield)
  * If not unanimous → random selection from voted targets
+ * 
+ * SHIELD UPDATE: If target has shield, murder is blocked and shield is consumed
  */
-export function resolveMurder(game: GameState): GameState {
+export function resolveMurder(game: GameState): MurderResult {
   if (game.phase !== 'NIGHT') {
     throw new Error('Cannot resolve murder outside night phase');
   }
@@ -603,11 +631,11 @@ export function resolveMurder(game: GameState): GameState {
   const firstTarget = firstVote.targetId;
   const isUnanimous = game.murderVotes.every((v: Vote) => v.targetId === firstTarget);
 
-  let murderedId: string;
+  let targetId: string;
 
   if (isUnanimous) {
     // Unanimous vote - use that target
-    murderedId = firstTarget;
+    targetId = firstTarget;
   } else {
     // Not unanimous - random selection from all voted targets
     const uniqueTargets = [...new Set(game.murderVotes.map((v: Vote) => v.targetId))];
@@ -616,20 +644,53 @@ export function resolveMurder(game: GameState): GameState {
     if (!selectedTarget) {
       throw new Error('Failed to select murder target');
     }
-    murderedId = selectedTarget;
+    targetId = selectedTarget;
   }
 
-  // Update player status
+  const targetPlayer = game.players.find((p: Player) => p.id === targetId);
+  if (!targetPlayer) {
+    throw new Error('Target player not found');
+  }
+
+  // Check if target has a shield
+  if (targetPlayer.hasShield) {
+    // Murder blocked! Consume the shield
+    const updatedPlayers = game.players.map((p: Player) =>
+      p.id === targetId ? { ...p, hasShield: false, shieldRevealed: false } : p
+    );
+
+    return {
+      game: {
+        ...game,
+        players: updatedPlayers,
+        lastMurderedPlayerId: undefined,
+        lastMurderBlocked: true,
+        murderVotes: [],
+        phase: 'MORNING'
+      },
+      blocked: true,
+      shieldedPlayerId: targetId,
+      shieldedPlayerName: targetPlayer.name
+    };
+  }
+
+  // No shield - murder happens
   const updatedPlayers = game.players.map((p: Player) =>
-    p.id === murderedId ? { ...p, isAlive: false } : p
+    p.id === targetId ? { ...p, isAlive: false } : p
   );
 
   return {
-    ...game,
-    players: updatedPlayers,
-    lastMurderedPlayerId: murderedId,
-    murderVotes: [],
-    phase: 'MORNING'
+    game: {
+      ...game,
+      players: updatedPlayers,
+      lastMurderedPlayerId: targetId,
+      lastMurderBlocked: false,
+      murderVotes: [],
+      phase: 'MORNING'
+    },
+    blocked: false,
+    murderedPlayerId: targetId,
+    murderedPlayerName: targetPlayer.name
   };
 }
 
@@ -669,11 +730,25 @@ export function continueToDayPhase(game: GameState): GameState {
     };
   }
 
-  // Continue to next round
+  // Increment round
+  const nextRound = game.currentRound + 1;
+
+  // If challenges are enabled, go to CHALLENGE phase, otherwise go directly to ROUNDTABLE
+  if (game.settings.challengesEnabled) {
+    return {
+      ...game,
+      phase: 'CHALLENGE',
+      currentRound: nextRound,
+      lastMurderBlocked: false
+    };
+  }
+
+  // Continue directly to roundtable
   return {
     ...game,
     phase: 'ROUNDTABLE',
-    currentRound: game.currentRound + 1
+    currentRound: nextRound,
+    lastMurderBlocked: false
   };
 }
 
@@ -715,4 +790,284 @@ function generateSessionId(): string {
 
 function generatePlayerId(): string {
   return Math.random().toString(36).substring(2, 11);
+}
+
+// ============= CHALLENGE SYSTEM =============
+
+function shuffleWord(word: string): string {
+  const arr = word.split('');
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j]!, arr[i]!];
+  }
+  const shuffled = arr.join('');
+  // Make sure it's actually different
+  return shuffled === word ? shuffleWord(word) : shuffled;
+}
+
+function levenshteinDistance(a: string, b: string): number {
+  const matrix: number[][] = [];
+  for (let i = 0; i <= b.length; i++) {
+    matrix[i] = [i];
+  }
+  for (let j = 0; j <= a.length; j++) {
+    matrix[0]![j] = j;
+  }
+  for (let i = 1; i <= b.length; i++) {
+    for (let j = 1; j <= a.length; j++) {
+      if (b.charAt(i - 1) === a.charAt(j - 1)) {
+        matrix[i]![j] = matrix[i - 1]![j - 1]!;
+      } else {
+        matrix[i]![j] = Math.min(
+          matrix[i - 1]![j - 1]! + 1,
+          matrix[i]![j]! + 1,
+          matrix[i]![j - 1]! + 1
+        );
+      }
+    }
+  }
+  return matrix[b.length]![a.length]!;
+}
+
+export function createChallenge(game: GameState): { game: GameState; challenge: ChallengeState } {
+  const challengeTypes: ChallengeType[] = ['TIME_ESTIMATE', 'MISSING_PLAYER', 'WORD_SCRAMBLE'];
+  const type = challengeTypes[Math.floor(Math.random() * challengeTypes.length)]!;
+  
+  const alivePlayers = game.players.filter((p: Player) => p.isAlive);
+  const startTime = Date.now();
+
+  let challenge: ChallengeState = {
+    type,
+    startTime,
+    answers: new Map(),
+    completed: false
+  };
+
+  switch (type) {
+    case 'TIME_ESTIMATE':
+      // Random target between 4-8 seconds
+      challenge.targetTime = 4 + Math.floor(Math.random() * 5);
+      break;
+
+    case 'MISSING_PLAYER':
+      // Select up to 6 random players to show
+      const shuffledPlayers = [...alivePlayers].sort(() => Math.random() - 0.5);
+      const shownPlayers = shuffledPlayers.slice(0, Math.min(6, shuffledPlayers.length));
+      const hiddenPlayer = shownPlayers[Math.floor(Math.random() * shownPlayers.length)]!;
+      challenge.shownPlayerIds = shownPlayers.map((p: Player) => p.id);
+      challenge.hiddenPlayerId = hiddenPlayer.id;
+      break;
+
+    case 'WORD_SCRAMBLE':
+      const word = WORD_BANK[Math.floor(Math.random() * WORD_BANK.length)]!;
+      challenge.correctWord = word;
+      challenge.scrambledWord = shuffleWord(word);
+      break;
+  }
+
+  return {
+    game: {
+      ...game,
+      phase: 'CHALLENGE',
+      challenge
+    },
+    challenge
+  };
+}
+
+export interface ChallengeAnswerResult {
+  game: GameState;
+  isCorrect: boolean;
+  isWinner: boolean;
+}
+
+export function submitChallengeAnswer(
+  game: GameState, 
+  playerId: string, 
+  answer: string | number
+): ChallengeAnswerResult {
+  if (game.phase !== 'CHALLENGE' || !game.challenge) {
+    throw new Error('Not in challenge phase');
+  }
+
+  const player = game.players.find((p: Player) => p.id === playerId);
+  if (!player || !player.isAlive) {
+    throw new Error('Player not found or not alive');
+  }
+
+  // Check if already answered
+  if (game.challenge.answers.has(playerId)) {
+    return { game, isCorrect: false, isWinner: false };
+  }
+
+  // Check cooldown (can't win if won last round)
+  if (player.lastChallengeWinRound === game.currentRound - 1) {
+    // On cooldown - can still answer but won't win
+  }
+
+  const timestamp = Date.now();
+  const updatedAnswers = new Map(game.challenge.answers);
+  updatedAnswers.set(playerId, { answer, timestamp });
+
+  let isCorrect = false;
+  let isWinner = false;
+
+  switch (game.challenge.type) {
+    case 'TIME_ESTIMATE':
+      // For time estimate, we evaluate at the end, not on each answer
+      isCorrect = true; // All answers are valid
+      break;
+
+    case 'MISSING_PLAYER':
+      const hiddenPlayer = game.players.find((p: Player) => p.id === game.challenge!.hiddenPlayerId);
+      if (hiddenPlayer) {
+        const answerStr = String(answer).toLowerCase().trim();
+        const correctName = hiddenPlayer.name.toLowerCase().trim();
+        // Accept if it matches name or ID
+        isCorrect = answerStr === correctName || answerStr === game.challenge.hiddenPlayerId;
+        
+        // First correct answer wins (if not on cooldown)
+        if (isCorrect && !game.challenge.winnerId && player.lastChallengeWinRound !== game.currentRound - 1) {
+          isWinner = true;
+        }
+      }
+      break;
+
+    case 'WORD_SCRAMBLE':
+      const correctWord = game.challenge.correctWord!.toLowerCase();
+      const answerWord = String(answer).toLowerCase().trim();
+      // Accept exact match or typo (Levenshtein distance <= 1)
+      const distance = levenshteinDistance(answerWord, correctWord);
+      isCorrect = distance <= 1;
+      
+      // First correct answer wins (if not on cooldown)
+      if (isCorrect && !game.challenge.winnerId && player.lastChallengeWinRound !== game.currentRound - 1) {
+        isWinner = true;
+      }
+      break;
+  }
+
+  const updatedChallenge: ChallengeState = {
+    ...game.challenge,
+    answers: updatedAnswers,
+    winnerId: isWinner ? playerId : game.challenge.winnerId,
+    winnerName: isWinner ? player.name : game.challenge.winnerName
+  };
+
+  return {
+    game: {
+      ...game,
+      challenge: updatedChallenge
+    },
+    isCorrect,
+    isWinner
+  };
+}
+
+export interface ChallengeResolution {
+  game: GameState;
+  winnerId?: string;
+  winnerName?: string;
+  correctAnswer?: string | number;
+  shieldAwarded: boolean;
+}
+
+export function resolveChallenge(game: GameState): ChallengeResolution {
+  if (game.phase !== 'CHALLENGE' || !game.challenge) {
+    throw new Error('Not in challenge phase');
+  }
+
+  let winnerId = game.challenge.winnerId;
+  let winnerName = game.challenge.winnerName;
+  let correctAnswer: string | number | undefined;
+
+  // For TIME_ESTIMATE, calculate winner now
+  if (game.challenge.type === 'TIME_ESTIMATE' && !winnerId) {
+    const targetTime = game.challenge.targetTime! * 1000; // Convert to ms
+    let closestDiff = Infinity;
+    
+    game.challenge.answers.forEach((data, pId) => {
+      const player = game.players.find((p: Player) => p.id === pId);
+      if (!player || player.lastChallengeWinRound === game.currentRound - 1) return;
+      
+      const elapsed = data.timestamp - game.challenge!.startTime;
+      const diff = Math.abs(elapsed - targetTime);
+      if (diff < closestDiff) {
+        closestDiff = diff;
+        winnerId = pId;
+        winnerName = player.name;
+      }
+    });
+    correctAnswer = game.challenge.targetTime;
+  } else if (game.challenge.type === 'WORD_SCRAMBLE') {
+    correctAnswer = game.challenge.correctWord;
+  } else if (game.challenge.type === 'MISSING_PLAYER') {
+    const hiddenPlayer = game.players.find((p: Player) => p.id === game.challenge!.hiddenPlayerId);
+    correctAnswer = hiddenPlayer?.name;
+  }
+
+  // Award shield to winner (if they don't already have one)
+  let shieldAwarded = false;
+  let updatedPlayers = game.players;
+
+  if (winnerId) {
+    const winner = game.players.find((p: Player) => p.id === winnerId);
+    if (winner && !winner.hasShield) {
+      shieldAwarded = true;
+      updatedPlayers = game.players.map((p: Player) =>
+        p.id === winnerId 
+          ? { ...p, hasShield: true, lastChallengeWinRound: game.currentRound }
+          : p
+      );
+    }
+  }
+
+  return {
+    game: {
+      ...game,
+      phase: 'CHALLENGE_RESULT',
+      players: updatedPlayers,
+      challenge: {
+        ...game.challenge,
+        winnerId,
+        winnerName,
+        completed: true
+      }
+    },
+    winnerId,
+    winnerName,
+    correctAnswer,
+    shieldAwarded
+  };
+}
+
+export function continueToRoundtable(game: GameState): GameState {
+  if (game.phase !== 'CHALLENGE_RESULT') {
+    throw new Error('Not in challenge result phase');
+  }
+
+  return {
+    ...game,
+    phase: 'ROUNDTABLE',
+    challenge: undefined
+  };
+}
+
+// ============= SHIELD REVEAL =============
+
+export function revealShield(game: GameState, playerId: string): GameState {
+  const player = game.players.find((p: Player) => p.id === playerId);
+  if (!player || !player.isAlive) {
+    throw new Error('Player not found or not alive');
+  }
+
+  // Can reveal (or bluff!) regardless of actually having a shield
+  const updatedPlayers = game.players.map((p: Player) =>
+    p.id === playerId ? { ...p, shieldRevealed: true } : p
+  );
+
+  return {
+    ...game,
+    players: updatedPlayers
+  };
 }

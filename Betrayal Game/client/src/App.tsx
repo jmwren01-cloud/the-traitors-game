@@ -8,6 +8,7 @@ import { GameEnd } from './components/GameEnd';
 import { ChatBox } from './components/ChatBox';
 import { Timer } from './components/Timer';
 import { ConnectionStatus } from './components/ConnectionStatus';
+import { Challenge } from './components/Challenge';
 import { useSoundContext } from './contexts/SoundContext';
 import './App.css';
 
@@ -101,6 +102,7 @@ function App() {
           aliveTraitorCount={gameState?.aliveTraitorCount}
           murderVoteProgress={gameState?.murderVoteProgress}
           murderedPlayer={gameState?.murderedPlayer}
+          murderBlocked={gameState?.murderBlocked}
           traitorIds={gameState?.traitorIds}
           onSend={send}
         />
@@ -147,6 +149,23 @@ function App() {
         <RoleReveal
           myRole={gameState?.myRole}
           traitorIds={gameState?.traitorIds}
+          players={gameState?.players || []}
+          myPlayerId={gameState?.myPlayerId}
+          phase={phase}
+          onSend={send}
+        />
+        {chatBox}
+      </>
+    );
+  }
+
+  if (phase === 'CHALLENGE' || phase === 'CHALLENGE_RESULT') {
+    return (
+      <>
+        <ConnectionStatus connected={connected} reconnecting={reconnecting} />
+        {soundToggle}
+        <Challenge
+          challenge={gameState?.challenge}
           players={gameState?.players || []}
           myPlayerId={gameState?.myPlayerId}
           phase={phase}

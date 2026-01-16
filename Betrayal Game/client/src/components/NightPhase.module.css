@@ -430,13 +430,66 @@
   }
 }
 
+.hasShield {
+  border-color: #f0c040;
+}
+
+.shieldBadge {
+  position: absolute;
+  bottom: -5px;
+  right: -5px;
+  font-size: 0.8rem;
+}
+
+.avatar {
+  position: relative;
+}
+
+.shieldBlockReveal {
+  background: rgba(240, 192, 64, 0.15);
+  padding: 30px 40px;
+  border-radius: 16px;
+  text-align: center;
+  border: 2px solid #f0c040;
+}
+
+.shieldIcon {
+  font-size: 4rem;
+  margin-bottom: 15px;
+  animation: shieldPulse 2s ease-in-out infinite;
+}
+
+@keyframes shieldPulse {
+  0%, 100% {
+    transform: scale(1);
+    filter: drop-shadow(0 0 10px rgba(240, 192, 64, 0.4));
+  }
+  50% {
+    transform: scale(1.1);
+    filter: drop-shadow(0 0 20px rgba(240, 192, 64, 0.8));
+  }
+}
+
+.shieldMessage {
+  color: #f0c040;
+  font-size: 1.2rem;
+  margin: 10px 0;
+}
+
+.noDeathText {
+  color: #888;
+  font-style: italic;
+  margin-top: 15px;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .traitorAvatar,
   .targetCard.selected,
   .murderBtn,
   .sleepingIcon,
   .waiting,
-  .deathReveal {
+  .deathReveal,
+  .shieldIcon {
     animation: none;
   }
 }

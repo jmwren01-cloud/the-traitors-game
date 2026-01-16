@@ -10,12 +10,31 @@ export interface GameSettings {
   traitorCount: number;
   minPlayers: number;
   round1DiscussionOnly: boolean;
+  challengesEnabled: boolean;
+}
+
+export type ChallengeType = 'TIME_ESTIMATE' | 'MISSING_PLAYER' | 'WORD_SCRAMBLE';
+
+export interface ChallengeState {
+  type: ChallengeType;
+  startTime: number;
+  targetTime?: number;
+  hiddenPlayerId?: string;
+  shownPlayerIds?: string[];
+  scrambledWord?: string;
+  winnerId?: string;
+  winnerName?: string;
+  correctAnswer?: string | number;
+  completed: boolean;
+  shieldAwarded?: boolean;
 }
 
 export type GamePhase = 
   | 'LOBBY'
   | 'ROLE_ASSIGN'
   | 'ROLE_REVEAL'
+  | 'CHALLENGE'
+  | 'CHALLENGE_RESULT'
   | 'ROUNDTABLE'
   | 'VOTING'
   | 'VOTE_REVEAL'
@@ -35,6 +54,8 @@ export interface Player {
   isAlive: boolean;
   role?: Role;
   isConnected?: boolean;
+  hasShield?: boolean;
+  shieldRevealed?: boolean;
 }
 
 export interface Vote {
@@ -84,6 +105,7 @@ export interface GameState {
   votes?: Vote[];
   banishedPlayer?: { id: string; name: string; role: Role };
   murderedPlayer?: { id: string; name: string };
+  murderBlocked?: { shieldedPlayerId: string; shieldedPlayerName: string };
   winner?: 'TRAITORS' | 'FAITHFUL';
   remainingTraitors?: number;
   remainingFaithful?: number;
@@ -108,6 +130,7 @@ export interface GameState {
     targetName: string;
   };
   settings?: GameSettings;
+  challenge?: ChallengeState;
 }
 
 export type C2SEvent =
@@ -132,4 +155,7 @@ export type C2SEvent =
   | { type: 'C2S_RESOLVE_MURDER'; payload: Record<string, never> }
   | { type: 'C2S_START_MORNING'; payload: Record<string, never> }
   | { type: 'C2S_CONTINUE_TO_DAY'; payload: Record<string, never> }
-  | { type: 'C2S_SEND_MESSAGE'; payload: { message: string; channel: ChatChannel } };
+  | { type: 'C2S_SEND_MESSAGE'; payload: { message: string; channel: ChatChannel } }
+  | { type: 'C2S_SUBMIT_CHALLENGE_ANSWER'; payload: { answer: string | number } }
+  | { type: 'C2S_CONTINUE_TO_ROUNDTABLE'; payload: Record<string, never> }
+  | { type: 'C2S_REVEAL_SHIELD'; payload: Record<string, never> };

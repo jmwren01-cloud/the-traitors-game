@@ -856,16 +856,26 @@ wss.on('connection', (ws: WebSocket) => {
       }
 
       if (event.type === 'C2S_RESOLVE_MURDER') {
-        const updatedGame = game.resolveMurder(gameState);
-        games.set(currentSessionId, updatedGame);
+        const result = game.resolveMurder(gameState);
+        games.set(currentSessionId, result.game);
         
-        const murderedPlayer = updatedGame.players.find((p) => p.id === updatedGame.lastMurderedPlayerId);
-        if (murderedPlayer) {
+        if (result.blocked) {
+          // Murder was blocked by shield
+          broadcastToSession(currentSessionId, {
+            type: 'S2C_MORNING_STARTED',
+            payload: {
+              phase: 'MORNING',
+              murderBlocked: true,
+              shieldedPlayerId: result.shieldedPlayerId,
+              shieldedPlayerName: result.shieldedPlayerName
+            }
+          });
+        } else if (result.murderedPlayerId) {
           broadcastToSession(currentSessionId, {
             type: 'S2C_MURDER_RESOLVED',
             payload: {
-              murderedPlayerId: murderedPlayer.id,
-              murderedPlayerName: murderedPlayer.name,
+              murderedPlayerId: result.murderedPlayerId,
+              murderedPlayerName: result.murderedPlayerName!,
               phase: 'MORNING'
             }
           });
@@ -916,10 +926,133 @@ wss.on('connection', (ws: WebSocket) => {
               remainingFaithful: aliveFaithful
             }
           });
+        } else if (updatedGame.phase === 'CHALLENGE') {
+          // Start challenge phase
+          const challengeResult = game.createChallenge(updatedGame);
+          games.set(currentSessionId, challengeResult.game);
+          
+          const challenge = challengeResult.challenge;
+          broadcastToSession(currentSessionId, {
+            type: 'S2C_CHALLENGE_STARTED',
+            payload: {
+              phase: 'CHALLENGE',
+              challengeType: challenge.type,
+              startTime: challenge.startTime,
+              targetTime: challenge.targetTime,
+              shownPlayerIds: challenge.shownPlayerIds,
+              scrambledWord: challenge.scrambledWord
+            }
+          });
+
+          // For MISSING_PLAYER, send phase update after 3 seconds to hide the player
+          if (challenge.type === 'MISSING_PLAYER') {
+            setTimeout(() => {
+              const currentGame = games.get(currentSessionId);
+              if (currentGame?.phase === 'CHALLENGE' && currentGame.challenge?.type === 'MISSING_PLAYER') {
+                broadcastToSession(currentSessionId, {
+                  type: 'S2C_CHALLENGE_PHASE_UPDATE',
+                  payload: {
+                    hiddenPlayerId: currentGame.challenge.hiddenPlayerId
+                  }
+                });
+              }
+            }, 3000);
+          }
         } else {
           broadcastToSession(currentSessionId, {
             type: 'S2C_CONTINUE_GAME',
             payload: { phase: updatedGame.phase, currentRound: updatedGame.currentRound }
+          });
+        }
+        return;
+      }
+
+      if (event.type === 'C2S_SUBMIT_CHALLENGE_ANSWER') {
+        if (gameState.phase !== 'CHALLENGE' || !gameState.challenge) {
+          sendError(ws, 'Not in challenge phase');
+          return;
+        }
+
+        const result = game.submitChallengeAnswer(gameState, currentPlayerId, event.payload.answer);
+        games.set(currentSessionId, result.game);
+
+        // Notify all players that this player answered
+        broadcastToSession(currentSessionId, {
+          type: 'S2C_CHALLENGE_ANSWER_RECEIVED',
+          payload: { playerId: currentPlayerId }
+        });
+
+        // For MISSING_PLAYER or WORD_SCRAMBLE, if there's a winner, resolve immediately
+        if (result.isWinner && result.game.challenge) {
+          const resolution = game.resolveChallenge(result.game);
+          games.set(currentSessionId, resolution.game);
+
+          broadcastToSession(currentSessionId, {
+            type: 'S2C_CHALLENGE_RESULT',
+            payload: {
+              phase: 'CHALLENGE_RESULT',
+              winnerId: resolution.winnerId,
+              winnerName: resolution.winnerName,
+              correctAnswer: resolution.correctAnswer,
+              shieldAwarded: resolution.shieldAwarded
+            }
+          });
+        }
+        return;
+      }
+
+      if (event.type === 'C2S_CONTINUE_TO_ROUNDTABLE') {
+        if (gameState.phase !== 'CHALLENGE_RESULT') {
+          // Also allow from CHALLENGE for TIME_ESTIMATE resolution
+          if (gameState.phase === 'CHALLENGE' && gameState.challenge?.type === 'TIME_ESTIMATE') {
+            const resolution = game.resolveChallenge(gameState);
+            games.set(currentSessionId, resolution.game);
+
+            broadcastToSession(currentSessionId, {
+              type: 'S2C_CHALLENGE_RESULT',
+              payload: {
+                phase: 'CHALLENGE_RESULT',
+                winnerId: resolution.winnerId,
+                winnerName: resolution.winnerName,
+                correctAnswer: resolution.correctAnswer,
+                shieldAwarded: resolution.shieldAwarded
+              }
+            });
+            return;
+          }
+          sendError(ws, 'Not in challenge result phase');
+          return;
+        }
+
+        const updatedGame = game.continueToRoundtable(gameState);
+        games.set(currentSessionId, updatedGame);
+
+        broadcastToSession(currentSessionId, {
+          type: 'S2C_ROUNDTABLE_STARTED',
+          payload: { phase: 'ROUNDTABLE', currentRound: updatedGame.currentRound }
+        });
+
+        const timer = game.createTimer('ROUNDTABLE', updatedGame.settings);
+        if (timer) {
+          const gameWithTimer = { ...updatedGame, timer };
+          games.set(currentSessionId, gameWithTimer);
+          broadcastToSession(currentSessionId, {
+            type: 'S2C_TIMER_UPDATE',
+            payload: { endTime: timer.endTime, duration: timer.duration, phase: 'ROUNDTABLE' }
+          });
+        }
+        return;
+      }
+
+      if (event.type === 'C2S_REVEAL_SHIELD') {
+        const updatedGame = game.revealShield(gameState, currentPlayerId);
+        games.set(currentSessionId, updatedGame);
+
+        const player = updatedGame.players.find((p) => p.id === currentPlayerId);
+        if (player) {
+          broadcastToSession(currentSessionId, {
+            type: 'S2C_SHIELD_REVEALED',
+            payload: { playerId: currentPlayerId, playerName: player.name }
           });
         }
         return;

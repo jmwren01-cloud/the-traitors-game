@@ -10,6 +10,23 @@ export interface GameSettings {
   traitorCount: number;          // 1-4 (only used when mode is 'fixed')
   minPlayers: number;            // 5-10
   round1DiscussionOnly: boolean; // Skip banishment in round 1
+  challengesEnabled: boolean;    // Enable shield challenges
+}
+
+export type ChallengeType = 'TIME_ESTIMATE' | 'MISSING_PLAYER' | 'WORD_SCRAMBLE';
+
+export interface ChallengeState {
+  type: ChallengeType;
+  startTime: number;
+  targetTime?: number;        // For TIME_ESTIMATE: the target seconds (4-8)
+  hiddenPlayerId?: string;    // For MISSING_PLAYER: who is hidden
+  shownPlayerIds?: string[];  // For MISSING_PLAYER: players shown before hiding
+  scrambledWord?: string;     // For WORD_SCRAMBLE: the scrambled word
+  correctWord?: string;       // For WORD_SCRAMBLE: the correct answer
+  answers: Map<string, { answer: string | number; timestamp: number }>;
+  winnerId?: string;
+  winnerName?: string;
+  completed: boolean;
 }
 
 export const DEFAULT_SETTINGS: GameSettings = {
@@ -21,13 +38,16 @@ export const DEFAULT_SETTINGS: GameSettings = {
   traitorMode: 'auto',
   traitorCount: 1,
   minPlayers: 5,
-  round1DiscussionOnly: true
+  round1DiscussionOnly: true,
+  challengesEnabled: true
 };
 
 export type GamePhase = 
   | 'LOBBY'
   | 'ROLE_ASSIGN'
   | 'ROLE_REVEAL'
+  | 'CHALLENGE'
+  | 'CHALLENGE_RESULT'
   | 'ROUNDTABLE'
   | 'VOTING'
   | 'VOTE_REVEAL'
@@ -49,6 +69,9 @@ export interface Player {
   isAlive: boolean;
   isHost: boolean;
   isConnected: boolean;
+  hasShield: boolean;
+  shieldRevealed: boolean;
+  lastChallengeWinRound?: number;
 }
 
 export interface Vote {
@@ -100,6 +123,7 @@ export interface GameState {
   currentRound: number;
   murderVotes: Vote[];
   lastMurderedPlayerId?: string;
+  lastMurderBlocked?: boolean;
   messages: ChatMessage[];
   timer?: TimerState;
   tiedPlayerIds?: string[];
@@ -114,6 +138,7 @@ export interface GameState {
   votingLocked?: boolean;
   lastManualVotes: Record<string, string>;
   settings: GameSettings;
+  challenge?: ChallengeState;
 }
 
 // Client-to-Server Events
@@ -139,7 +164,10 @@ export type C2SEvent =
   | { type: 'C2S_RESOLVE_MURDER'; payload: Record<string, never> }
   | { type: 'C2S_START_MORNING'; payload: Record<string, never> }
   | { type: 'C2S_CONTINUE_TO_DAY'; payload: Record<string, never> }
-  | { type: 'C2S_SEND_MESSAGE'; payload: { message: string; channel: ChatChannel } };
+  | { type: 'C2S_SEND_MESSAGE'; payload: { message: string; channel: ChatChannel } }
+  | { type: 'C2S_SUBMIT_CHALLENGE_ANSWER'; payload: { answer: string | number } }
+  | { type: 'C2S_CONTINUE_TO_ROUNDTABLE'; payload: Record<string, never> }
+  | { type: 'C2S_REVEAL_SHIELD'; payload: Record<string, never> };
 
 // Server-to-Client Events
 export type S2CEvent =
@@ -246,7 +274,30 @@ export type S2CEvent =
       phase: GamePhase;
       lastMurderedPlayerId?: string;
       lastMurderedPlayerName?: string;
+      murderBlocked?: boolean;
+      shieldedPlayerId?: string;
+      shieldedPlayerName?: string;
     } }
+  | { type: 'S2C_CHALLENGE_STARTED'; payload: { 
+      phase: GamePhase;
+      challengeType: ChallengeType;
+      startTime: number;
+      targetTime?: number;
+      shownPlayerIds?: string[];
+      scrambledWord?: string;
+    } }
+  | { type: 'S2C_CHALLENGE_ANSWER_RECEIVED'; payload: { playerId: string } }
+  | { type: 'S2C_CHALLENGE_PHASE_UPDATE'; payload: {
+      hiddenPlayerId?: string;
+    } }
+  | { type: 'S2C_CHALLENGE_RESULT'; payload: { 
+      phase: GamePhase;
+      winnerId?: string;
+      winnerName?: string;
+      correctAnswer?: string | number;
+      shieldAwarded: boolean;
+    } }
+  | { type: 'S2C_SHIELD_REVEALED'; payload: { playerId: string; playerName: string } }
   | { type: 'S2C_CHAT_MESSAGE'; payload: ChatMessage }
   | { type: 'S2C_TIMER_UPDATE'; payload: { endTime: number; duration: number; phase: GamePhase } }
   | { type: 'S2C_ERROR'; payload: { message: string } };
