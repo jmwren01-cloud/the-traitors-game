@@ -173,3 +173,73 @@
   transform: scale(1.05);
   box-shadow: 0 8px 30px rgba(233, 69, 96, 0.6);
 }
+
+@media (max-width: 480px) {
+  .container {
+    padding: 15px;
+    min-height: 100dvh;
+  }
+
+  .title {
+    font-size: 2rem;
+  }
+
+  .winnerBanner {
+    padding: 20px 25px;
+    width: 100%;
+    max-width: 300px;
+  }
+
+  .winnerBanner h2 {
+    font-size: 1.5rem;
+  }
+
+  .winnerSubtitle {
+    font-size: 0.9rem;
+  }
+
+  .victoryMessage,
+  .defeatMessage {
+    padding: 12px 20px;
+    width: 100%;
+    max-width: 300px;
+  }
+
+  .victoryMessage p {
+    font-size: 1.1rem;
+  }
+
+  .defeatMessage p {
+    font-size: 1rem;
+  }
+
+  .rolesReveal {
+    flex-direction: column;
+    gap: 25px;
+    width: 100%;
+    padding: 0 10px;
+  }
+
+  .teamSection {
+    min-width: unset;
+    width: 100%;
+  }
+
+  .playerCard {
+    padding: 12px;
+  }
+
+  .avatar {
+    width: 35px;
+    height: 35px;
+    font-size: 1rem;
+  }
+
+  .playAgainBtn {
+    padding: 16px 40px;
+    font-size: 1.1rem;
+    min-height: 56px;
+    width: 100%;
+    max-width: 280px;
+  }
+}

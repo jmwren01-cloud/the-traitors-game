@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import type { GameState, C2SEvent, Player, Role, Vote } from '../types';
+import type { GameState, C2SEvent, Player, Role, Vote, ChatMessage, TimerState } from '../types';
 
 const getWebSocketUrl = () => {
   const domain = window.location.host;
@@ -210,6 +210,35 @@ export function useWebSocket() {
           winner: payload.winner,
           remainingTraitors: payload.remainingTraitors,
           remainingFaithful: payload.remainingFaithful,
+        } : null);
+        break;
+      }
+
+      case 'S2C_CHAT_MESSAGE': {
+        const payload = msg.payload as unknown as ChatMessage;
+        setGameState((prev) => {
+          if (!prev) return null;
+          const existingMessages = prev.messages || [];
+          if (existingMessages.some(m => m.id === payload.id)) {
+            return prev;
+          }
+          return {
+            ...prev,
+            messages: [...existingMessages, payload],
+          };
+        });
+        break;
+      }
+
+      case 'S2C_TIMER_UPDATE': {
+        const payload = msg.payload as { endTime: number; duration: number; phase: string };
+        setGameState((prev) => prev ? {
+          ...prev,
+          timer: {
+            endTime: payload.endTime,
+            duration: payload.duration,
+            phase: payload.phase as TimerState['phase'],
+          },
         } : null);
         break;
       }

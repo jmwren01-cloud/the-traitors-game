@@ -242,3 +242,84 @@
     transform: scale(1);
   }
 }
+
+@media (max-width: 480px) {
+  .nightOverlay,
+  .morningOverlay {
+    padding: 15px;
+    min-height: 100dvh;
+  }
+
+  .title {
+    font-size: 2rem;
+  }
+
+  .subtitle {
+    font-size: 0.9rem;
+  }
+
+  .traitorInfo {
+    font-size: 1rem;
+    text-align: center;
+  }
+
+  .targetGrid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+    max-width: 100%;
+  }
+
+  .targetCard {
+    padding: 12px 8px;
+    min-height: 90px;
+  }
+
+  .avatar {
+    width: 45px;
+    height: 45px;
+    font-size: 1.3rem;
+  }
+
+  .bigAvatar {
+    width: 80px;
+    height: 80px;
+    font-size: 2.5rem;
+  }
+
+  .name {
+    font-size: 0.8rem;
+  }
+
+  .murderBtn,
+  .primaryBtn {
+    padding: 16px 30px;
+    font-size: 1rem;
+    min-height: 54px;
+    width: 100%;
+    max-width: 280px;
+  }
+
+  .secondaryBtn {
+    padding: 14px 24px;
+    min-height: 50px;
+  }
+
+  .sleepingIcon {
+    font-size: 4rem;
+  }
+
+  .faithfulMessage {
+    font-size: 1rem;
+    padding: 0 10px;
+  }
+
+  .deathReveal {
+    padding: 25px;
+    width: 100%;
+    max-width: 300px;
+  }
+
+  .deathMessage {
+    font-size: 1rem;
+  }
+}

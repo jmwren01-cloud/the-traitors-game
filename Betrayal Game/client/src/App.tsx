@@ -4,6 +4,8 @@ import { RoleReveal } from './components/RoleReveal';
 import { Voting } from './components/Voting';
 import { NightPhase } from './components/NightPhase';
 import { GameEnd } from './components/GameEnd';
+import { ChatBox } from './components/ChatBox';
+import { Timer } from './components/Timer';
 import './App.css';
 
 function App() {
@@ -27,56 +29,88 @@ function App() {
   }
 
   const phase = gameState?.phase || 'LOBBY';
+  const showChat = gameState && phase !== 'LOBBY' && phase !== 'ROLE_ASSIGN';
+  const isChatDisabled = phase === 'ROLE_REVEAL';
+  const isNightPhase = phase === 'NIGHT';
+
+  const chatBox = showChat ? (
+    <ChatBox
+      messages={gameState?.messages || []}
+      myPlayerId={gameState?.myPlayerId}
+      myRole={gameState?.myRole}
+      onSend={send}
+      disabled={isChatDisabled}
+      isNightPhase={isNightPhase}
+    />
+  ) : null;
+
+  const timer = gameState?.timer && gameState.timer.phase === phase ? (
+    <Timer endTime={gameState.timer.endTime} />
+  ) : null;
 
   if (phase === 'GAME_END') {
     return (
-      <GameEnd
-        winner={gameState?.winner}
-        players={gameState?.players || []}
-        myRole={gameState?.myRole}
-      />
+      <>
+        <GameEnd
+          winner={gameState?.winner}
+          players={gameState?.players || []}
+          myRole={gameState?.myRole}
+        />
+        {chatBox}
+      </>
     );
   }
 
   if (phase === 'NIGHT' || phase === 'MORNING') {
     return (
-      <NightPhase
-        players={gameState?.players || []}
-        myPlayerId={gameState?.myPlayerId}
-        myRole={gameState?.myRole}
-        phase={phase}
-        currentRound={gameState?.currentRound}
-        aliveTraitorCount={gameState?.aliveTraitorCount}
-        murderVoteProgress={gameState?.murderVoteProgress}
-        murderedPlayer={gameState?.murderedPlayer}
-        onSend={send}
-      />
+      <>
+        {timer}
+        <NightPhase
+          players={gameState?.players || []}
+          myPlayerId={gameState?.myPlayerId}
+          myRole={gameState?.myRole}
+          phase={phase}
+          currentRound={gameState?.currentRound}
+          aliveTraitorCount={gameState?.aliveTraitorCount}
+          murderVoteProgress={gameState?.murderVoteProgress}
+          murderedPlayer={gameState?.murderedPlayer}
+          onSend={send}
+        />
+        {chatBox}
+      </>
     );
   }
 
   if (phase === 'ROUNDTABLE' || phase === 'VOTING' || phase === 'VOTE_REVEAL' || phase === 'BANISH_REVEAL' || phase === 'CHECK_WIN') {
     return (
-      <Voting
-        players={gameState?.players || []}
-        myPlayerId={gameState?.myPlayerId}
-        phase={phase}
-        votes={gameState?.votes}
-        banishedPlayer={gameState?.banishedPlayer}
-        onSend={send}
-      />
+      <>
+        {timer}
+        <Voting
+          players={gameState?.players || []}
+          myPlayerId={gameState?.myPlayerId}
+          phase={phase}
+          votes={gameState?.votes}
+          banishedPlayer={gameState?.banishedPlayer}
+          onSend={send}
+        />
+        {chatBox}
+      </>
     );
   }
 
   if (phase === 'ROLE_ASSIGN' || phase === 'ROLE_REVEAL') {
     return (
-      <RoleReveal
-        myRole={gameState?.myRole}
-        traitorIds={gameState?.traitorIds}
-        players={gameState?.players || []}
-        myPlayerId={gameState?.myPlayerId}
-        phase={phase}
-        onSend={send}
-      />
+      <>
+        <RoleReveal
+          myRole={gameState?.myRole}
+          traitorIds={gameState?.traitorIds}
+          players={gameState?.players || []}
+          myPlayerId={gameState?.myPlayerId}
+          phase={phase}
+          onSend={send}
+        />
+        {chatBox}
+      </>
     );
   }
 

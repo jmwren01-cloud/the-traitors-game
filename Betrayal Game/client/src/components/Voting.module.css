@@ -246,3 +246,87 @@
     transform: scale(1);
   }
 }
+
+@media (max-width: 480px) {
+  .container {
+    padding: 15px;
+    min-height: 100dvh;
+  }
+
+  .title {
+    font-size: 1.8rem;
+  }
+
+  .subtitle {
+    font-size: 0.9rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .playerGrid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+    max-width: 100%;
+  }
+
+  .playerCard,
+  .voteCard {
+    padding: 15px 10px;
+    min-height: 100px;
+  }
+
+  .avatar {
+    width: 45px;
+    height: 45px;
+    font-size: 1.3rem;
+  }
+
+  .bigAvatar {
+    width: 80px;
+    height: 80px;
+    font-size: 2.5rem;
+  }
+
+  .name {
+    font-size: 0.8rem;
+  }
+
+  .primaryBtn,
+  .voteBtn,
+  .dangerBtn {
+    padding: 16px 30px;
+    font-size: 1rem;
+    min-height: 54px;
+    width: 100%;
+    max-width: 300px;
+  }
+
+  .secondaryBtn {
+    padding: 14px 24px;
+    min-height: 50px;
+  }
+
+  .voteResults {
+    max-width: 100%;
+    padding: 0 10px;
+  }
+
+  .voteResult {
+    padding: 12px;
+  }
+
+  .revealCard {
+    padding: 25px;
+    width: 100%;
+    max-width: 300px;
+  }
+
+  .roleReveal {
+    font-size: 1.1rem;
+  }
+
+  .successMessage,
+  .failMessage {
+    font-size: 1rem;
+    text-align: center;
+  }
+}

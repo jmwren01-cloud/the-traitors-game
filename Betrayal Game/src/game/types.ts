@@ -29,6 +29,21 @@ export interface Vote {
   targetId: string;
 }
 
+export interface ChatMessage {
+  id: string;
+  playerId: string;
+  playerName: string;
+  message: string;
+  timestamp: number;
+  isTraitorOnly: boolean;
+}
+
+export interface TimerState {
+  endTime: number;
+  duration: number;
+  phase: GamePhase;
+}
+
 export interface GameState {
   sessionId: string;
   phase: GamePhase;
@@ -41,6 +56,8 @@ export interface GameState {
   currentRound: number;
   murderVotes: Vote[];
   lastMurderedPlayerId?: string;
+  messages: ChatMessage[];
+  timer?: TimerState;
 }
 
 // Client-to-Server Events
@@ -58,7 +75,8 @@ export type C2SEvent =
   | { type: 'C2S_SUBMIT_MURDER'; payload: { targetId: string } }
   | { type: 'C2S_RESOLVE_MURDER'; payload: Record<string, never> }
   | { type: 'C2S_START_MORNING'; payload: Record<string, never> }
-  | { type: 'C2S_CONTINUE_TO_DAY'; payload: Record<string, never> };
+  | { type: 'C2S_CONTINUE_TO_DAY'; payload: Record<string, never> }
+  | { type: 'C2S_SEND_MESSAGE'; payload: { message: string; traitorOnly?: boolean } };
 
 // Server-to-Client Events
 export type S2CEvent =
@@ -104,4 +122,6 @@ export type S2CEvent =
       lastMurderedPlayerId?: string;
       lastMurderedPlayerName?: string;
     } }
+  | { type: 'S2C_CHAT_MESSAGE'; payload: ChatMessage }
+  | { type: 'S2C_TIMER_UPDATE'; payload: { endTime: number; duration: number; phase: GamePhase } }
   | { type: 'S2C_ERROR'; payload: { message: string } };

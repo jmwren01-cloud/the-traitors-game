@@ -196,3 +196,60 @@
   transform: scale(1.05);
   box-shadow: 0 8px 30px rgba(233, 69, 96, 0.6);
 }
+
+@media (max-width: 480px) {
+  .title {
+    font-size: 2rem;
+  }
+
+  .subtitle {
+    font-size: 1rem;
+  }
+
+  .menu,
+  .form {
+    max-width: 100%;
+    padding: 0 10px;
+  }
+
+  .input {
+    padding: 16px 18px;
+    font-size: 16px;
+    min-height: 54px;
+  }
+
+  .primaryBtn,
+  .secondaryBtn {
+    padding: 16px 24px;
+    font-size: 1rem;
+    min-height: 54px;
+    width: 100%;
+  }
+
+  .startBtn {
+    padding: 18px 40px;
+    font-size: 1.1rem;
+    min-height: 60px;
+    width: 100%;
+    max-width: 300px;
+  }
+
+  .sessionInfo {
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .sessionId {
+    font-size: 1.4rem;
+    padding: 10px 20px;
+  }
+
+  .playerList {
+    max-width: 100%;
+    padding: 0 10px;
+  }
+
+  .playerCard {
+    padding: 14px 16px;
+  }
+}

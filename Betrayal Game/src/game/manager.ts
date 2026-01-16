@@ -1,6 +1,30 @@
 // Game Manager - Core Game Logic
 
-import type { GameState, Player, Role, Vote } from './types.js';
+import type { GameState, Player, Role, Vote, TimerState, GamePhase } from './types.js';
+
+// ============= TIMER CONFIGURATION =============
+
+export const TIMER_DURATIONS: Partial<Record<GamePhase, number>> = {
+  ROUNDTABLE: 120,
+  VOTING: 60,
+  NIGHT: 90,
+};
+
+export function createTimer(phase: GamePhase): TimerState | undefined {
+  const duration = TIMER_DURATIONS[phase];
+  if (!duration) return undefined;
+  
+  return {
+    endTime: Date.now() + duration * 1000,
+    duration,
+    phase
+  };
+}
+
+export function isTimerExpired(timer?: TimerState): boolean {
+  if (!timer) return false;
+  return Date.now() >= timer.endTime;
+}
 
 // ============= GAME CREATION & PLAYER MANAGEMENT =============
 
@@ -24,7 +48,8 @@ export function createGame(hostName: string): GameState {
     revealedVotes: [],
     hostId,
     currentRound: 0,
-    murderVotes: []
+    murderVotes: [],
+    messages: []
   };
 }
 
@@ -150,20 +175,28 @@ export function banishPlayer(game: GameState): GameState {
     voteCounts.set(vote.targetId, (voteCounts.get(vote.targetId) || 0) + 1);
   });
 
-  // Find player with most votes
+  // Find player(s) with most votes
   let maxVotes = 0;
-  let banishedId: string | undefined;
+  const topCandidates: string[] = [];
   
   voteCounts.forEach((count, playerId) => {
     if (count > maxVotes) {
       maxVotes = count;
-      banishedId = playerId;
+      topCandidates.length = 0;
+      topCandidates.push(playerId);
+    } else if (count === maxVotes && maxVotes > 0) {
+      topCandidates.push(playerId);
     }
   });
 
-  if (!banishedId) {
+  if (topCandidates.length === 0) {
     throw new Error('No votes cast');
   }
+
+  // Handle tie: pick random from tied players
+  const banishedId = topCandidates.length === 1 
+    ? topCandidates[0] 
+    : topCandidates[Math.floor(Math.random() * topCandidates.length)];
 
   // Update player status
   const updatedPlayers = game.players.map((p: Player) =>
@@ -178,6 +211,36 @@ export function banishPlayer(game: GameState): GameState {
     votes: [],
     revealedVotes: []
   };
+}
+
+// ============= HOST TRANSFER =============
+
+export function transferHost(game: GameState, newHostId: string): GameState {
+  const newHost = game.players.find((p: Player) => p.id === newHostId);
+  if (!newHost) {
+    throw new Error('New host not found');
+  }
+
+  const updatedPlayers = game.players.map((p: Player) => ({
+    ...p,
+    isHost: p.id === newHostId
+  }));
+
+  return {
+    ...game,
+    players: updatedPlayers,
+    hostId: newHostId
+  };
+}
+
+export function findNewHost(game: GameState): string | null {
+  const connectedPlayers = game.players.filter((p: Player) => p.isConnected && p.id !== game.hostId);
+  if (connectedPlayers.length === 0) return null;
+  return connectedPlayers[0].id;
+}
+
+export function isGameEmpty(game: GameState): boolean {
+  return game.players.every((p: Player) => !p.isConnected);
 }
 
 // ============= WIN CONDITION =============

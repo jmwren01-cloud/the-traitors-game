@@ -27,6 +27,21 @@ export interface Vote {
   targetId: string;
 }
 
+export interface ChatMessage {
+  id: string;
+  playerId: string;
+  playerName: string;
+  message: string;
+  timestamp: number;
+  isTraitorOnly: boolean;
+}
+
+export interface TimerState {
+  endTime: number;
+  duration: number;
+  phase: GamePhase;
+}
+
 export interface GameState {
   sessionId: string;
   phase: GamePhase;
@@ -43,6 +58,8 @@ export interface GameState {
   currentRound?: number;
   aliveTraitorCount?: number;
   murderVoteProgress?: { received: number; needed: number };
+  messages?: ChatMessage[];
+  timer?: TimerState;
 }
 
 export type C2SEvent =
@@ -59,4 +76,5 @@ export type C2SEvent =
   | { type: 'C2S_SUBMIT_MURDER'; payload: { targetId: string } }
   | { type: 'C2S_RESOLVE_MURDER'; payload: Record<string, never> }
   | { type: 'C2S_START_MORNING'; payload: Record<string, never> }
-  | { type: 'C2S_CONTINUE_TO_DAY'; payload: Record<string, never> };
+  | { type: 'C2S_CONTINUE_TO_DAY'; payload: Record<string, never> }
+  | { type: 'C2S_SEND_MESSAGE'; payload: { message: string; traitorOnly?: boolean } };

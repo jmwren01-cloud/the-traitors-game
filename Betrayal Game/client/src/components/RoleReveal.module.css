@@ -160,3 +160,58 @@
   color: #888;
   font-style: italic;
 }
+
+@media (max-width: 480px) {
+  .container {
+    padding: 15px;
+    min-height: 100dvh;
+  }
+
+  .title {
+    font-size: 1.8rem;
+  }
+
+  .subtitle {
+    font-size: 1rem;
+  }
+
+  .card {
+    width: 200px;
+    height: 280px;
+  }
+
+  .cardBack span {
+    font-size: 4rem;
+  }
+
+  .cardFront h2 {
+    font-size: 1.5rem;
+  }
+
+  .cardFront p {
+    font-size: 0.9rem;
+  }
+
+  .traitorList {
+    padding: 15px 20px;
+    max-width: 100%;
+  }
+
+  .traitorNames {
+    gap: 10px;
+  }
+
+  .traitorName {
+    padding: 6px 12px;
+    font-size: 0.9rem;
+  }
+
+  .primaryBtn,
+  .continueBtn {
+    padding: 16px 30px;
+    font-size: 1rem;
+    min-height: 54px;
+    width: 100%;
+    max-width: 280px;
+  }
+}

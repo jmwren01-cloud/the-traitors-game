@@ -198,6 +198,14 @@ wss.on('connection', (ws: WebSocket) => {
           type: 'S2C_VOTING_STARTED',
           payload: { phase: 'VOTING' }
         });
+
+        const timer = game.createTimer('VOTING');
+        if (timer) {
+          broadcastToSession(currentSessionId, {
+            type: 'S2C_TIMER_UPDATE',
+            payload: { endTime: timer.endTime, duration: timer.duration, phase: 'VOTING' }
+          });
+        }
         return;
       }
 
@@ -264,6 +272,16 @@ wss.on('connection', (ws: WebSocket) => {
             type: 'S2C_CONTINUE_GAME',
             payload: { phase: updatedGame.phase, currentRound: updatedGame.currentRound }
           });
+
+          if (updatedGame.phase === 'ROUNDTABLE') {
+            const timer = game.createTimer('ROUNDTABLE');
+            if (timer) {
+              broadcastToSession(currentSessionId, {
+                type: 'S2C_TIMER_UPDATE',
+                payload: { endTime: timer.endTime, duration: timer.duration, phase: 'ROUNDTABLE' }
+              });
+            }
+          }
         }
         return;
       }
@@ -282,6 +300,14 @@ wss.on('connection', (ws: WebSocket) => {
             aliveTraitorCount
           }
         });
+
+        const timer = game.createTimer('NIGHT');
+        if (timer) {
+          broadcastToSession(currentSessionId, {
+            type: 'S2C_TIMER_UPDATE',
+            payload: { endTime: timer.endTime, duration: timer.duration, phase: 'NIGHT' }
+          });
+        }
         return;
       }
 
@@ -380,6 +406,54 @@ wss.on('connection', (ws: WebSocket) => {
         return;
       }
 
+      if (event.type === 'C2S_SEND_MESSAGE') {
+        const player = gameState.players.find((p) => p.id === currentPlayerId);
+        if (!player) {
+          sendError(ws, 'Player not found');
+          return;
+        }
+
+        const message = event.payload.message.trim().slice(0, 200);
+        if (!message) return;
+
+        const isTraitorOnly = event.payload.traitorOnly === true && player.role === 'TRAITOR';
+        
+        const chatMessage = {
+          id: `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+          playerId: player.id,
+          playerName: player.name,
+          message,
+          timestamp: Date.now(),
+          isTraitorOnly
+        };
+
+        const updatedGame = {
+          ...gameState,
+          messages: [...gameState.messages, chatMessage]
+        };
+        games.set(currentSessionId, updatedGame);
+
+        if (isTraitorOnly) {
+          gameState.players.forEach((p) => {
+            if (p.role === 'TRAITOR' && p.isAlive) {
+              const connection = playerConnections.get(p.id);
+              if (connection && connection.readyState === WebSocket.OPEN) {
+                connection.send(JSON.stringify({
+                  type: 'S2C_CHAT_MESSAGE',
+                  payload: chatMessage
+                }));
+              }
+            }
+          });
+        } else {
+          broadcastToSession(currentSessionId, {
+            type: 'S2C_CHAT_MESSAGE',
+            payload: chatMessage
+          });
+        }
+        return;
+      }
+
     } catch (error) {
       console.error('Error handling message:', error);
       sendError(ws, error instanceof Error ? error.message : 'Unknown error');
@@ -392,10 +466,37 @@ wss.on('connection', (ws: WebSocket) => {
       
       const gameState = games.get(currentSessionId);
       if (gameState) {
-        const updatedPlayers = gameState.players.map((p) =>
-          p.id === currentPlayerId ? { ...p, isConnected: false } : p
-        );
-        games.set(currentSessionId, { ...gameState, players: updatedPlayers });
+        let updatedGame = {
+          ...gameState,
+          players: gameState.players.map((p) =>
+            p.id === currentPlayerId ? { ...p, isConnected: false } : p
+          )
+        };
+
+        // Check if game is now empty
+        if (game.isGameEmpty(updatedGame)) {
+          games.delete(currentSessionId);
+          console.log(`Game ${currentSessionId} deleted - all players disconnected`);
+          return;
+        }
+
+        // Check if host disconnected and transfer host
+        const disconnectedPlayer = gameState.players.find((p) => p.id === currentPlayerId);
+        if (disconnectedPlayer?.isHost) {
+          const newHostId = game.findNewHost(updatedGame);
+          if (newHostId) {
+            updatedGame = game.transferHost(updatedGame, newHostId);
+            console.log(`Host transferred to ${newHostId} in game ${currentSessionId}`);
+            
+            // Notify all players of host change
+            broadcastToSession(currentSessionId, {
+              type: 'S2C_PLAYER_JOINED',
+              payload: { players: updatedGame.players }
+            });
+          }
+        }
+
+        games.set(currentSessionId, updatedGame);
       }
     }
   });
