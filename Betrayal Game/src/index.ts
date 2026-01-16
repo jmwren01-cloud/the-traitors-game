@@ -459,6 +459,24 @@ wss.on('connection', (ws: WebSocket) => {
             }
           }
         });
+
+        // Auto-resolve murder when all traitors have voted
+        if (progress.received >= progress.needed) {
+          const resolvedGame = game.resolveMurder(updatedGame);
+          games.set(currentSessionId, resolvedGame);
+          
+          const murderedPlayer = resolvedGame.players.find((p) => p.id === resolvedGame.lastMurderedPlayerId);
+          if (murderedPlayer) {
+            broadcastToSession(currentSessionId, {
+              type: 'S2C_MURDER_RESOLVED',
+              payload: {
+                murderedPlayerId: murderedPlayer.id,
+                murderedPlayerName: murderedPlayer.name,
+                phase: 'MORNING'
+              }
+            });
+          }
+        }
         return;
       }
 

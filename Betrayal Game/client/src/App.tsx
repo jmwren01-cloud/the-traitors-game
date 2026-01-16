@@ -74,6 +74,7 @@ function App() {
           aliveTraitorCount={gameState?.aliveTraitorCount}
           murderVoteProgress={gameState?.murderVoteProgress}
           murderedPlayer={gameState?.murderedPlayer}
+          traitorIds={gameState?.traitorIds}
           onSend={send}
         />
         {chatBox}

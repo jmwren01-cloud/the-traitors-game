@@ -61,6 +61,8 @@ export function Voting({ players, myPlayerId, phase, votes, banishedPlayer, curr
   };
 
   if (phase === 'ROUNDTABLE') {
+    const deadPlayers = players.filter((p) => !p.isAlive);
+    
     return (
       <div className={styles.container}>
         <h1 className={styles.title}>The Roundtable</h1>
@@ -79,6 +81,23 @@ export function Voting({ players, myPlayerId, phase, votes, banishedPlayer, curr
             </div>
           ))}
         </div>
+
+        {deadPlayers.length > 0 && (
+          <div className={styles.deadPlayersSection}>
+            <h3 className={styles.deadPlayersTitle}>Eliminated</h3>
+            <div className={styles.deadPlayersList}>
+              {deadPlayers.map((player) => (
+                <div key={player.id} className={styles.deadPlayerCard}>
+                  <div className={styles.deadAvatar}>
+                    {player.name[0]?.toUpperCase()}
+                    <span className={styles.crossMark}>✕</span>
+                  </div>
+                  <span className={styles.deadName}>{player.name}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {isHost && isRound1 && (
           <button className={styles.primaryBtn} onClick={() => onSend({ type: 'C2S_START_NIGHT', payload: {} })}>

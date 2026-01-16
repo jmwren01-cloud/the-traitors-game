@@ -11,6 +11,7 @@ interface NightPhaseProps {
   aliveTraitorCount?: number;
   murderVoteProgress?: { received: number; needed: number };
   murderedPlayer?: { id: string; name: string };
+  traitorIds?: string[];
   onSend: (event: C2SEvent) => void;
 }
 
@@ -23,6 +24,7 @@ export function NightPhase({
   aliveTraitorCount,
   murderVoteProgress,
   murderedPlayer,
+  traitorIds,
   onSend,
 }: NightPhaseProps) {
   const [selectedTarget, setSelectedTarget] = useState<string | null>(null);
@@ -31,20 +33,15 @@ export function NightPhase({
   const isHost = players.find((p) => p.id === myPlayerId)?.isHost;
   const isTraitor = myRole === 'TRAITOR';
   const aliveFaithful = players.filter((p) => p.isAlive && p.role !== 'TRAITOR');
+  const fellowTraitors = traitorIds 
+    ? players.filter((p) => traitorIds.includes(p.id) && p.id !== myPlayerId && p.isAlive)
+    : [];
 
   const handleSubmitMurder = () => {
     if (selectedTarget) {
       onSend({ type: 'C2S_SUBMIT_MURDER', payload: { targetId: selectedTarget } });
       setHasVoted(true);
     }
-  };
-
-  const handleResolveMurder = () => {
-    onSend({ type: 'C2S_RESOLVE_MURDER', payload: {} });
-  };
-
-  const handleStartMorning = () => {
-    onSend({ type: 'C2S_START_MORNING', payload: {} });
   };
 
   const handleContinueToDay = () => {
@@ -58,11 +55,24 @@ export function NightPhase({
           <div className={styles.nightOverlay}>
             <h1 className={styles.title}>Night Falls</h1>
             <p className={styles.subtitle}>Round {currentRound}</p>
-            <p className={styles.traitorInfo}>
-              {aliveTraitorCount && aliveTraitorCount > 1
-                ? `You have ${aliveTraitorCount - 1} fellow traitor(s)`
-                : 'You are the only traitor'}
-            </p>
+            
+            {fellowTraitors.length > 0 && (
+              <div className={styles.fellowTraitorsSection}>
+                <h3 className={styles.fellowTraitorsTitle}>Your Fellow Traitors</h3>
+                <div className={styles.fellowTraitorsList}>
+                  {fellowTraitors.map((traitor) => (
+                    <div key={traitor.id} className={styles.traitorBadge}>
+                      <div className={styles.traitorAvatar}>{traitor.name[0]?.toUpperCase()}</div>
+                      <span className={styles.traitorName}>{traitor.name}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            
+            {aliveTraitorCount === 1 && (
+              <p className={styles.loneTraitorInfo}>You are the only traitor remaining</p>
+            )}
 
             <h2 className={styles.sectionTitle}>Choose Your Victim</h2>
 
@@ -93,13 +103,7 @@ export function NightPhase({
               </button>
             )}
 
-            {hasVoted && <p className={styles.waiting}>Waiting for other traitors...</p>}
-
-            {isHost && (
-              <button className={styles.secondaryBtn} onClick={handleResolveMurder}>
-                Resolve Murder
-              </button>
-            )}
+            {hasVoted && <p className={styles.waiting}>Waiting for other traitors... Murder will auto-resolve when all votes are in.</p>}
           </div>
         </div>
       );
@@ -120,11 +124,7 @@ export function NightPhase({
             The traitors are choosing their victim.
           </p>
 
-          {isHost && (
-            <button className={styles.secondaryBtn} onClick={handleStartMorning}>
-              Dawn Approaches
-            </button>
-          )}
+          <p className={styles.waiting}>Waiting for traitors to decide...</p>
         </div>
       </div>
     );

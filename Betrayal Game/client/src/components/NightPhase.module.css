@@ -53,6 +53,71 @@
   font-size: 1.1rem;
 }
 
+.fellowTraitorsSection {
+  background: rgba(139, 0, 0, 0.3);
+  border: 2px solid #8b0000;
+  border-radius: 12px;
+  padding: 15px 25px;
+  margin-bottom: 2rem;
+  text-align: center;
+  box-shadow: 0 0 20px rgba(139, 0, 0, 0.4);
+}
+
+.fellowTraitorsTitle {
+  color: #ff6b6b;
+  margin: 0 0 12px 0;
+  font-size: 1rem;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+}
+
+.fellowTraitorsList {
+  display: flex;
+  gap: 15px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.traitorBadge {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+}
+
+.traitorAvatar {
+  width: 50px;
+  height: 50px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #8b0000, #dc143c);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.3rem;
+  font-weight: bold;
+  color: #fff;
+  box-shadow: 0 0 15px rgba(220, 20, 60, 0.6), 0 0 30px rgba(139, 0, 0, 0.4);
+  animation: traitorGlow 2s ease-in-out infinite;
+}
+
+@keyframes traitorGlow {
+  0%, 100% { box-shadow: 0 0 15px rgba(220, 20, 60, 0.6), 0 0 30px rgba(139, 0, 0, 0.4); }
+  50% { box-shadow: 0 0 25px rgba(220, 20, 60, 0.8), 0 0 50px rgba(139, 0, 0, 0.6); }
+}
+
+.traitorName {
+  color: #ff6b6b;
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.loneTraitorInfo {
+  color: #ff6b6b;
+  margin-bottom: 2rem;
+  font-size: 1.1rem;
+  font-style: italic;
+}
+
 .sectionTitle {
   color: #ff6b6b;
   margin-bottom: 1rem;
