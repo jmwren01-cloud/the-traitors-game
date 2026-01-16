@@ -95,6 +95,7 @@ export interface GameState {
 export type C2SEvent =
   | { type: 'C2S_CREATE_GAME'; payload: { playerName: string } }
   | { type: 'C2S_JOIN_GAME'; payload: { sessionId: string; playerName: string } }
+  | { type: 'C2S_RECONNECT'; payload: { sessionToken: string } }
   | { type: 'C2S_START_GAME'; payload: Record<string, never> }
   | { type: 'C2S_ASSIGN_ROLES'; payload: Record<string, never> }
   | { type: 'C2S_START_ROUNDTABLE'; payload: Record<string, never> }
@@ -116,8 +117,47 @@ export type C2SEvent =
 
 // Server-to-Client Events
 export type S2CEvent =
-  | { type: 'S2C_GAME_CREATED'; payload: { sessionId: string; playerId: string; playerName: string } }
-  | { type: 'S2C_GAME_JOINED'; payload: { sessionId: string; playerId: string; playerName: string; players: Player[] } }
+  | { type: 'S2C_GAME_CREATED'; payload: { sessionId: string; playerId: string; playerName: string; sessionToken: string } }
+  | { type: 'S2C_GAME_JOINED'; payload: { sessionId: string; playerId: string; playerName: string; players: Player[]; sessionToken: string } }
+  | { type: 'S2C_RECONNECTED'; payload: { 
+      sessionId: string; 
+      playerId: string; 
+      playerName: string; 
+      players: Player[];
+      phase: GamePhase;
+      role?: Role;
+      traitorIds?: string[];
+      currentRound: number;
+      messages: ChatMessage[];
+      votes: Vote[];
+      murderVotes: Vote[];
+      hostId: string;
+      winner?: 'TRAITORS' | 'FAITHFUL';
+      banishedPlayerId?: string;
+      banishedPlayerName?: string;
+      banishedPlayerRole?: Role;
+      lastMurderedPlayerId?: string;
+      lastMurderedPlayerName?: string;
+      timer?: TimerState;
+      tiedPlayerIds?: string[];
+      tiedPlayerNames?: string[];
+      voteCount?: { received: number; needed: number };
+      murderVoteProgress?: { received: number; needed: number };
+      aliveTraitorCount?: number;
+      revealIndex?: number;
+      revealOrder?: string[];
+      currentTally?: VoteTally[];
+      revealedVotes?: Vote[];
+      remainingTraitors?: number;
+      remainingFaithful?: number;
+      tiebreakerResults?: TiebreakerResult[];
+      randomlySelectedPlayerId?: string;
+      randomlySelectedPlayerName?: string;
+      randomlySelectedPlayerRole?: Role;
+      totalVotes?: number;
+    } }
+  | { type: 'S2C_PLAYER_RECONNECTED'; payload: { playerId: string; players: Player[] } }
+  | { type: 'S2C_PLAYER_DISCONNECTED'; payload: { playerId: string; players: Player[] } }
   | { type: 'S2C_PLAYER_JOINED'; payload: { players: Player[] } }
   | { type: 'S2C_GAME_STARTED'; payload: { phase: GamePhase } }
   | { type: 'S2C_ROLES_ASSIGNED'; payload: { phase: GamePhase } }

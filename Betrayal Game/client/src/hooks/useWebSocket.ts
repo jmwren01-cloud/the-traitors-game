@@ -7,12 +7,28 @@ const getWebSocketUrl = () => {
   return `${protocol}//${domain}`;
 };
 
+const SESSION_TOKEN_KEY = 'traitors_session_token';
+
+function saveSessionToken(token: string) {
+  localStorage.setItem(SESSION_TOKEN_KEY, token);
+}
+
+function getSessionToken(): string | null {
+  return localStorage.getItem(SESSION_TOKEN_KEY);
+}
+
+function clearSessionToken() {
+  localStorage.removeItem(SESSION_TOKEN_KEY);
+}
+
 export function useWebSocket() {
   const [connected, setConnected] = useState(false);
   const [gameState, setGameState] = useState<GameState | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [reconnecting, setReconnecting] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
   const myPlayerIdRef = useRef<string | null>(null);
+  const reconnectAttemptedRef = useRef(false);
 
   useEffect(() => {
     const ws = new WebSocket(getWebSocketUrl());
@@ -21,10 +37,22 @@ export function useWebSocket() {
     ws.onopen = () => {
       setConnected(true);
       setError(null);
+
+      // Try to reconnect with stored session token
+      const storedToken = getSessionToken();
+      if (storedToken && !reconnectAttemptedRef.current) {
+        reconnectAttemptedRef.current = true;
+        setReconnecting(true);
+        ws.send(JSON.stringify({
+          type: 'C2S_RECONNECT',
+          payload: { sessionToken: storedToken }
+        }));
+      }
     };
 
     ws.onclose = () => {
       setConnected(false);
+      reconnectAttemptedRef.current = false;
     };
 
     ws.onerror = () => {
@@ -48,8 +76,9 @@ export function useWebSocket() {
   const handleMessage = useCallback((msg: { type: string; payload: Record<string, unknown> }) => {
     switch (msg.type) {
       case 'S2C_GAME_CREATED': {
-        const payload = msg.payload as { sessionId: string; playerId: string; playerName: string };
+        const payload = msg.payload as { sessionId: string; playerId: string; playerName: string; sessionToken: string };
         myPlayerIdRef.current = payload.playerId;
+        saveSessionToken(payload.sessionToken);
         setGameState({
           sessionId: payload.sessionId,
           phase: 'LOBBY',
@@ -60,14 +89,125 @@ export function useWebSocket() {
       }
 
       case 'S2C_GAME_JOINED': {
-        const payload = msg.payload as { sessionId: string; playerId: string; playerName: string; players: Player[] };
+        const payload = msg.payload as { sessionId: string; playerId: string; playerName: string; players: Player[]; sessionToken: string };
         myPlayerIdRef.current = payload.playerId;
+        saveSessionToken(payload.sessionToken);
         setGameState({
           sessionId: payload.sessionId,
           phase: 'LOBBY',
           players: payload.players,
           myPlayerId: payload.playerId,
         });
+        break;
+      }
+
+      case 'S2C_RECONNECTED': {
+        const payload = msg.payload as {
+          sessionId: string;
+          playerId: string;
+          playerName: string;
+          players: Player[];
+          phase: GameState['phase'];
+          role?: Role;
+          traitorIds?: string[];
+          currentRound: number;
+          messages: ChatMessage[];
+          votes: Vote[];
+          murderVotes: Vote[];
+          hostId: string;
+          winner?: 'TRAITORS' | 'FAITHFUL';
+          banishedPlayerId?: string;
+          banishedPlayerName?: string;
+          banishedPlayerRole?: Role;
+          lastMurderedPlayerId?: string;
+          lastMurderedPlayerName?: string;
+          timer?: TimerState;
+          tiedPlayerIds?: string[];
+          tiedPlayerNames?: string[];
+          voteCount?: { received: number; needed: number };
+          murderVoteProgress?: { received: number; needed: number };
+          aliveTraitorCount?: number;
+          revealIndex?: number;
+          revealOrder?: string[];
+          currentTally?: VoteTally[];
+          revealedVotes?: Vote[];
+          remainingTraitors?: number;
+          remainingFaithful?: number;
+          tiebreakerResults?: { playerId: string; playerName: string; hasShield: boolean }[];
+          randomlySelectedPlayerId?: string;
+          randomlySelectedPlayerName?: string;
+          randomlySelectedPlayerRole?: Role;
+          totalVotes?: number;
+        };
+        myPlayerIdRef.current = payload.playerId;
+        setReconnecting(false);
+
+        // Reconstruct currentReveal from last revealed vote if in progress
+        let currentReveal = undefined;
+        const revealedCount = payload.revealedVotes?.length || 0;
+        const totalVoteCount = payload.totalVotes || payload.votes.length;
+        // Use revealedVotes length to determine if reveal is in progress (more reliable than revealIndex)
+        if (payload.revealedVotes && revealedCount > 0 && revealedCount < totalVoteCount) {
+          const lastVote = payload.revealedVotes[revealedCount - 1];
+          if (lastVote) {
+            const voter = payload.players.find((p) => p.id === lastVote.voterId);
+            const target = payload.players.find((p) => p.id === lastVote.targetId);
+            currentReveal = {
+              vote: lastVote,
+              voterName: voter?.name || 'Unknown',
+              targetName: target?.name || 'Unknown',
+            };
+          }
+        }
+
+        setGameState({
+          sessionId: payload.sessionId,
+          phase: payload.phase,
+          players: payload.players,
+          myPlayerId: payload.playerId,
+          myRole: payload.role,
+          traitorIds: payload.traitorIds,
+          currentRound: payload.currentRound,
+          messages: payload.messages,
+          votes: payload.votes,
+          winner: payload.winner,
+          banishedPlayer: payload.banishedPlayerId && payload.banishedPlayerName && payload.banishedPlayerRole
+            ? { id: payload.banishedPlayerId, name: payload.banishedPlayerName, role: payload.banishedPlayerRole }
+            : undefined,
+          murderedPlayer: payload.lastMurderedPlayerId && payload.lastMurderedPlayerName
+            ? { id: payload.lastMurderedPlayerId, name: payload.lastMurderedPlayerName }
+            : undefined,
+          timer: payload.timer,
+          tiedPlayerIds: payload.tiedPlayerIds,
+          tiedPlayerNames: payload.tiedPlayerNames,
+          voteCount: payload.voteCount,
+          murderVoteProgress: payload.murderVoteProgress,
+          aliveTraitorCount: payload.aliveTraitorCount,
+          revealIndex: payload.revealIndex,
+          revealOrder: payload.revealOrder,
+          currentTally: payload.currentTally,
+          revealedVotes: payload.revealedVotes,
+          totalVotes: payload.totalVotes || payload.votes.length,
+          remainingTraitors: payload.remainingTraitors,
+          remainingFaithful: payload.remainingFaithful,
+          tiebreakerResults: payload.tiebreakerResults,
+          randomlySelectedPlayer: payload.randomlySelectedPlayerId && payload.randomlySelectedPlayerName && payload.randomlySelectedPlayerRole
+            ? { id: payload.randomlySelectedPlayerId, name: payload.randomlySelectedPlayerName, role: payload.randomlySelectedPlayerRole }
+            : undefined,
+          currentReveal,
+        });
+        break;
+      }
+
+      case 'S2C_PLAYER_DISCONNECTED': {
+        const payload = msg.payload as { playerId: string; players: Player[] };
+        setGameState((prev) => prev ? { ...prev, players: payload.players } : null);
+        break;
+      }
+
+      case 'S2C_PLAYER_RECONNECTED': {
+        const payload = msg.payload as { playerId: string; players: Player[] };
+        setGameState((prev) => prev ? { ...prev, players: payload.players } : null);
         break;
       }
 
@@ -385,6 +525,11 @@ export function useWebSocket() {
       case 'S2C_ERROR': {
         const payload = msg.payload as { message: string };
         setError(payload.message);
+        // If reconnection failed, clear the token and stop reconnecting
+        if (payload.message.includes('session') || payload.message.includes('token')) {
+          clearSessionToken();
+          setReconnecting(false);
+        }
         setTimeout(() => setError(null), 5000);
         break;
       }
@@ -397,5 +542,5 @@ export function useWebSocket() {
     }
   }, []);
 
-  return { connected, gameState, error, send, myPlayerId: myPlayerIdRef.current };
+  return { connected, gameState, error, send, myPlayerId: myPlayerIdRef.current, reconnecting };
 }

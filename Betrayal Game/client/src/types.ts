@@ -100,6 +100,7 @@ export interface GameState {
 export type C2SEvent =
   | { type: 'C2S_CREATE_GAME'; payload: { playerName: string } }
   | { type: 'C2S_JOIN_GAME'; payload: { sessionId: string; playerName: string } }
+  | { type: 'C2S_RECONNECT'; payload: { sessionToken: string } }
   | { type: 'C2S_START_GAME'; payload: Record<string, never> }
   | { type: 'C2S_ASSIGN_ROLES'; payload: Record<string, never> }
   | { type: 'C2S_START_ROUNDTABLE'; payload: Record<string, never> }

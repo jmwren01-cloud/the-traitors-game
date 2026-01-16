@@ -5,6 +5,7 @@ import { createServer } from 'http';
 import { readFileSync, existsSync, statSync } from 'fs';
 import { join, dirname, extname } from 'path';
 import { fileURLToPath } from 'url';
+import crypto from 'crypto';
 import * as game from './game/manager.js';
 import type { GameState, C2SEvent, S2CEvent, ChatMessage } from './game/types.js';
 
@@ -68,6 +69,29 @@ const wss = new WebSocketServer({ server: httpServer });
 const games = new Map<string, GameState>();
 const playerConnections = new Map<string, WebSocket>();
 const activeRevealSequences = new Map<string, NodeJS.Timeout>();
+
+// Session token tracking for reconnection
+const sessionTokens = new Map<string, { playerId: string; sessionId: string }>();
+const disconnectedPlayers = new Map<string, { playerId: string; sessionId: string; disconnectedAt: number }>();
+const GRACE_PERIOD_MS = 60000; // 60 seconds grace period for reconnection
+
+function generateSessionToken(): string {
+  return crypto.randomUUID();
+}
+
+function cleanupExpiredDisconnections() {
+  const now = Date.now();
+  for (const [token, data] of disconnectedPlayers.entries()) {
+    if (now - data.disconnectedAt > GRACE_PERIOD_MS) {
+      disconnectedPlayers.delete(token);
+      sessionTokens.delete(token);
+      console.log(`Session token expired for player ${data.playerId}`);
+    }
+  }
+}
+
+// Run cleanup every 15 seconds
+setInterval(cleanupExpiredDisconnections, 15000);
 
 function startVoteRevealSequence(sessionId: string) {
   if (activeRevealSequences.has(sessionId)) {
@@ -201,12 +225,16 @@ wss.on('connection', (ws: WebSocket) => {
         currentSessionId = gameState.sessionId;
         playerConnections.set(currentPlayerId, ws);
 
+        const sessionToken = generateSessionToken();
+        sessionTokens.set(sessionToken, { playerId: currentPlayerId, sessionId: currentSessionId });
+
         const response: S2CEvent = {
           type: 'S2C_GAME_CREATED',
           payload: {
             sessionId: gameState.sessionId,
             playerId: currentPlayerId,
-            playerName: event.payload.playerName
+            playerName: event.payload.playerName,
+            sessionToken
           }
         };
         ws.send(JSON.stringify(response));
@@ -231,13 +259,17 @@ wss.on('connection', (ws: WebSocket) => {
         currentSessionId = event.payload.sessionId;
         playerConnections.set(playerId, ws);
 
+        const sessionToken = generateSessionToken();
+        sessionTokens.set(sessionToken, { playerId, sessionId: event.payload.sessionId });
+
         const joinResponse: S2CEvent = {
           type: 'S2C_GAME_JOINED',
           payload: {
             sessionId: event.payload.sessionId,
             playerId: playerId,
             playerName: event.payload.playerName,
-            players: updatedGame.players
+            players: updatedGame.players,
+            sessionToken
           }
         };
         ws.send(JSON.stringify(joinResponse));
@@ -246,6 +278,136 @@ wss.on('connection', (ws: WebSocket) => {
           type: 'S2C_PLAYER_JOINED',
           payload: { players: updatedGame.players }
         });
+        return;
+      }
+
+      if (event.type === 'C2S_RECONNECT') {
+        const tokenData = sessionTokens.get(event.payload.sessionToken);
+        if (!tokenData) {
+          sendError(ws, 'Invalid or expired session token');
+          return;
+        }
+
+        const gameState = games.get(tokenData.sessionId);
+        if (!gameState) {
+          sendError(ws, 'Game no longer exists');
+          sessionTokens.delete(event.payload.sessionToken);
+          return;
+        }
+
+        const player = gameState.players.find((p) => p.id === tokenData.playerId);
+        if (!player) {
+          sendError(ws, 'Player not found in game');
+          sessionTokens.delete(event.payload.sessionToken);
+          return;
+        }
+
+        // Remove from disconnected tracking
+        disconnectedPlayers.delete(event.payload.sessionToken);
+
+        // Restore connection
+        currentPlayerId = tokenData.playerId;
+        currentSessionId = tokenData.sessionId;
+        playerConnections.set(currentPlayerId, ws);
+
+        // Mark player as connected
+        const updatedGame = {
+          ...gameState,
+          players: gameState.players.map((p) =>
+            p.id === currentPlayerId ? { ...p, isConnected: true } : p
+          )
+        };
+        games.set(currentSessionId, updatedGame);
+
+        // Get traitor IDs if player is a traitor
+        const traitorIds = player.role === 'TRAITOR' ? game.getTraitorIds(updatedGame) : undefined;
+
+        // Get banished player info
+        const banishedPlayer = updatedGame.banishedPlayerId 
+          ? updatedGame.players.find((p) => p.id === updatedGame.banishedPlayerId)
+          : undefined;
+
+        // Get murdered player info
+        const murderedPlayer = updatedGame.lastMurderedPlayerId
+          ? updatedGame.players.find((p) => p.id === updatedGame.lastMurderedPlayerId)
+          : undefined;
+
+        // Get tied player names
+        const tiedPlayerNames = updatedGame.tiedPlayerIds?.map((id) => {
+          const p = updatedGame.players.find((pl) => pl.id === id);
+          return p?.name || 'Unknown';
+        });
+
+        // Calculate vote count
+        const aliveCount = updatedGame.players.filter((p) => p.isAlive).length;
+        const voteCount = updatedGame.phase === 'VOTING' || updatedGame.phase === 'REVOTE'
+          ? { received: updatedGame.votes.length, needed: aliveCount }
+          : undefined;
+
+        // Calculate murder vote progress
+        const aliveTraitors = updatedGame.players.filter((p) => p.isAlive && p.role === 'TRAITOR');
+        const murderVoteProgress = updatedGame.phase === 'NIGHT'
+          ? { received: updatedGame.murderVotes.length, needed: aliveTraitors.length }
+          : undefined;
+
+        // Get win condition counts
+        const remainingTraitors = updatedGame.players.filter((p) => p.isAlive && p.role === 'TRAITOR').length;
+        const remainingFaithful = updatedGame.players.filter((p) => p.isAlive && p.role === 'FAITHFUL').length;
+
+        // Send full state sync to reconnecting player
+        const reconnectResponse: S2CEvent = {
+          type: 'S2C_RECONNECTED',
+          payload: {
+            sessionId: currentSessionId,
+            playerId: currentPlayerId,
+            playerName: player.name,
+            players: updatedGame.players,
+            phase: updatedGame.phase,
+            role: player.role,
+            traitorIds,
+            currentRound: updatedGame.currentRound,
+            messages: updatedGame.messages,
+            votes: updatedGame.votes,
+            murderVotes: updatedGame.murderVotes,
+            hostId: updatedGame.hostId,
+            winner: updatedGame.winner,
+            banishedPlayerId: updatedGame.banishedPlayerId,
+            banishedPlayerName: banishedPlayer?.name,
+            banishedPlayerRole: banishedPlayer?.role,
+            lastMurderedPlayerId: updatedGame.lastMurderedPlayerId,
+            lastMurderedPlayerName: murderedPlayer?.name,
+            timer: updatedGame.timer,
+            tiedPlayerIds: updatedGame.tiedPlayerIds,
+            tiedPlayerNames,
+            voteCount,
+            murderVoteProgress,
+            aliveTraitorCount: aliveTraitors.length,
+            revealIndex: updatedGame.revealIndex,
+            revealOrder: updatedGame.revealOrder,
+            currentTally: updatedGame.currentTally,
+            revealedVotes: updatedGame.revealedVotes,
+            remainingTraitors,
+            remainingFaithful,
+            tiebreakerResults: updatedGame.tiebreakerResults,
+            randomlySelectedPlayerId: updatedGame.randomlySelectedPlayerId,
+            randomlySelectedPlayerName: updatedGame.randomlySelectedPlayerId 
+              ? updatedGame.players.find((p) => p.id === updatedGame.randomlySelectedPlayerId)?.name 
+              : undefined,
+            randomlySelectedPlayerRole: updatedGame.randomlySelectedPlayerId
+              ? updatedGame.players.find((p) => p.id === updatedGame.randomlySelectedPlayerId)?.role
+              : undefined,
+            totalVotes: updatedGame.votes.length
+          }
+        };
+        ws.send(JSON.stringify(reconnectResponse));
+
+        // Notify other players
+        broadcastToSession(currentSessionId, {
+          type: 'S2C_PLAYER_RECONNECTED',
+          payload: { playerId: currentPlayerId, players: updatedGame.players }
+        });
+
+        console.log(`Player ${player.name} reconnected to game ${currentSessionId}`);
         return;
       }
 
@@ -816,6 +978,19 @@ wss.on('connection', (ws: WebSocket) => {
           )
         };
 
+        // Track disconnection for potential reconnection
+        for (const [token, data] of sessionTokens.entries()) {
+          if (data.playerId === currentPlayerId && data.sessionId === currentSessionId) {
+            disconnectedPlayers.set(token, {
+              playerId: currentPlayerId,
+              sessionId: currentSessionId,
+              disconnectedAt: Date.now()
+            });
+            console.log(`Player ${currentPlayerId} disconnected, grace period started`);
+            break;
+          }
+        }
+
         // Check if game is now empty
         if (game.isGameEmpty(updatedGame)) {
           games.delete(currentSessionId);
@@ -830,16 +1005,16 @@ wss.on('connection', (ws: WebSocket) => {
           if (newHostId) {
             updatedGame = game.transferHost(updatedGame, newHostId);
             console.log(`Host transferred to ${newHostId} in game ${currentSessionId}`);
-            
-            // Notify all players of host change
-            broadcastToSession(currentSessionId, {
-              type: 'S2C_PLAYER_JOINED',
-              payload: { players: updatedGame.players }
-            });
           }
         }
 
         games.set(currentSessionId, updatedGame);
+
+        // Notify other players of disconnect
+        broadcastToSession(currentSessionId, {
+          type: 'S2C_PLAYER_DISCONNECTED',
+          payload: { playerId: currentPlayerId, players: updatedGame.players }
+        });
       }
     }
   });

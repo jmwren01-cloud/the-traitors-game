@@ -115,11 +115,12 @@ export function Lobby({ sessionId, players, myPlayerId, onSend }: LobbyProps) {
       <div className={styles.playerList}>
         <h2>Players ({players.length}/22)</h2>
         {players.map((player) => (
-          <div key={player.id} className={`${styles.playerCard} ${player.id === myPlayerId ? styles.me : ''}`}>
+          <div key={player.id} className={`${styles.playerCard} ${player.id === myPlayerId ? styles.me : ''} ${player.isConnected === false ? styles.disconnected : ''}`}>
             <span className={styles.playerName}>
               {player.name}
               {player.isHost && <span className={styles.hostBadge}>HOST</span>}
               {player.id === myPlayerId && <span className={styles.youBadge}>YOU</span>}
+              {player.isConnected === false && <span className={styles.disconnectedBadge}>AWAY</span>}
             </span>
           </div>
         ))}
