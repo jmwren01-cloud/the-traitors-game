@@ -72,6 +72,9 @@ Start workflow: `cd "Betrayal Game" && npm run dev`
 - 2026-01-16: Random tiebreaker selection when revote still ties (TIEBREAKER_REVEAL phase)
 - 2026-01-16: Duplicate name prevention when joining games
 - 2026-01-16: Fixed Round 1 currentRound tracking for proper discussion-only mode
+- 2026-01-16: Added "Fellow Traitors" section during night phase with red glowing avatars
+- 2026-01-16: Auto-advance murder resolution when all traitors vote (no manual button needed)
+- 2026-01-16: Dead player visualization at roundtable with cross marks and strikethrough names
 
 ## Remaining Tasks
 - Reconnection handling with session tokens
