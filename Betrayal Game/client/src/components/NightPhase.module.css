@@ -141,18 +141,29 @@
   border: 2px solid transparent;
   border-radius: 15px;
   cursor: pointer;
-  transition: all 0.3s;
+  transition: all 0.3s ease;
 }
 
-.targetCard:hover {
+.targetCard:hover:not(.selected) {
   background: rgba(139, 0, 0, 0.4);
   transform: translateY(-5px);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.3);
 }
 
 .targetCard.selected {
   border-color: #ff0000;
   background: rgba(255, 0, 0, 0.3);
   box-shadow: 0 0 20px rgba(255, 0, 0, 0.3);
+  animation: selectedMurderPulse 1.5s ease-in-out infinite;
+}
+
+@keyframes selectedMurderPulse {
+  0%, 100% {
+    box-shadow: 0 0 15px rgba(255, 0, 0, 0.3);
+  }
+  50% {
+    box-shadow: 0 0 30px rgba(255, 0, 0, 0.6);
+  }
 }
 
 .avatar {
@@ -202,18 +213,36 @@
   font-size: 1.1rem;
   font-weight: bold;
   cursor: pointer;
-  transition: transform 0.2s, box-shadow 0.3s;
+  transition: transform 0.2s ease, box-shadow 0.3s ease;
   margin-bottom: 1rem;
+  box-shadow: 0 4px 15px rgba(139, 0, 0, 0.4);
+  animation: murderPulse 2s ease-in-out infinite;
 }
 
 .murderBtn:hover:not(:disabled) {
-  transform: scale(1.05);
-  box-shadow: 0 0 30px rgba(255, 0, 0, 0.5);
+  transform: scale(1.05) translateY(-2px);
+  box-shadow: 0 0 35px rgba(255, 0, 0, 0.6);
+  animation: none;
+}
+
+.murderBtn:active:not(:disabled) {
+  transform: scale(0.98);
 }
 
 .murderBtn:disabled {
   background: #444;
   cursor: not-allowed;
+  animation: none;
+  box-shadow: none;
+}
+
+@keyframes murderPulse {
+  0%, 100% {
+    box-shadow: 0 4px 15px rgba(139, 0, 0, 0.4);
+  }
+  50% {
+    box-shadow: 0 4px 25px rgba(255, 0, 0, 0.6);
+  }
 }
 
 .secondaryBtn {
@@ -242,18 +271,30 @@
   font-size: 1.1rem;
   font-weight: bold;
   cursor: pointer;
-  transition: transform 0.2s;
+  transition: transform 0.2s ease, box-shadow 0.3s ease;
   margin-top: 2rem;
+  box-shadow: 0 4px 15px rgba(255, 165, 0, 0.3);
 }
 
 .primaryBtn:hover {
-  transform: scale(1.05);
+  transform: scale(1.05) translateY(-2px);
+  box-shadow: 0 6px 25px rgba(255, 165, 0, 0.5);
+}
+
+.primaryBtn:active {
+  transform: scale(0.98);
 }
 
 .waiting {
   color: #888;
   font-style: italic;
   margin-bottom: 1rem;
+  animation: waitingPulse 1.5s ease-in-out infinite;
+}
+
+@keyframes waitingPulse {
+  0%, 100% { opacity: 0.6; }
+  50% { opacity: 1; }
 }
 
 .sleepingIcon {

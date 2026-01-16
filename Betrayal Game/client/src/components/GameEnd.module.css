@@ -27,6 +27,18 @@
   padding: 30px 50px;
   border-radius: 20px;
   margin-bottom: 2rem;
+  animation: winnerFadeIn 1s ease-out;
+}
+
+@keyframes winnerFadeIn {
+  from {
+    opacity: 0;
+    transform: scale(0.8);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
 }
 
 .traitorWin .winnerBanner {
@@ -63,6 +75,16 @@
   border-radius: 10px;
   margin-bottom: 2rem;
   border: 2px solid #ffd700;
+  animation: victoryGlow 1.5s ease-in-out infinite;
+}
+
+@keyframes victoryGlow {
+  0%, 100% {
+    box-shadow: 0 0 10px rgba(255, 215, 0, 0.3);
+  }
+  50% {
+    box-shadow: 0 0 25px rgba(255, 215, 0, 0.6);
+  }
 }
 
 .victoryMessage p {
@@ -119,6 +141,27 @@
   gap: 10px;
   padding: 10px 15px;
   border-radius: 10px;
+  animation: playerReveal 0.5s ease-out backwards;
+}
+
+.playerCard:nth-child(1) { animation-delay: 0.1s; }
+.playerCard:nth-child(2) { animation-delay: 0.2s; }
+.playerCard:nth-child(3) { animation-delay: 0.3s; }
+.playerCard:nth-child(4) { animation-delay: 0.4s; }
+.playerCard:nth-child(5) { animation-delay: 0.5s; }
+.playerCard:nth-child(6) { animation-delay: 0.6s; }
+.playerCard:nth-child(7) { animation-delay: 0.7s; }
+.playerCard:nth-child(8) { animation-delay: 0.8s; }
+
+@keyframes playerReveal {
+  from {
+    opacity: 0;
+    transform: translateX(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
 }
 
 .traitorCard {
@@ -165,13 +208,28 @@
   font-size: 1.3rem;
   font-weight: bold;
   cursor: pointer;
-  transition: transform 0.2s, box-shadow 0.3s;
+  transition: transform 0.2s ease, box-shadow 0.3s ease;
   box-shadow: 0 5px 20px rgba(233, 69, 96, 0.4);
+  animation: playAgainPulse 2s ease-in-out infinite;
 }
 
 .playAgainBtn:hover {
-  transform: scale(1.05);
+  transform: scale(1.05) translateY(-2px);
   box-shadow: 0 8px 30px rgba(233, 69, 96, 0.6);
+  animation: none;
+}
+
+.playAgainBtn:active {
+  transform: scale(0.98);
+}
+
+@keyframes playAgainPulse {
+  0%, 100% {
+    box-shadow: 0 5px 20px rgba(233, 69, 96, 0.4);
+  }
+  50% {
+    box-shadow: 0 5px 30px rgba(233, 69, 96, 0.7);
+  }
 }
 
 @media (max-width: 480px) {

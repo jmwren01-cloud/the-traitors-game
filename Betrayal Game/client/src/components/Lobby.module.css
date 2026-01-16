@@ -66,17 +66,25 @@
   font-size: 1.1rem;
   font-weight: bold;
   cursor: pointer;
-  transition: transform 0.2s, background 0.3s;
+  transition: transform 0.2s ease, background 0.3s ease, box-shadow 0.3s ease;
+  box-shadow: 0 4px 12px rgba(233, 69, 96, 0.3);
 }
 
 .primaryBtn:hover:not(:disabled) {
-  transform: scale(1.02);
+  transform: scale(1.03) translateY(-2px);
   background: #ff6b6b;
+  box-shadow: 0 6px 20px rgba(233, 69, 96, 0.5);
+}
+
+.primaryBtn:active:not(:disabled) {
+  transform: scale(0.98);
+  box-shadow: 0 2px 8px rgba(233, 69, 96, 0.4);
 }
 
 .primaryBtn:disabled {
   background: #555;
   cursor: not-allowed;
+  box-shadow: none;
 }
 
 .secondaryBtn {
@@ -88,11 +96,17 @@
   font-size: 1.1rem;
   font-weight: bold;
   cursor: pointer;
-  transition: all 0.3s;
+  transition: all 0.3s ease;
 }
 
 .secondaryBtn:hover {
   background: rgba(233, 69, 96, 0.2);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 15px rgba(233, 69, 96, 0.3);
+}
+
+.secondaryBtn:active {
+  transform: translateY(0);
 }
 
 .backBtn {
@@ -143,7 +157,19 @@
   background: rgba(255, 255, 255, 0.05);
   border-radius: 8px;
   margin-bottom: 8px;
-  transition: background 0.3s;
+  transition: background 0.3s, transform 0.2s, opacity 0.3s;
+  animation: playerJoin 0.4s ease-out;
+}
+
+@keyframes playerJoin {
+  from {
+    opacity: 0;
+    transform: translateX(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
 }
 
 .playerCard.me {
@@ -177,6 +203,12 @@
 .disconnected {
   opacity: 0.5;
   border: 1px dashed #888;
+  animation: disconnectedPulse 2s ease-in-out infinite;
+}
+
+@keyframes disconnectedPulse {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 0.6; }
 }
 
 .disconnectedBadge {
@@ -191,6 +223,12 @@
 .waitingText {
   color: #888;
   text-align: center;
+  animation: waitingPulse 1.5s ease-in-out infinite;
+}
+
+@keyframes waitingPulse {
+  0%, 100% { opacity: 0.6; }
+  50% { opacity: 1; }
 }
 
 .startBtn {
@@ -202,13 +240,28 @@
   font-size: 1.3rem;
   font-weight: bold;
   cursor: pointer;
-  transition: transform 0.2s, box-shadow 0.3s;
+  transition: transform 0.2s ease, box-shadow 0.3s ease;
   box-shadow: 0 5px 20px rgba(233, 69, 96, 0.4);
+  animation: readyPulse 2s ease-in-out infinite;
 }
 
 .startBtn:hover {
   transform: scale(1.05);
   box-shadow: 0 8px 30px rgba(233, 69, 96, 0.6);
+  animation: none;
+}
+
+.startBtn:active {
+  transform: scale(0.98);
+}
+
+@keyframes readyPulse {
+  0%, 100% {
+    box-shadow: 0 5px 20px rgba(233, 69, 96, 0.4);
+  }
+  50% {
+    box-shadow: 0 5px 30px rgba(233, 69, 96, 0.7);
+  }
 }
 
 @media (max-width: 480px) {

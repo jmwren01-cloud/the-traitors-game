@@ -30,23 +30,52 @@
 .timer.urgent {
   border-color: #e94560;
   background: rgba(233, 69, 96, 0.2);
-  animation: pulse 1s infinite;
+  animation: urgentPulse 0.8s ease-in-out infinite;
+}
+
+.timer.urgent .time {
+  color: #ff6b6b;
+  animation: urgentBlink 0.5s ease-in-out infinite alternate;
 }
 
 .timer.expired {
   border-color: #ff0000;
   background: rgba(255, 0, 0, 0.3);
   color: #ff6b6b;
+  animation: shake 0.4s ease-in-out;
 }
 
-@keyframes pulse {
+@keyframes urgentPulse {
   0%, 100% {
     transform: scale(1);
     box-shadow: 0 4px 15px rgba(233, 69, 96, 0.4);
   }
   50% {
-    transform: scale(1.05);
-    box-shadow: 0 4px 25px rgba(233, 69, 96, 0.6);
+    transform: scale(1.08);
+    box-shadow: 0 4px 30px rgba(233, 69, 96, 0.7);
+  }
+}
+
+@keyframes urgentBlink {
+  from { opacity: 1; }
+  to { opacity: 0.6; }
+}
+
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-4px); }
+  75% { transform: translateX(4px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .timer.urgent {
+    animation: none;
+  }
+  .timer.urgent .time {
+    animation: none;
+  }
+  .timer.expired {
+    animation: none;
   }
 }
 

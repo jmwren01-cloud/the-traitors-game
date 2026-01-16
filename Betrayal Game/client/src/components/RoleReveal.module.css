@@ -132,11 +132,17 @@
   font-size: 1.1rem;
   font-weight: bold;
   cursor: pointer;
-  transition: transform 0.2s;
+  transition: transform 0.2s ease, box-shadow 0.3s ease;
+  box-shadow: 0 4px 15px rgba(233, 69, 96, 0.3);
 }
 
 .primaryBtn:hover {
-  transform: scale(1.05);
+  transform: scale(1.05) translateY(-2px);
+  box-shadow: 0 6px 25px rgba(233, 69, 96, 0.5);
+}
+
+.primaryBtn:active {
+  transform: scale(0.98);
 }
 
 .continueBtn {
@@ -148,17 +154,40 @@
   font-size: 1.1rem;
   font-weight: bold;
   cursor: pointer;
-  transition: transform 0.2s;
+  transition: transform 0.2s ease, box-shadow 0.3s ease;
   margin-top: 1rem;
+  box-shadow: 0 4px 15px rgba(233, 69, 96, 0.3);
+  animation: continueGlow 2s ease-in-out infinite;
 }
 
 .continueBtn:hover {
-  transform: scale(1.05);
+  transform: scale(1.05) translateY(-2px);
+  box-shadow: 0 6px 25px rgba(233, 69, 96, 0.5);
+  animation: none;
+}
+
+.continueBtn:active {
+  transform: scale(0.98);
+}
+
+@keyframes continueGlow {
+  0%, 100% {
+    box-shadow: 0 4px 15px rgba(233, 69, 96, 0.3);
+  }
+  50% {
+    box-shadow: 0 4px 25px rgba(233, 69, 96, 0.6);
+  }
 }
 
 .waiting {
   color: #888;
   font-style: italic;
+  animation: waitingPulse 1.5s ease-in-out infinite;
+}
+
+@keyframes waitingPulse {
+  0%, 100% { opacity: 0.6; }
+  50% { opacity: 1; }
 }
 
 @media (max-width: 480px) {
