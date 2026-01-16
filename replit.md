@@ -90,7 +90,7 @@ Start workflow: `cd "Betrayal Game" && npm run dev`
   - Auto-votes shown with orange dashed border and "Auto" badge during reveal
 
 ## Remaining Tasks
-- Animation polish pass
+- None - Phase 1 complete!
 
 ## Sound Effects (Completed 2026-01-16)
 - Web Audio API oscillator-based sound generation (no external audio files)
