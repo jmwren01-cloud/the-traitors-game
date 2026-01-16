@@ -378,6 +378,212 @@
   }
 }
 
+.reasonSection {
+  width: 100%;
+  max-width: 400px;
+  margin-bottom: 1.5rem;
+}
+
+.reasonLabel {
+  display: block;
+  color: #888;
+  font-size: 0.9rem;
+  margin-bottom: 0.5rem;
+}
+
+.reasonInput {
+  width: 100%;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 8px;
+  color: #fff;
+  font-size: 1rem;
+  resize: none;
+  font-family: inherit;
+}
+
+.reasonInput::placeholder {
+  color: #666;
+}
+
+.reasonInput:focus {
+  outline: none;
+  border-color: #e94560;
+}
+
+.reasonCounter {
+  text-align: right;
+  color: #666;
+  font-size: 0.8rem;
+  margin-top: 4px;
+}
+
+.progressBar {
+  width: 100%;
+  max-width: 400px;
+  height: 8px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+  overflow: hidden;
+  margin-bottom: 0.5rem;
+}
+
+.progressFill {
+  height: 100%;
+  background: linear-gradient(90deg, #e94560, #ff6b6b);
+  border-radius: 4px;
+  transition: width 0.3s ease;
+}
+
+.progressText {
+  color: #888;
+  font-size: 0.9rem;
+  margin-bottom: 2rem;
+}
+
+.currentRevealCard {
+  background: rgba(255, 255, 255, 0.08);
+  border: 2px solid #e94560;
+  border-radius: 16px;
+  padding: 24px;
+  margin-bottom: 2rem;
+  width: 100%;
+  max-width: 450px;
+  animation: slideIn 0.4s ease-out;
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.revealHeader {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.voterSection,
+.targetSection {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.voterName,
+.targetName {
+  font-weight: 600;
+  font-size: 1rem;
+}
+
+.votedFor {
+  color: #888;
+  font-size: 0.9rem;
+}
+
+.avatarTarget {
+  width: 50px;
+  height: 50px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #ff6b6b, #8b0000);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.5rem;
+  font-weight: bold;
+}
+
+.reasonReveal {
+  margin-top: 16px;
+  padding: 12px 16px;
+  background: rgba(233, 69, 96, 0.15);
+  border-radius: 8px;
+  font-style: italic;
+  color: #ccc;
+  text-align: center;
+  font-size: 0.95rem;
+}
+
+.tallySection {
+  width: 100%;
+  max-width: 400px;
+  margin-bottom: 2rem;
+}
+
+.tallyTitle {
+  text-align: center;
+  color: #e94560;
+  margin-bottom: 1rem;
+  font-size: 1.1rem;
+}
+
+.tallyList {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.tallyItem {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 8px;
+}
+
+.tallyName {
+  width: 100px;
+  font-size: 0.9rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tallyBar {
+  flex: 1;
+  height: 20px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.tallyBarFill {
+  height: 100%;
+  background: linear-gradient(90deg, #e94560, #ff6b6b);
+  border-radius: 10px;
+  transition: width 0.5s ease;
+  min-width: 4px;
+}
+
+.tallyCount {
+  font-weight: bold;
+  color: #e94560;
+  min-width: 24px;
+  text-align: right;
+}
+
+.topTallyItem {
+  background: rgba(233, 69, 96, 0.2);
+  border: 2px solid #e94560;
+  animation: pulseGlow 1.5s ease-in-out infinite;
+}
+
+@keyframes pulseGlow {
+  0%, 100% { box-shadow: 0 0 5px rgba(233, 69, 96, 0.3); }
+  50% { box-shadow: 0 0 15px rgba(233, 69, 96, 0.6); }
+}
+
 @media (max-width: 480px) {
   .container {
     padding: 15px;

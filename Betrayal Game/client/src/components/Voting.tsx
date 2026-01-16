@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import type { Player, C2SEvent, Role, Vote } from '../types';
+import type { Player, C2SEvent, Role, Vote, VoteTally } from '../types';
 import styles from './Voting.module.css';
 
 interface VotingProps {
@@ -13,11 +13,24 @@ interface VotingProps {
   tiedPlayerIds?: string[];
   tiedPlayerNames?: string[];
   randomlySelectedPlayer?: { id: string; name: string; role: Role };
+  revealIndex?: number;
+  revealOrder?: string[];
+  currentTally?: VoteTally[];
+  revealedVotes?: Vote[];
+  currentReveal?: {
+    vote: Vote;
+    voterName: string;
+    targetName: string;
+  };
   onSend: (event: C2SEvent) => void;
 }
 
-export function Voting({ players, myPlayerId, phase, votes, banishedPlayer, currentRound, voteCount, tiedPlayerIds, tiedPlayerNames, randomlySelectedPlayer, onSend }: VotingProps) {
+const REASON_MAX_LENGTH = 120;
+
+export function Voting({ players, myPlayerId, phase, votes: _votes, banishedPlayer, currentRound, voteCount, tiedPlayerIds, tiedPlayerNames, randomlySelectedPlayer, revealIndex, currentTally, revealedVotes, currentReveal, onSend }: VotingProps) {
+  void _votes;
   const [selectedTarget, setSelectedTarget] = useState<string | null>(null);
+  const [reasonText, setReasonText] = useState('');
   const [hasVoted, setHasVoted] = useState(false);
   const prevPhaseRef = useRef(phase);
 
@@ -25,6 +38,7 @@ export function Voting({ players, myPlayerId, phase, votes, banishedPlayer, curr
     if ((phase === 'VOTING' || phase === 'REVOTE') && prevPhaseRef.current !== phase) {
       setHasVoted(false);
       setSelectedTarget(null);
+      setReasonText('');
     }
     prevPhaseRef.current = phase;
   }, [phase]);
@@ -41,23 +55,15 @@ export function Voting({ players, myPlayerId, phase, votes, banishedPlayer, curr
       if (phase === 'REVOTE') {
         onSend({ type: 'C2S_SUBMIT_REVOTE', payload: { targetId: selectedTarget } });
       } else {
-        onSend({ type: 'C2S_SUBMIT_VOTE', payload: { targetId: selectedTarget } });
+        const trimmedReason = reasonText.trim().slice(0, REASON_MAX_LENGTH);
+        onSend({ type: 'C2S_SUBMIT_VOTE', payload: { targetId: selectedTarget, reasonText: trimmedReason || undefined } });
       }
       setHasVoted(true);
     }
   };
 
-  const handleBanish = () => {
-    onSend({ type: 'C2S_BANISH_PLAYER', payload: {} });
-  };
-
   const handleCheckWin = () => {
     onSend({ type: 'C2S_CHECK_WIN', payload: {} });
-  };
-
-  const getVoteCount = (playerId: string) => {
-    if (!votes) return 0;
-    return votes.filter((v) => v.targetId === playerId).length;
   };
 
   if (phase === 'ROUNDTABLE') {
@@ -135,6 +141,25 @@ export function Voting({ players, myPlayerId, phase, votes, banishedPlayer, curr
           ))}
         </div>
 
+        {canVote && selectedTarget && (
+          <div className={styles.reasonSection}>
+            <label className={styles.reasonLabel}>
+              Why are you voting for them? (optional)
+            </label>
+            <textarea
+              className={styles.reasonInput}
+              value={reasonText}
+              onChange={(e) => setReasonText(e.target.value.slice(0, REASON_MAX_LENGTH))}
+              placeholder="They seemed suspicious when..."
+              maxLength={REASON_MAX_LENGTH}
+              rows={2}
+            />
+            <div className={styles.reasonCounter}>
+              {reasonText.length}/{REASON_MAX_LENGTH}
+            </div>
+          </div>
+        )}
+
         {canVote && (
           <button className={styles.voteBtn} onClick={handleVote} disabled={!selectedTarget}>
             Cast Vote
@@ -151,49 +176,104 @@ export function Voting({ players, myPlayerId, phase, votes, banishedPlayer, curr
     );
   }
 
-  if (phase === 'VOTE_REVEAL' && votes) {
-    const voteCounts = alivePlayers.map((p) => ({
-      player: p,
-      count: getVoteCount(p.id),
-    }));
-    const maxVotes = Math.max(...voteCounts.map((vc) => vc.count));
-    const mostVoted = voteCounts.filter((vc) => vc.count === maxVotes);
+  if (phase === 'VOTE_REVEAL') {
+    const totalVotes = revealedVotes?.length || 0;
+    const revealOrderLength = players.filter((p) => p.isAlive).length;
+    const isRevealing = revealIndex !== undefined && revealIndex < revealOrderLength;
+    const revealComplete = revealIndex !== undefined && revealIndex >= revealOrderLength;
+
+    const sortedTally = currentTally ? [...currentTally].sort((a, b) => b.voteCount - a.voteCount) : [];
+    const topVoteCount = sortedTally[0]?.voteCount || 0;
+    const topCandidates = sortedTally.filter((t) => t.voteCount === topVoteCount && topVoteCount > 0);
+    const isTie = topCandidates.length > 1;
 
     return (
       <div className={styles.container}>
-        <h1 className={styles.title}>The Votes Are In</h1>
-
-        <div className={styles.voteResults}>
-          {voteCounts
-            .sort((a, b) => b.count - a.count)
-            .map(({ player, count }) => (
-              <div
-                key={player.id}
-                className={`${styles.voteResult} ${count === maxVotes && count > 0 ? styles.topVote : ''}`}
-              >
-                <div className={styles.avatar}>{player.name[0]?.toUpperCase()}</div>
-                <span className={styles.name}>{player.name}</span>
-                <span className={styles.voteCount}>{count} vote{count !== 1 ? 's' : ''}</span>
-              </div>
-            ))}
+        <h1 className={styles.title}>
+          {revealComplete ? 'All Votes Revealed' : 'The Votes Are Being Revealed'}
+        </h1>
+        
+        <div className={styles.progressBar}>
+          <div 
+            className={styles.progressFill} 
+            style={{ width: `${((revealIndex || 0) / revealOrderLength) * 100}%` }}
+          />
         </div>
+        <p className={styles.progressText}>
+          {revealIndex || 0} of {revealOrderLength} votes revealed
+        </p>
 
-        {mostVoted.length === 1 && mostVoted[0] && maxVotes > 0 && (
+        {currentReveal && !revealComplete && (
+          <div className={styles.currentRevealCard}>
+            <div className={styles.revealHeader}>
+              <div className={styles.voterSection}>
+                <div className={styles.avatar}>{currentReveal.voterName[0]?.toUpperCase()}</div>
+                <span className={styles.voterName}>{currentReveal.voterName}</span>
+              </div>
+              <span className={styles.votedFor}>voted for</span>
+              <div className={styles.targetSection}>
+                <div className={styles.avatarTarget}>{currentReveal.targetName[0]?.toUpperCase()}</div>
+                <span className={styles.targetName}>{currentReveal.targetName}</span>
+              </div>
+            </div>
+            {currentReveal.vote.reasonText && (
+              <div className={styles.reasonReveal}>
+                "{currentReveal.vote.reasonText}"
+              </div>
+            )}
+          </div>
+        )}
+
+        {sortedTally.length > 0 && (
+          <div className={styles.tallySection}>
+            <h3 className={styles.tallyTitle}>{revealComplete ? 'Final Tally' : 'Current Tally'}</h3>
+            <div className={styles.tallyList}>
+              {sortedTally.map((tally) => (
+                <div 
+                  key={tally.playerId} 
+                  className={`${styles.tallyItem} ${revealComplete && tally.voteCount === topVoteCount && topVoteCount > 0 ? styles.topTallyItem : ''}`}
+                >
+                  <span className={styles.tallyName}>{tally.playerName}</span>
+                  <div className={styles.tallyBar}>
+                    <div 
+                      className={styles.tallyBarFill} 
+                      style={{ width: `${Math.min((tally.voteCount / (totalVotes || 1)) * 100, 100)}%` }}
+                    />
+                  </div>
+                  <span className={styles.tallyCount}>{tally.voteCount}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {revealComplete && topCandidates.length === 1 && topCandidates[0] && (
           <p className={styles.banishMessage}>
-            <strong>{mostVoted[0].player.name}</strong> will be banished!
+            <strong>{topCandidates[0].playerName}</strong> will be banished!
           </p>
         )}
 
-        {mostVoted.length > 1 && maxVotes > 0 && (
+        {revealComplete && isTie && (
           <p className={styles.tieMessage}>
             It's a tie! A revote will be required.
           </p>
         )}
 
-        {isHost && (
-          <button className={styles.dangerBtn} onClick={handleBanish}>
-            {mostVoted.length > 1 ? 'Proceed to Revote' : 'Banish Player'}
+        {revealComplete && isHost && (
+          <button 
+            className={styles.dangerBtn} 
+            onClick={() => onSend({ type: 'C2S_BANISH_PLAYER', payload: {} })}
+          >
+            {isTie ? 'Proceed to Revote' : 'Banish Player'}
           </button>
+        )}
+
+        {revealComplete && !isHost && (
+          <p className={styles.waiting}>Waiting for host to proceed...</p>
+        )}
+
+        {isRevealing && !revealComplete && (
+          <p className={styles.waiting}>Revealing votes...</p>
         )}
       </div>
     );

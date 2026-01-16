@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import type { GameState, C2SEvent, Player, Role, Vote, ChatMessage, TimerState } from '../types';
+import type { GameState, C2SEvent, Player, Role, Vote, ChatMessage, TimerState, VoteTally } from '../types';
 
 const getWebSocketUrl = () => {
   const domain = window.location.host;
@@ -144,6 +144,57 @@ export function useWebSocket() {
           ...prev,
           phase: payload.phase as GameState['phase'],
           votes: payload.votes,
+        } : null);
+        break;
+      }
+
+      case 'S2C_VOTE_REVEAL_STARTED': {
+        const payload = msg.payload as { phase: string; revealOrder: string[]; totalVotes: number };
+        setGameState((prev) => prev ? {
+          ...prev,
+          phase: payload.phase as GameState['phase'],
+          revealOrder: payload.revealOrder,
+          revealIndex: 0,
+          revealedVotes: [],
+          currentTally: [],
+          currentReveal: undefined,
+        } : null);
+        break;
+      }
+
+      case 'S2C_VOTE_REVEAL_STEP': {
+        const payload = msg.payload as { 
+          revealIndex: number; 
+          vote: Vote; 
+          voterName: string; 
+          targetName: string; 
+          currentTally: VoteTally[];
+        };
+        setGameState((prev) => {
+          if (!prev) return null;
+          const revealedVotes = [...(prev.revealedVotes || []), payload.vote];
+          return {
+            ...prev,
+            revealIndex: payload.revealIndex + 1,
+            revealedVotes,
+            currentTally: payload.currentTally,
+            currentReveal: {
+              vote: payload.vote,
+              voterName: payload.voterName,
+              targetName: payload.targetName,
+            },
+          };
+        });
+        break;
+      }
+
+      case 'S2C_VOTE_REVEAL_COMPLETE': {
+        const payload = msg.payload as { allVotes: Vote[]; finalTally: VoteTally[] };
+        setGameState((prev) => prev ? {
+          ...prev,
+          votes: payload.allVotes,
+          currentTally: payload.finalTally,
+          currentReveal: undefined,
         } : null);
         break;
       }

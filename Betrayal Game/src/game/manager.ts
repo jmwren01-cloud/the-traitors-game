@@ -175,6 +175,37 @@ export function submitVote(game: GameState, voterId: string, targetId: string): 
   };
 }
 
+export function submitVoteWithReason(game: GameState, voterId: string, targetId: string, reasonText?: string): GameState {
+  if (game.phase !== 'VOTING' && game.phase !== 'REVOTE') {
+    throw new Error('Not in voting phase');
+  }
+
+  const voter = game.players.find((p: Player) => p.id === voterId);
+  if (!voter || !voter.isAlive) {
+    throw new Error('Voter not found or not alive');
+  }
+
+  const target = game.players.find((p: Player) => p.id === targetId);
+  if (!target || !target.isAlive) {
+    throw new Error('Target not found or not alive');
+  }
+
+  // Remove any existing vote from this voter
+  const filteredVotes = game.votes.filter((v: Vote) => v.voterId !== voterId);
+  
+  const vote: Vote = { 
+    voterId, 
+    targetId,
+    reasonText: reasonText?.trim().slice(0, 120) || undefined,
+    timestamp: Date.now()
+  };
+  
+  return {
+    ...game,
+    votes: [...filteredVotes, vote]
+  };
+}
+
 export function revealVotes(game: GameState): GameState {
   if (game.phase !== 'VOTING') {
     throw new Error('Not in voting phase');

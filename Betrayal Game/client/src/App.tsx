@@ -98,6 +98,11 @@ function App() {
           tiedPlayerIds={gameState?.tiedPlayerIds}
           tiedPlayerNames={gameState?.tiedPlayerNames}
           randomlySelectedPlayer={gameState?.randomlySelectedPlayer}
+          revealIndex={gameState?.revealIndex}
+          revealOrder={gameState?.revealOrder}
+          currentTally={gameState?.currentTally}
+          revealedVotes={gameState?.revealedVotes}
+          currentReveal={gameState?.currentReveal}
           onSend={send}
         />
         {chatBox}
