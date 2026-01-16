@@ -78,6 +78,11 @@ Start workflow: `cd "Betrayal Game" && npm run dev`
 - 2026-01-16: Dual chat system - General (everyone) + Traitors-only (alive traitors only)
 - 2026-01-16: Tabbed chat UI with unread badges, per-channel scroll position, red theme for traitor mode
 - 2026-01-16: Dead traitors lose access to traitor chat channel
+- 2026-01-16: Sequential vote reveal system with 4-second intervals between reveals
+- 2026-01-16: Optional vote reasoning (max 120 chars) displayed during dramatic reveal
+- 2026-01-16: Live tally leaderboard with animated progress bars and pulsing highlights for top candidates
+- 2026-01-16: Vote locking after all votes received, double-submission prevention, phase guards
+- 2026-01-16: Server-authoritative reveal timing with client state sync (totalVotes, revealIndex)
 
 ## Remaining Tasks
 - Reconnection handling with session tokens
