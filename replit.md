@@ -75,6 +75,9 @@ Start workflow: `cd "Betrayal Game" && npm run dev`
 - 2026-01-16: Added "Fellow Traitors" section during night phase with red glowing avatars
 - 2026-01-16: Auto-advance murder resolution when all traitors vote (no manual button needed)
 - 2026-01-16: Dead player visualization at roundtable with cross marks and strikethrough names
+- 2026-01-16: Dual chat system - General (everyone) + Traitors-only (alive traitors only)
+- 2026-01-16: Tabbed chat UI with unread badges, per-channel scroll position, red theme for traitor mode
+- 2026-01-16: Dead traitors lose access to traitor chat channel
 
 ## Remaining Tasks
 - Reconnection handling with session tokens
