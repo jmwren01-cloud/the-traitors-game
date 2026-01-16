@@ -34,8 +34,8 @@ export function RoleReveal({ myRole, traitorIds, players, myPlayerId, phase, onS
     onSend({ type: 'C2S_ASSIGN_ROLES', payload: {} });
   };
 
-  const handleStartVoting = () => {
-    onSend({ type: 'C2S_START_VOTING', payload: {} });
+  const handleStartRoundtable = () => {
+    onSend({ type: 'C2S_START_ROUNDTABLE', payload: {} });
   };
 
   if (phase === 'ROLE_ASSIGN') {
@@ -90,7 +90,7 @@ export function RoleReveal({ myRole, traitorIds, players, myPlayerId, phase, onS
       )}
 
       {revealed && isHost && (
-        <button className={styles.continueBtn} onClick={handleStartVoting}>
+        <button className={styles.continueBtn} onClick={handleStartRoundtable}>
           Continue to Roundtable
         </button>
       )}

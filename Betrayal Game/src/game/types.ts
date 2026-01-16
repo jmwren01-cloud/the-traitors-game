@@ -66,6 +66,7 @@ export type C2SEvent =
   | { type: 'C2S_JOIN_GAME'; payload: { sessionId: string; playerName: string } }
   | { type: 'C2S_START_GAME'; payload: Record<string, never> }
   | { type: 'C2S_ASSIGN_ROLES'; payload: Record<string, never> }
+  | { type: 'C2S_START_ROUNDTABLE'; payload: Record<string, never> }
   | { type: 'C2S_START_VOTING'; payload: Record<string, never> }
   | { type: 'C2S_SUBMIT_VOTE'; payload: { targetId: string } }
   | { type: 'C2S_REVEAL_VOTES'; payload: Record<string, never> }
@@ -90,6 +91,7 @@ export type S2CEvent =
       phase: GamePhase;
       traitorIds?: string[];
     } }
+  | { type: 'S2C_ROUNDTABLE_STARTED'; payload: { phase: GamePhase } }
   | { type: 'S2C_VOTING_STARTED'; payload: { phase: GamePhase } }
   | { type: 'S2C_VOTE_SUBMITTED'; payload: { voterId: string } }
   | { type: 'S2C_VOTES_REVEALED'; payload: { votes: Vote[]; phase: GamePhase } }

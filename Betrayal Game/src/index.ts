@@ -190,6 +190,25 @@ wss.on('connection', (ws: WebSocket) => {
         return;
       }
 
+      if (event.type === 'C2S_START_ROUNDTABLE') {
+        const updatedGame = game.startRoundtable(gameState);
+        games.set(currentSessionId, updatedGame);
+        
+        broadcastToSession(currentSessionId, {
+          type: 'S2C_ROUNDTABLE_STARTED',
+          payload: { phase: 'ROUNDTABLE' }
+        });
+
+        const timer = game.createTimer('ROUNDTABLE');
+        if (timer) {
+          broadcastToSession(currentSessionId, {
+            type: 'S2C_TIMER_UPDATE',
+            payload: { endTime: timer.endTime, duration: timer.duration, phase: 'ROUNDTABLE' }
+          });
+        }
+        return;
+      }
+
       if (event.type === 'C2S_START_VOTING') {
         const updatedGame = game.startVoting(gameState);
         games.set(currentSessionId, updatedGame);

@@ -100,6 +100,12 @@ export function useWebSocket() {
         break;
       }
 
+      case 'S2C_ROUNDTABLE_STARTED': {
+        const payload = msg.payload as { phase: string };
+        setGameState((prev) => prev ? { ...prev, phase: payload.phase as GameState['phase'] } : null);
+        break;
+      }
+
       case 'S2C_VOTING_STARTED': {
         const payload = msg.payload as { phase: string };
         setGameState((prev) => prev ? { ...prev, phase: payload.phase as GameState['phase'], votes: [] } : null);

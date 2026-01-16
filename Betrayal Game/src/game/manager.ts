@@ -114,6 +114,19 @@ export function assignRoles(game: GameState): GameState {
   };
 }
 
+// ============= ROUNDTABLE SYSTEM =============
+
+export function startRoundtable(game: GameState): GameState {
+  if (game.phase !== 'ROLE_REVEAL' && game.phase !== 'MORNING') {
+    throw new Error('Cannot start roundtable from current phase');
+  }
+
+  return {
+    ...game,
+    phase: 'ROUNDTABLE'
+  };
+}
+
 // ============= VOTING SYSTEM =============
 
 export function startVoting(game: GameState): GameState {
