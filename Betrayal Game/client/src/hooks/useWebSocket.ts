@@ -108,11 +108,29 @@ export function useWebSocket() {
 
       case 'S2C_VOTING_STARTED': {
         const payload = msg.payload as { phase: string };
-        setGameState((prev) => prev ? { ...prev, phase: payload.phase as GameState['phase'], votes: [] } : null);
+        setGameState((prev) => prev ? { ...prev, phase: payload.phase as GameState['phase'], votes: [], voteCount: undefined } : null);
+        break;
+      }
+
+      case 'S2C_REVOTE_STARTED': {
+        const payload = msg.payload as { tiedPlayerIds: string[]; phase: string };
+        setGameState((prev) => prev ? { 
+          ...prev, 
+          phase: payload.phase as GameState['phase'], 
+          tiedPlayerIds: payload.tiedPlayerIds,
+          votes: [], 
+          voteCount: undefined 
+        } : null);
         break;
       }
 
       case 'S2C_VOTE_SUBMITTED': {
+        break;
+      }
+
+      case 'S2C_VOTE_COUNT_UPDATE': {
+        const payload = msg.payload as { received: number; needed: number };
+        setGameState((prev) => prev ? { ...prev, voteCount: payload } : null);
         break;
       }
 
@@ -122,6 +140,18 @@ export function useWebSocket() {
           ...prev,
           phase: payload.phase as GameState['phase'],
           votes: payload.votes,
+        } : null);
+        break;
+      }
+
+      case 'S2C_TIE_DETECTED': {
+        const payload = msg.payload as { tiedPlayerIds: string[]; tiedPlayerNames: string[]; phase: string };
+        setGameState((prev) => prev ? {
+          ...prev,
+          phase: payload.phase as GameState['phase'],
+          tiedPlayerIds: payload.tiedPlayerIds,
+          tiedPlayerNames: payload.tiedPlayerNames,
+          voteCount: undefined
         } : null);
         break;
       }
@@ -141,6 +171,8 @@ export function useWebSocket() {
             players: prev.players.map((p) =>
               p.id === payload.banishedPlayerId ? { ...p, isAlive: false } : p
             ),
+            tiedPlayerIds: undefined,
+            tiedPlayerNames: undefined
           };
         });
         break;

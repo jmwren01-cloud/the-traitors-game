@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import type { Player, C2SEvent, Role, Vote } from '../types';
 import styles from './Voting.module.css';
 
@@ -8,27 +8,42 @@ interface VotingProps {
   phase: string;
   votes?: Vote[];
   banishedPlayer?: { id: string; name: string; role: Role };
+  currentRound?: number;
+  voteCount?: { received: number; needed: number };
+  tiedPlayerIds?: string[];
+  tiedPlayerNames?: string[];
   onSend: (event: C2SEvent) => void;
 }
 
-export function Voting({ players, myPlayerId, phase, votes, banishedPlayer, onSend }: VotingProps) {
+export function Voting({ players, myPlayerId, phase, votes, banishedPlayer, currentRound, voteCount, tiedPlayerIds, tiedPlayerNames, onSend }: VotingProps) {
   const [selectedTarget, setSelectedTarget] = useState<string | null>(null);
   const [hasVoted, setHasVoted] = useState(false);
+  const prevPhaseRef = useRef(phase);
+
+  useEffect(() => {
+    if ((phase === 'VOTING' || phase === 'REVOTE') && prevPhaseRef.current !== phase) {
+      setHasVoted(false);
+      setSelectedTarget(null);
+    }
+    prevPhaseRef.current = phase;
+  }, [phase]);
 
   const isHost = players.find((p) => p.id === myPlayerId)?.isHost;
   const alivePlayers = players.filter((p) => p.isAlive);
   const myPlayer = players.find((p) => p.id === myPlayerId);
-  const canVote = myPlayer?.isAlive && !hasVoted && phase === 'VOTING';
+  const canVote = myPlayer?.isAlive && !hasVoted && (phase === 'VOTING' || phase === 'REVOTE');
+  const isRound1 = currentRound === 1;
+  const tiedPlayers = tiedPlayerIds ? alivePlayers.filter((p) => tiedPlayerIds.includes(p.id)) : [];
 
   const handleVote = () => {
     if (selectedTarget) {
-      onSend({ type: 'C2S_SUBMIT_VOTE', payload: { targetId: selectedTarget } });
+      if (phase === 'REVOTE') {
+        onSend({ type: 'C2S_SUBMIT_REVOTE', payload: { targetId: selectedTarget } });
+      } else {
+        onSend({ type: 'C2S_SUBMIT_VOTE', payload: { targetId: selectedTarget } });
+      }
       setHasVoted(true);
     }
-  };
-
-  const handleRevealVotes = () => {
-    onSend({ type: 'C2S_REVEAL_VOTES', payload: {} });
   };
 
   const handleBanish = () => {
@@ -48,6 +63,11 @@ export function Voting({ players, myPlayerId, phase, votes, banishedPlayer, onSe
     return (
       <div className={styles.container}>
         <h1 className={styles.title}>The Roundtable</h1>
+        {isRound1 && (
+          <div className={styles.round1Banner}>
+            Round 1 - Discussion Only, No Banishment
+          </div>
+        )}
         <p className={styles.subtitle}>Discuss amongst yourselves...</p>
 
         <div className={styles.playerGrid}>
@@ -59,12 +79,18 @@ export function Voting({ players, myPlayerId, phase, votes, banishedPlayer, onSe
           ))}
         </div>
 
-        {isHost && (
+        {isHost && isRound1 && (
+          <button className={styles.primaryBtn} onClick={() => onSend({ type: 'C2S_START_NIGHT', payload: {} })}>
+            Proceed to Night
+          </button>
+        )}
+        {isHost && !isRound1 && (
           <button className={styles.primaryBtn} onClick={() => onSend({ type: 'C2S_START_VOTING', payload: {} })}>
             Start Voting
           </button>
         )}
-        {!isHost && <p className={styles.waiting}>Waiting for host to start voting...</p>}
+        {!isHost && isRound1 && <p className={styles.waiting}>Waiting for host to proceed to night...</p>}
+        {!isHost && !isRound1 && <p className={styles.waiting}>Waiting for host to start voting...</p>}
       </div>
     );
   }
@@ -95,13 +121,12 @@ export function Voting({ players, myPlayerId, phase, votes, banishedPlayer, onSe
           </button>
         )}
 
-        {hasVoted && <p className={styles.votedText}>Vote submitted. Waiting for others...</p>}
-
-        {isHost && (
-          <button className={styles.secondaryBtn} onClick={handleRevealVotes}>
-            Reveal Votes
-          </button>
+        {hasVoted && voteCount && (
+          <p className={styles.votedText}>
+            Vote submitted. Waiting for {voteCount.needed - voteCount.received} more vote{voteCount.needed - voteCount.received !== 1 ? 's' : ''}...
+          </p>
         )}
+        {hasVoted && !voteCount && <p className={styles.votedText}>Vote submitted. Waiting for others...</p>}
       </div>
     );
   }
@@ -139,11 +164,79 @@ export function Voting({ players, myPlayerId, phase, votes, banishedPlayer, onSe
           </p>
         )}
 
+        {mostVoted.length > 1 && maxVotes > 0 && (
+          <p className={styles.tieMessage}>
+            It's a tie! A revote will be required.
+          </p>
+        )}
+
         {isHost && (
           <button className={styles.dangerBtn} onClick={handleBanish}>
-            Banish Player
+            {mostVoted.length > 1 ? 'Proceed to Revote' : 'Banish Player'}
           </button>
         )}
+      </div>
+    );
+  }
+
+  if (phase === 'TIE_DETECTED' && tiedPlayerNames) {
+    return (
+      <div className={styles.container}>
+        <h1 className={styles.title}>Tie Detected!</h1>
+        <div className={styles.tieBanner}>
+          A revote is required between the tied players
+        </div>
+        
+        <div className={styles.tiedPlayersList}>
+          {tiedPlayerNames.map((name, index) => (
+            <span key={index} className={styles.tiedPlayerName}>{name}</span>
+          ))}
+        </div>
+
+        {isHost && (
+          <button className={styles.primaryBtn} onClick={() => onSend({ type: 'C2S_START_REVOTE', payload: {} })}>
+            Start Revote
+          </button>
+        )}
+        {!isHost && <p className={styles.waiting}>Waiting for host to start revote...</p>}
+      </div>
+    );
+  }
+
+  if (phase === 'REVOTE' && tiedPlayerIds) {
+    return (
+      <div className={styles.container}>
+        <h1 className={styles.title}>Revote</h1>
+        <div className={styles.tieBanner}>
+          Vote only for the tied candidates
+        </div>
+
+        <div className={styles.playerGrid}>
+          {tiedPlayers.map((player) => (
+            <div
+              key={player.id}
+              className={`${styles.voteCard} ${selectedTarget === player.id ? styles.selected : ''} ${player.id === myPlayerId ? styles.disabled : ''}`}
+              onClick={() => player.id !== myPlayerId && canVote && setSelectedTarget(player.id)}
+            >
+              <div className={styles.avatar}>{player.name[0]?.toUpperCase()}</div>
+              <span className={styles.name}>{player.name}</span>
+              {player.id === myPlayerId && <span className={styles.youLabel}>You</span>}
+            </div>
+          ))}
+        </div>
+
+        {canVote && (
+          <button className={styles.voteBtn} onClick={handleVote} disabled={!selectedTarget}>
+            Cast Revote
+          </button>
+        )}
+
+        {hasVoted && voteCount && (
+          <p className={styles.votedText}>
+            Vote submitted. Waiting for {voteCount.needed - voteCount.received} more vote{voteCount.needed - voteCount.received !== 1 ? 's' : ''}...
+          </p>
+        )}
+        {hasVoted && !voteCount && <p className={styles.votedText}>Vote submitted. Waiting for others...</p>}
       </div>
     );
   }

@@ -228,6 +228,25 @@ wss.on('connection', (ws: WebSocket) => {
         return;
       }
 
+      if (event.type === 'C2S_START_REVOTE') {
+        const updatedGame = game.startRevote(gameState);
+        games.set(currentSessionId, updatedGame);
+        
+        broadcastToSession(currentSessionId, {
+          type: 'S2C_REVOTE_STARTED',
+          payload: { tiedPlayerIds: updatedGame.tiedPlayerIds || [], phase: 'REVOTE' }
+        });
+
+        const timer = game.createTimer('VOTING');
+        if (timer) {
+          broadcastToSession(currentSessionId, {
+            type: 'S2C_TIMER_UPDATE',
+            payload: { endTime: timer.endTime, duration: timer.duration, phase: 'REVOTE' }
+          });
+        }
+        return;
+      }
+
       if (event.type === 'C2S_SUBMIT_VOTE') {
         const updatedGame = game.submitVote(gameState, currentPlayerId, event.payload.targetId);
         games.set(currentSessionId, updatedGame);
@@ -236,6 +255,24 @@ wss.on('connection', (ws: WebSocket) => {
           type: 'S2C_VOTE_SUBMITTED',
           payload: { voterId: currentPlayerId }
         });
+
+        const alivePlayerCount = updatedGame.players.filter((p) => p.isAlive).length;
+        const voteCount = updatedGame.votes.length;
+        
+        broadcastToSession(currentSessionId, {
+          type: 'S2C_VOTE_COUNT_UPDATE',
+          payload: { received: voteCount, needed: alivePlayerCount }
+        });
+
+        if (voteCount >= alivePlayerCount) {
+          const revealedGame = game.revealVotes(updatedGame);
+          games.set(currentSessionId, revealedGame);
+          
+          broadcastToSession(currentSessionId, {
+            type: 'S2C_VOTES_REVEALED',
+            payload: { votes: revealedGame.revealedVotes, phase: 'VOTE_REVEAL' }
+          });
+        }
         return;
       }
 
@@ -251,19 +288,69 @@ wss.on('connection', (ws: WebSocket) => {
       }
 
       if (event.type === 'C2S_BANISH_PLAYER') {
-        const updatedGame = game.banishPlayer(gameState);
+        const result = game.banishPlayer(gameState);
+        games.set(currentSessionId, result.game);
+        
+        if (result.isTie && result.tiedPlayerIds) {
+          const tiedPlayerNames = result.tiedPlayerIds.map((id) => {
+            const player = result.game.players.find((p) => p.id === id);
+            return player?.name || 'Unknown';
+          });
+          
+          broadcastToSession(currentSessionId, {
+            type: 'S2C_TIE_DETECTED',
+            payload: {
+              tiedPlayerIds: result.tiedPlayerIds,
+              tiedPlayerNames,
+              phase: 'TIE_DETECTED'
+            }
+          });
+        } else {
+          const banishedPlayer = result.game.players.find((p) => p.id === result.game.banishedPlayerId);
+          if (banishedPlayer && banishedPlayer.role) {
+            broadcastToSession(currentSessionId, {
+              type: 'S2C_PLAYER_BANISHED',
+              payload: {
+                banishedPlayerId: banishedPlayer.id,
+                banishedPlayerName: banishedPlayer.name,
+                banishedPlayerRole: banishedPlayer.role,
+                phase: 'BANISH_REVEAL'
+              }
+            });
+          }
+        }
+        return;
+      }
+
+      if (event.type === 'C2S_SUBMIT_REVOTE') {
+        if (!gameState.tiedPlayerIds?.includes(event.payload.targetId)) {
+          sendError(ws, 'Can only vote for tied candidates in revote');
+          return;
+        }
+        
+        const updatedGame = game.submitVote(gameState, currentPlayerId, event.payload.targetId);
         games.set(currentSessionId, updatedGame);
         
-        const banishedPlayer = updatedGame.players.find((p) => p.id === updatedGame.banishedPlayerId);
-        if (banishedPlayer && banishedPlayer.role) {
+        broadcastToSession(currentSessionId, {
+          type: 'S2C_VOTE_SUBMITTED',
+          payload: { voterId: currentPlayerId }
+        });
+
+        const alivePlayerCount = updatedGame.players.filter((p) => p.isAlive).length;
+        const voteCount = updatedGame.votes.length;
+        
+        broadcastToSession(currentSessionId, {
+          type: 'S2C_VOTE_COUNT_UPDATE',
+          payload: { received: voteCount, needed: alivePlayerCount }
+        });
+
+        if (voteCount >= alivePlayerCount) {
+          const revealedGame = game.revealVotes(updatedGame);
+          games.set(currentSessionId, revealedGame);
+          
           broadcastToSession(currentSessionId, {
-            type: 'S2C_PLAYER_BANISHED',
-            payload: {
-              banishedPlayerId: banishedPlayer.id,
-              banishedPlayerName: banishedPlayer.name,
-              banishedPlayerRole: banishedPlayer.role,
-              phase: 'BANISH_REVEAL'
-            }
+            type: 'S2C_VOTES_REVEALED',
+            payload: { votes: revealedGame.revealedVotes, phase: 'VOTE_REVEAL' }
           });
         }
         return;

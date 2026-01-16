@@ -7,6 +7,9 @@ export type GamePhase =
   | 'ROUNDTABLE'
   | 'VOTING'
   | 'VOTE_REVEAL'
+  | 'TIE_DETECTED'
+  | 'REVOTE'
+  | 'TIEBREAKER_REVEAL'
   | 'BANISH_REVEAL'
   | 'CHECK_WIN'
   | 'NIGHT'
@@ -44,6 +47,12 @@ export interface TimerState {
   phase: GamePhase;
 }
 
+export interface TiebreakerResult {
+  playerId: string;
+  playerName: string;
+  hasShield: boolean;
+}
+
 export interface GameState {
   sessionId: string;
   phase: GamePhase;
@@ -58,6 +67,10 @@ export interface GameState {
   lastMurderedPlayerId?: string;
   messages: ChatMessage[];
   timer?: TimerState;
+  tiedPlayerIds?: string[];
+  tiebreakerResults?: TiebreakerResult[];
+  votesNeededCount?: number;
+  votesReceivedCount?: number;
 }
 
 // Client-to-Server Events
@@ -71,6 +84,9 @@ export type C2SEvent =
   | { type: 'C2S_SUBMIT_VOTE'; payload: { targetId: string } }
   | { type: 'C2S_REVEAL_VOTES'; payload: Record<string, never> }
   | { type: 'C2S_BANISH_PLAYER'; payload: Record<string, never> }
+  | { type: 'C2S_START_REVOTE'; payload: Record<string, never> }
+  | { type: 'C2S_SUBMIT_REVOTE'; payload: { targetId: string } }
+  | { type: 'C2S_RESOLVE_TIEBREAKER'; payload: Record<string, never> }
   | { type: 'C2S_CHECK_WIN'; payload: Record<string, never> }
   | { type: 'C2S_START_NIGHT'; payload: Record<string, never> }
   | { type: 'C2S_SUBMIT_MURDER'; payload: { targetId: string } }
@@ -95,6 +111,10 @@ export type S2CEvent =
   | { type: 'S2C_VOTING_STARTED'; payload: { phase: GamePhase } }
   | { type: 'S2C_VOTE_SUBMITTED'; payload: { voterId: string } }
   | { type: 'S2C_VOTES_REVEALED'; payload: { votes: Vote[]; phase: GamePhase } }
+  | { type: 'S2C_VOTE_COUNT_UPDATE'; payload: { received: number; needed: number } }
+  | { type: 'S2C_TIE_DETECTED'; payload: { tiedPlayerIds: string[]; tiedPlayerNames: string[]; phase: GamePhase } }
+  | { type: 'S2C_REVOTE_STARTED'; payload: { tiedPlayerIds: string[]; phase: GamePhase } }
+  | { type: 'S2C_TIEBREAKER_RESULT'; payload: { results: TiebreakerResult[]; phase: GamePhase } }
   | { type: 'S2C_PLAYER_BANISHED'; payload: { 
       banishedPlayerId: string; 
       banishedPlayerName: string; 

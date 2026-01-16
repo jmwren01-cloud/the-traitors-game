@@ -142,7 +142,7 @@ export function startVoting(game: GameState): GameState {
 }
 
 export function submitVote(game: GameState, voterId: string, targetId: string): GameState {
-  if (game.phase !== 'VOTING') {
+  if (game.phase !== 'VOTING' && game.phase !== 'REVOTE') {
     throw new Error('Not in voting phase');
   }
 
@@ -177,7 +177,13 @@ export function revealVotes(game: GameState): GameState {
   };
 }
 
-export function banishPlayer(game: GameState): GameState {
+export interface BanishResult {
+  game: GameState;
+  isTie: boolean;
+  tiedPlayerIds?: string[];
+}
+
+export function banishPlayer(game: GameState): BanishResult {
   if (game.phase !== 'VOTE_REVEAL') {
     throw new Error('Cannot banish outside vote reveal phase');
   }
@@ -206,21 +212,49 @@ export function banishPlayer(game: GameState): GameState {
     throw new Error('No votes cast');
   }
 
-  // Handle tie: pick random from tied players
-  const banishedId = topCandidates.length === 1 
-    ? topCandidates[0] 
-    : topCandidates[Math.floor(Math.random() * topCandidates.length)];
+  // Handle tie: transition to REVOTE phase
+  if (topCandidates.length > 1) {
+    return {
+      game: {
+        ...game,
+        phase: 'TIE_DETECTED',
+        tiedPlayerIds: topCandidates,
+        votes: [],
+        revealedVotes: []
+      },
+      isTie: true,
+      tiedPlayerIds: topCandidates
+    };
+  }
 
-  // Update player status
+  // Clear winner - banish them
+  const banishedId = topCandidates[0];
   const updatedPlayers = game.players.map((p: Player) =>
     p.id === banishedId ? { ...p, isAlive: false } : p
   );
 
   return {
+    game: {
+      ...game,
+      players: updatedPlayers,
+      banishedPlayerId: banishedId,
+      phase: 'BANISH_REVEAL',
+      votes: [],
+      revealedVotes: [],
+      tiedPlayerIds: undefined
+    },
+    isTie: false
+  };
+}
+
+export function startRevote(game: GameState): GameState {
+  if (game.phase !== 'TIE_DETECTED') {
+    throw new Error('Cannot start revote outside tie detected phase');
+  }
+
+  return {
     ...game,
-    players: updatedPlayers,
-    banishedPlayerId: banishedId,
-    phase: 'BANISH_REVEAL',
+    phase: 'REVOTE',
     votes: [],
     revealedVotes: []
   };
@@ -304,7 +338,9 @@ export function checkWinCondition(game: GameState): GameState {
 // ============= NIGHT PHASE & MURDER SYSTEM =============
 
 export function startNight(game: GameState): GameState {
-  if (game.phase !== 'CHECK_WIN' && game.phase !== 'NIGHT') {
+  const isRound1SkipVoting = game.phase === 'ROUNDTABLE' && game.currentRound === 1;
+  
+  if (game.phase !== 'CHECK_WIN' && game.phase !== 'NIGHT' && !isRound1SkipVoting) {
     throw new Error('Cannot start night from current phase');
   }
 

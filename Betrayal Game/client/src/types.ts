@@ -7,6 +7,9 @@ export type GamePhase =
   | 'ROUNDTABLE'
   | 'VOTING'
   | 'VOTE_REVEAL'
+  | 'TIE_DETECTED'
+  | 'REVOTE'
+  | 'TIEBREAKER_REVEAL'
   | 'BANISH_REVEAL'
   | 'CHECK_WIN'
   | 'NIGHT'
@@ -42,6 +45,12 @@ export interface TimerState {
   phase: GamePhase;
 }
 
+export interface TiebreakerResult {
+  playerId: string;
+  playerName: string;
+  hasShield: boolean;
+}
+
 export interface GameState {
   sessionId: string;
   phase: GamePhase;
@@ -60,6 +69,10 @@ export interface GameState {
   murderVoteProgress?: { received: number; needed: number };
   messages?: ChatMessage[];
   timer?: TimerState;
+  tiedPlayerIds?: string[];
+  tiedPlayerNames?: string[];
+  tiebreakerResults?: TiebreakerResult[];
+  voteCount?: { received: number; needed: number };
 }
 
 export type C2SEvent =
@@ -72,6 +85,9 @@ export type C2SEvent =
   | { type: 'C2S_SUBMIT_VOTE'; payload: { targetId: string } }
   | { type: 'C2S_REVEAL_VOTES'; payload: Record<string, never> }
   | { type: 'C2S_BANISH_PLAYER'; payload: Record<string, never> }
+  | { type: 'C2S_START_REVOTE'; payload: Record<string, never> }
+  | { type: 'C2S_SUBMIT_REVOTE'; payload: { targetId: string } }
+  | { type: 'C2S_RESOLVE_TIEBREAKER'; payload: Record<string, never> }
   | { type: 'C2S_CHECK_WIN'; payload: Record<string, never> }
   | { type: 'C2S_START_NIGHT'; payload: Record<string, never> }
   | { type: 'C2S_SUBMIT_MURDER'; payload: { targetId: string } }
