@@ -68,7 +68,17 @@ export function NightPhase({
 
   const isHost = players.find((p) => p.id === myPlayerId)?.isHost;
   const isTraitor = myRole === 'TRAITOR';
-  const aliveFaithful = players.filter((p) => p.isAlive && p.role !== 'TRAITOR');
+  // Filter murder targets: only alive players who are NOT traitors
+  // Use traitorIds when available, fallback to role check
+  const aliveFaithful = players.filter((p) => {
+    if (!p.isAlive || p.id === myPlayerId) return false;
+    // Use traitorIds if available (most reliable)
+    if (traitorIds && traitorIds.length > 0) {
+      return !traitorIds.includes(p.id);
+    }
+    // Fallback: exclude known traitors by role
+    return p.role !== 'TRAITOR';
+  });
   const fellowTraitors = traitorIds 
     ? players.filter((p) => traitorIds.includes(p.id) && p.id !== myPlayerId && p.isAlive)
     : [];

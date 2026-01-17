@@ -117,6 +117,24 @@ export function Lobby({ sessionId, players, myPlayerId, settings, onSend }: Lobb
       <div className={styles.sessionInfo}>
         <span>Session ID:</span>
         <code className={styles.sessionId}>{sessionId}</code>
+        <button 
+          className={styles.copyBtn}
+          onClick={async () => {
+            try {
+              await navigator.clipboard.writeText(sessionId);
+            } catch {
+              // Fallback for insecure contexts
+              const textArea = document.createElement('textarea');
+              textArea.value = sessionId;
+              document.body.appendChild(textArea);
+              textArea.select();
+              document.execCommand('copy');
+              document.body.removeChild(textArea);
+            }
+          }}
+        >
+          Copy
+        </button>
       </div>
 
       <div className={styles.playerList}>

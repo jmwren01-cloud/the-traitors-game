@@ -836,20 +836,34 @@ wss.on('connection', (ws: WebSocket) => {
         });
 
         // Auto-resolve murder when all traitors have voted
-        if (progress.received >= progress.needed) {
-          const resolvedGame = game.resolveMurder(updatedGame);
-          games.set(currentSessionId, resolvedGame);
-          
-          const murderedPlayer = resolvedGame.players.find((p) => p.id === resolvedGame.lastMurderedPlayerId);
-          if (murderedPlayer) {
-            broadcastToSession(currentSessionId, {
-              type: 'S2C_MURDER_RESOLVED',
-              payload: {
-                murderedPlayerId: murderedPlayer.id,
-                murderedPlayerName: murderedPlayer.name,
-                phase: 'MORNING'
-              }
-            });
+        if (progress.received >= progress.needed && updatedGame.phase === 'NIGHT') {
+          try {
+            const result = game.resolveMurder(updatedGame);
+            games.set(currentSessionId, result.game);
+            
+            if (result.blocked) {
+              // Murder was blocked by shield
+              broadcastToSession(currentSessionId, {
+                type: 'S2C_MORNING_STARTED',
+                payload: {
+                  phase: 'MORNING',
+                  murderBlocked: true,
+                  shieldedPlayerId: result.shieldedPlayerId,
+                  shieldedPlayerName: result.shieldedPlayerName
+                }
+              });
+            } else if (result.murderedPlayerId) {
+              broadcastToSession(currentSessionId, {
+                type: 'S2C_MURDER_RESOLVED',
+                payload: {
+                  murderedPlayerId: result.murderedPlayerId,
+                  murderedPlayerName: result.murderedPlayerName!,
+                  phase: 'MORNING'
+                }
+              });
+            }
+          } catch (err) {
+            console.error('Error auto-resolving murder:', err);
           }
         }
         return;

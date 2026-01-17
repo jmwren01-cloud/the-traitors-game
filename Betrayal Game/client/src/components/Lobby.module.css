@@ -139,6 +139,28 @@
   color: #e94560;
 }
 
+.copyBtn {
+  padding: 8px 16px;
+  background: rgba(233, 69, 96, 0.3);
+  border: 1px solid #e94560;
+  border-radius: 5px;
+  color: #e94560;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  min-width: 60px;
+  min-height: 40px;
+}
+
+.copyBtn:hover {
+  background: #e94560;
+  color: #fff;
+}
+
+.copyBtn:active {
+  transform: scale(0.95);
+}
+
 .playerList {
   width: 100%;
   max-width: 400px;
