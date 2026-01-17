@@ -113,8 +113,14 @@ Start workflow: `cd "Betrayal Game" && npm run dev`
 - Visual indicators: 🛡️ icons on player avatars, shield block animation on morning reveal
 - Key files: Challenge.tsx, Challenge.module.css, manager.ts (createChallenge, submitChallengeAnswer, resolveChallenge)
 
+## Bug Fixes (2026-01-17)
+- Fixed night phase auto-resolution: resolveMurder() now correctly handles MurderResult return type with shield blocking
+- Added try/catch and phase guard to prevent crashes during murder resolution race conditions
+- Restored game code copy button with clipboard API fallback for insecure contexts
+- Murder target filtering now uses traitorIds (from server) with role fallback, preventing traitor-on-traitor selections in UI
+
 ## Remaining Tasks
-- None - Phase 1 complete!
+- Spectator mode for dead players (requested)
 
 ## Sound Effects (Completed 2026-01-16)
 - Web Audio API oscillator-based sound generation (no external audio files)
