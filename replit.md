@@ -119,6 +119,10 @@ Start workflow: `cd "Betrayal Game" && npm run dev`
 - Restored game code copy button with clipboard API fallback for insecure contexts
 - Murder target filtering now uses traitorIds (from server) with role fallback, preventing traitor-on-traitor selections in UI
 
+## Bug Fixes (2026-01-27)
+- Fixed voting state not resetting between rounds: S2C_VOTING_STARTED, S2C_ROUNDTABLE_STARTED, and S2C_REVOTE_STARTED handlers now reset all reveal state (revealIndex, revealOrder, revealedVotes, currentTally, totalVotes, currentReveal)
+- Added safeguard in Voting.tsx: revealComplete now requires actual revealedVotes to prevent stale state from previous rounds
+
 ## Remaining Tasks
 - Spectator mode for dead players (requested)
 
