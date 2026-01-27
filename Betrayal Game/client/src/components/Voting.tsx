@@ -223,7 +223,8 @@ export function Voting({ players, myPlayerId, phase, votes: _votes, banishedPlay
     const revealOrderLength = serverTotalVotes ?? players.filter((p) => p.isAlive).length;
     const currentIndex = revealIndex ?? 0;
     const isRevealing = currentIndex < revealOrderLength && revealOrderLength > 0;
-    const revealComplete = currentIndex >= revealOrderLength && revealOrderLength > 0;
+    // Only consider reveal complete if we have actual revealed votes AND index matches
+    const revealComplete = currentIndex >= revealOrderLength && revealOrderLength > 0 && (revealedVotes?.length ?? 0) > 0;
     const totalVotes = revealedVotes?.length || revealOrderLength;
 
     const sortedTally = currentTally ? [...currentTally].sort((a, b) => b.voteCount - a.voteCount) : [];

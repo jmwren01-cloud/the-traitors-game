@@ -255,14 +255,38 @@ export function useWebSocket() {
         setGameState((prev) => prev ? { 
           ...prev, 
           phase: payload.phase as GameState['phase'],
-          currentRound: payload.currentRound ?? prev.currentRound
+          currentRound: payload.currentRound ?? prev.currentRound,
+          // Reset all voting and reveal state for new round
+          votes: [],
+          voteCount: undefined,
+          revealIndex: undefined,
+          revealOrder: undefined,
+          revealedVotes: [],
+          currentTally: undefined,
+          totalVotes: undefined,
+          currentReveal: undefined,
+          banishedPlayer: undefined,
+          tiedPlayerIds: undefined,
+          tiedPlayerNames: undefined
         } : null);
         break;
       }
 
       case 'S2C_VOTING_STARTED': {
         const payload = msg.payload as { phase: string };
-        setGameState((prev) => prev ? { ...prev, phase: payload.phase as GameState['phase'], votes: [], voteCount: undefined } : null);
+        setGameState((prev) => prev ? { 
+          ...prev, 
+          phase: payload.phase as GameState['phase'], 
+          votes: [], 
+          voteCount: undefined,
+          // Reset all reveal state to prevent stale data from previous rounds
+          revealIndex: undefined,
+          revealOrder: undefined,
+          revealedVotes: [],
+          currentTally: undefined,
+          totalVotes: undefined,
+          currentReveal: undefined
+        } : null);
         break;
       }
 
@@ -273,7 +297,14 @@ export function useWebSocket() {
           phase: payload.phase as GameState['phase'], 
           tiedPlayerIds: payload.tiedPlayerIds,
           votes: [], 
-          voteCount: undefined 
+          voteCount: undefined,
+          // Reset reveal state for revote
+          revealIndex: undefined,
+          revealOrder: undefined,
+          revealedVotes: [],
+          currentTally: undefined,
+          totalVotes: undefined,
+          currentReveal: undefined
         } : null);
         break;
       }
