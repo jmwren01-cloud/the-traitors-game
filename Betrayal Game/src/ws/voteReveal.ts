@@ -1,7 +1,14 @@
-import { games, activeRevealSequences } from './context.js';
+import { WebSocket } from 'ws';
+import type { GameState } from '../game/types.js';
 import { broadcastToSession } from './utils.js';
 
-export function startVoteRevealSequence(sessionId: string): void {
+const activeRevealSequences = new Map<string, NodeJS.Timeout>();
+
+export function startVoteRevealSequence(
+  sessionId: string,
+  games: Map<string, GameState>,
+  playerConnections: Map<string, WebSocket>
+): void {
   if (activeRevealSequences.has(sessionId)) {
     return;
   }
@@ -26,7 +33,7 @@ export function startVoteRevealSequence(sessionId: string): void {
       revealOrder,
       totalVotes: votes.length
     }
-  });
+  }, games, playerConnections);
 
   const revealNextVote = () => {
     const currentGameState = games.get(sessionId);
@@ -46,7 +53,7 @@ export function startVoteRevealSequence(sessionId: string): void {
         const player = currentGameState.players.find((p) => p.id === playerId);
         return {
           playerId,
-          playerName: player?.name || 'Unknown',
+          playerName: player?.name ?? 'Unknown',
           voteCount: count
         };
       }).sort((a, b) => b.voteCount - a.voteCount);
@@ -56,11 +63,8 @@ export function startVoteRevealSequence(sessionId: string): void {
         payload: {
           allVotes: votes,
           finalTally,
-          totalVotes: votes.length,
-          revealIndex: votes.length,
-          phase: 'VOTE_REVEAL'
         }
-      });
+      }, games, playerConnections);
       return;
     }
 
@@ -70,7 +74,7 @@ export function startVoteRevealSequence(sessionId: string): void {
       return;
     }
 
-    currentTally.set(vote.targetId, (currentTally.get(vote.targetId) || 0) + 1);
+    currentTally.set(vote.targetId, (currentTally.get(vote.targetId) ?? 0) + 1);
 
     const voter = currentGameState.players.find((p) => p.id === vote.voterId);
     const target = currentGameState.players.find((p) => p.id === vote.targetId);
@@ -79,7 +83,7 @@ export function startVoteRevealSequence(sessionId: string): void {
       const player = currentGameState.players.find((p) => p.id === playerId);
       return {
         playerId,
-        playerName: player?.name || 'Unknown',
+        playerName: player?.name ?? 'Unknown',
         voteCount: count
       };
     }).sort((a, b) => b.voteCount - a.voteCount);
@@ -89,11 +93,11 @@ export function startVoteRevealSequence(sessionId: string): void {
       payload: {
         revealIndex,
         vote,
-        voterName: voter?.name || 'Unknown',
-        targetName: target?.name || 'Unknown',
+        voterName: voter?.name ?? 'Unknown',
+        targetName: target?.name ?? 'Unknown',
         currentTally: tallyArray
       }
-    });
+    }, games, playerConnections);
 
     const updatedGame = {
       ...currentGameState,

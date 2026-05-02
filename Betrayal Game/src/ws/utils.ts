@@ -2,15 +2,13 @@ import { WebSocket } from 'ws';
 import crypto from 'crypto';
 import type { S2CEvent, GameState } from '../game/types.js';
 import type { MurderResult } from '../game/manager.js';
-import {
-  games,
-  playerConnections,
-  sessionTokens,
-  disconnectedPlayers,
-  GRACE_PERIOD_MS
-} from './context.js';
 
-export function broadcastToSession(sessionId: string, event: S2CEvent): void {
+export function broadcastToSession(
+  sessionId: string,
+  event: S2CEvent,
+  games: Map<string, GameState>,
+  playerConnections: Map<string, WebSocket>
+): void {
   const gameState = games.get(sessionId);
   if (!gameState) return;
 
@@ -34,10 +32,14 @@ export function generateSessionToken(): string {
   return crypto.randomUUID();
 }
 
-export function cleanupExpiredDisconnections(): void {
+export function cleanupExpiredDisconnections(
+  disconnectedPlayers: Map<string, { playerId: string; sessionId: string; disconnectedAt: number }>,
+  sessionTokens: Map<string, { playerId: string; sessionId: string }>,
+  gracePeriodMs = 60000
+): void {
   const now = Date.now();
   for (const [token, data] of disconnectedPlayers.entries()) {
-    if (now - data.disconnectedAt > GRACE_PERIOD_MS) {
+    if (now - data.disconnectedAt > gracePeriodMs) {
       disconnectedPlayers.delete(token);
       sessionTokens.delete(token);
       console.log(`Session token expired for player ${data.playerId}`);
@@ -46,9 +48,9 @@ export function cleanupExpiredDisconnections(): void {
 }
 
 export function broadcastRecruitmentEvents(
-  sessionId: string,
   result: MurderResult,
-  updatedGame: GameState
+  updatedGame: GameState,
+  playerConnections: Map<string, WebSocket>
 ): void {
   if (!result.recruitedPlayerId || !result.recruitedPlayerName) return;
 
@@ -86,7 +88,8 @@ export function broadcastMorningEventWithRecruitment(
   basePayload: Record<string, unknown>,
   recruitedPlayerId: string | undefined,
   recruitedPlayerName: string | undefined,
-  updatedGame: GameState
+  updatedGame: GameState,
+  playerConnections: Map<string, WebSocket>
 ): void {
   updatedGame.players.forEach((p) => {
     const socket = playerConnections.get(p.id);

@@ -255,9 +255,9 @@ export type S2CEvent =
       phase: GamePhase;
       traitorIds?: string[];
     } }
-  | { type: 'S2C_ROUNDTABLE_STARTED'; payload: { phase: GamePhase } }
+  | { type: 'S2C_ROUNDTABLE_STARTED'; payload: { phase: GamePhase; currentRound?: number } }
   | { type: 'S2C_VOTING_STARTED'; payload: { phase: GamePhase } }
-  | { type: 'S2C_VOTE_SUBMITTED'; payload: { voterId: string } }
+  | { type: 'S2C_VOTE_SUBMITTED'; payload: { voterId: string; isAutoVote?: boolean; voterName?: string } }
   | { type: 'S2C_VOTES_REVEALED'; payload: { votes: Vote[]; phase: GamePhase } }
   | { type: 'S2C_VOTE_REVEAL_STARTED'; payload: { 
       phase: GamePhase; 
@@ -279,6 +279,14 @@ export type S2CEvent =
   | { type: 'S2C_TIE_DETECTED'; payload: { tiedPlayerIds: string[]; tiedPlayerNames: string[]; phase: GamePhase } }
   | { type: 'S2C_REVOTE_STARTED'; payload: { tiedPlayerIds: string[]; phase: GamePhase } }
   | { type: 'S2C_TIEBREAKER_RESULT'; payload: { results: TiebreakerResult[]; phase: GamePhase } }
+  | { type: 'S2C_TIEBREAKER_RESOLVED'; payload: {
+      selectedPlayerId: string;
+      selectedPlayerName: string;
+      selectedPlayerRole: Role;
+      tiedPlayerIds: string[];
+      tiedPlayerNames: string[];
+      phase: GamePhase;
+    } }
   | { type: 'S2C_PLAYER_BANISHED'; payload: { 
       banishedPlayerId: string; 
       banishedPlayerName: string; 

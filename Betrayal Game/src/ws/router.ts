@@ -1,12 +1,6 @@
 import { WebSocket } from 'ws';
 import * as game from '../game/manager.js';
-import type { C2SEvent, S2CEvent, ChatMessage } from '../game/types.js';
-import {
-  games,
-  playerConnections,
-  sessionTokens,
-  disconnectedPlayers
-} from './context.js';
+import type { C2SEvent, S2CEvent, ChatMessage, GameState, Role } from '../game/types.js';
 import {
   broadcastToSession,
   sendError,
@@ -16,9 +10,23 @@ import {
 } from './utils.js';
 import { startVoteRevealSequence } from './voteReveal.js';
 
-export function handleConnection(ws: WebSocket): void {
+export interface WsContext {
+  games: Map<string, GameState>;
+  playerConnections: Map<string, WebSocket>;
+  sessionTokens: Map<string, { playerId: string; sessionId: string }>;
+  disconnectedPlayers: Map<string, { playerId: string; sessionId: string; disconnectedAt: number }>;
+}
+
+type ReconnectPayload = Extract<S2CEvent, { type: 'S2C_RECONNECTED' }>['payload'];
+
+export function handleConnection(ws: WebSocket, ctx: WsContext): void {
+  const { games, playerConnections, sessionTokens, disconnectedPlayers } = ctx;
   let currentPlayerId: string | undefined;
   let currentSessionId: string | undefined;
+
+  function broadcast(sessionId: string, event: S2CEvent): void {
+    broadcastToSession(sessionId, event, games, playerConnections);
+  }
 
   ws.on('message', (data: string) => {
     try {
@@ -46,7 +54,7 @@ export function handleConnection(ws: WebSocket): void {
           }
         };
         ws.send(JSON.stringify(response));
-        broadcastToSession(gameState.sessionId, {
+        broadcast(gameState.sessionId, {
           type: 'S2C_PLAYER_JOINED',
           payload: { players: gameState.players }
         });
@@ -83,7 +91,7 @@ export function handleConnection(ws: WebSocket): void {
         };
         ws.send(JSON.stringify(joinResponse));
 
-        broadcastToSession(event.payload.sessionId, {
+        broadcast(event.payload.sessionId, {
           type: 'S2C_PLAYER_JOINED',
           payload: { players: updatedGame.players }
         });
@@ -137,7 +145,7 @@ export function handleConnection(ws: WebSocket): void {
 
         const tiedPlayerNames = updatedGame.tiedPlayerIds?.map((id) => {
           const p = updatedGame.players.find((pl) => pl.id === id);
-          return p?.name || 'Unknown';
+          return p?.name ?? 'Unknown';
         });
 
         const aliveCount = updatedGame.players.filter((p) => p.isAlive).length;
@@ -153,55 +161,57 @@ export function handleConnection(ws: WebSocket): void {
         const remainingTraitors = updatedGame.players.filter((p) => p.isAlive && p.role === 'TRAITOR').length;
         const remainingFaithful = updatedGame.players.filter((p) => p.isAlive && p.role === 'FAITHFUL').length;
 
-        const reconnectResponse: S2CEvent = {
-          type: 'S2C_RECONNECTED',
-          payload: {
-            sessionId: currentSessionId,
-            playerId: currentPlayerId,
-            playerName: player.name,
-            players: updatedGame.players,
-            phase: updatedGame.phase,
-            role: player.role,
-            traitorIds,
-            currentRound: updatedGame.currentRound,
-            messages: updatedGame.messages,
-            votes: updatedGame.votes,
-            murderVotes: updatedGame.murderVotes,
-            hostId: updatedGame.hostId,
-            winner: updatedGame.winner,
-            banishedPlayerId: updatedGame.banishedPlayerId,
-            banishedPlayerName: banishedPlayer?.name,
-            banishedPlayerRole: banishedPlayer?.role,
-            lastMurderedPlayerId: updatedGame.lastMurderedPlayerId,
-            lastMurderedPlayerName: murderedPlayer?.name,
-            timer: updatedGame.timer,
-            tiedPlayerIds: updatedGame.tiedPlayerIds,
-            tiedPlayerNames,
-            voteCount,
-            murderVoteProgress,
-            aliveTraitorCount: aliveTraitors.length,
-            revealIndex: updatedGame.revealIndex,
-            revealOrder: updatedGame.revealOrder,
-            currentTally: updatedGame.currentTally,
-            revealedVotes: updatedGame.revealedVotes,
-            remainingTraitors,
-            remainingFaithful,
-            tiebreakerResults: updatedGame.tiebreakerResults,
-            randomlySelectedPlayerId: updatedGame.randomlySelectedPlayerId,
-            randomlySelectedPlayerName: updatedGame.randomlySelectedPlayerId
-              ? updatedGame.players.find((p) => p.id === updatedGame.randomlySelectedPlayerId)?.name
-              : undefined,
-            randomlySelectedPlayerRole: updatedGame.randomlySelectedPlayerId
-              ? updatedGame.players.find((p) => p.id === updatedGame.randomlySelectedPlayerId)?.role
-              : undefined,
-            totalVotes: updatedGame.votes.length,
-            settings: updatedGame.settings,
-            history: updatedGame.history
-          }
+        const reconnectPayload: ReconnectPayload = {
+          sessionId: currentSessionId,
+          playerId: currentPlayerId,
+          playerName: player.name,
+          players: updatedGame.players,
+          phase: updatedGame.phase,
+          currentRound: updatedGame.currentRound,
+          messages: updatedGame.messages,
+          votes: updatedGame.votes,
+          murderVotes: updatedGame.murderVotes,
+          hostId: updatedGame.hostId,
+          totalVotes: updatedGame.votes.length,
+          settings: updatedGame.settings,
+          history: updatedGame.history,
+          aliveTraitorCount: aliveTraitors.length,
+          remainingTraitors,
+          remainingFaithful,
+          revealedVotes: updatedGame.revealedVotes,
         };
-        ws.send(JSON.stringify(reconnectResponse));
 
-        broadcastToSession(currentSessionId, {
+        if (player.role !== undefined) reconnectPayload.role = player.role;
+        if (traitorIds !== undefined) reconnectPayload.traitorIds = traitorIds;
+        if (updatedGame.winner !== undefined) reconnectPayload.winner = updatedGame.winner;
+        if (updatedGame.banishedPlayerId !== undefined) reconnectPayload.banishedPlayerId = updatedGame.banishedPlayerId;
+        if (banishedPlayer !== undefined) {
+          reconnectPayload.banishedPlayerName = banishedPlayer.name;
+          if (banishedPlayer.role !== undefined) reconnectPayload.banishedPlayerRole = banishedPlayer.role;
+        }
+        if (updatedGame.lastMurderedPlayerId !== undefined) reconnectPayload.lastMurderedPlayerId = updatedGame.lastMurderedPlayerId;
+        if (murderedPlayer !== undefined) reconnectPayload.lastMurderedPlayerName = murderedPlayer.name;
+        if (updatedGame.timer !== undefined) reconnectPayload.timer = updatedGame.timer;
+        if (updatedGame.tiedPlayerIds !== undefined) reconnectPayload.tiedPlayerIds = updatedGame.tiedPlayerIds;
+        if (tiedPlayerNames !== undefined) reconnectPayload.tiedPlayerNames = tiedPlayerNames;
+        if (voteCount !== undefined) reconnectPayload.voteCount = voteCount;
+        if (murderVoteProgress !== undefined) reconnectPayload.murderVoteProgress = murderVoteProgress;
+        if (updatedGame.revealIndex !== undefined) reconnectPayload.revealIndex = updatedGame.revealIndex;
+        if (updatedGame.revealOrder !== undefined) reconnectPayload.revealOrder = updatedGame.revealOrder;
+        if (updatedGame.currentTally !== undefined) reconnectPayload.currentTally = updatedGame.currentTally;
+        if (updatedGame.tiebreakerResults !== undefined) reconnectPayload.tiebreakerResults = updatedGame.tiebreakerResults;
+        if (updatedGame.randomlySelectedPlayerId !== undefined) {
+          reconnectPayload.randomlySelectedPlayerId = updatedGame.randomlySelectedPlayerId;
+          const rsp = updatedGame.players.find((p) => p.id === updatedGame.randomlySelectedPlayerId);
+          if (rsp !== undefined) {
+            reconnectPayload.randomlySelectedPlayerName = rsp.name;
+            if (rsp.role !== undefined) reconnectPayload.randomlySelectedPlayerRole = rsp.role;
+          }
+        }
+
+        ws.send(JSON.stringify({ type: 'S2C_RECONNECTED', payload: reconnectPayload } satisfies S2CEvent));
+
+        broadcast(currentSessionId, {
           type: 'S2C_PLAYER_RECONNECTED',
           payload: { playerId: currentPlayerId, players: updatedGame.players }
         });
@@ -230,7 +240,7 @@ export function handleConnection(ws: WebSocket): void {
         const updatedGame = game.updateSettings(gameState, event.payload.settings);
         games.set(currentSessionId, updatedGame);
 
-        broadcastToSession(currentSessionId, {
+        broadcast(currentSessionId, {
           type: 'S2C_SETTINGS_UPDATED',
           payload: { settings: updatedGame.settings }
         });
@@ -246,7 +256,7 @@ export function handleConnection(ws: WebSocket): void {
         const updatedGame = { ...gameState, phase: 'ROLE_ASSIGN' as const };
         games.set(currentSessionId, updatedGame);
 
-        broadcastToSession(currentSessionId, {
+        broadcast(currentSessionId, {
           type: 'S2C_GAME_STARTED',
           payload: { phase: 'ROLE_ASSIGN' }
         });
@@ -257,7 +267,7 @@ export function handleConnection(ws: WebSocket): void {
         const updatedGame = game.assignRoles(gameState);
         games.set(currentSessionId, updatedGame);
 
-        broadcastToSession(currentSessionId, {
+        broadcast(currentSessionId, {
           type: 'S2C_ROLES_ASSIGNED',
           payload: { phase: 'ROLE_REVEAL' }
         });
@@ -288,7 +298,7 @@ export function handleConnection(ws: WebSocket): void {
         const updatedGame = game.startRoundtable(gameState);
         games.set(currentSessionId, updatedGame);
 
-        broadcastToSession(currentSessionId, {
+        broadcast(currentSessionId, {
           type: 'S2C_ROUNDTABLE_STARTED',
           payload: { phase: 'ROUNDTABLE', currentRound: updatedGame.currentRound }
         });
@@ -297,7 +307,7 @@ export function handleConnection(ws: WebSocket): void {
         if (timer) {
           const gameWithTimer = { ...updatedGame, timer };
           games.set(currentSessionId, gameWithTimer);
-          broadcastToSession(currentSessionId, {
+          broadcast(currentSessionId, {
             type: 'S2C_TIMER_UPDATE',
             payload: { endTime: timer.endTime, duration: timer.duration, phase: 'ROUNDTABLE' }
           });
@@ -309,7 +319,7 @@ export function handleConnection(ws: WebSocket): void {
         const updatedGame = game.startVoting(gameState);
         games.set(currentSessionId, updatedGame);
 
-        broadcastToSession(currentSessionId, {
+        broadcast(currentSessionId, {
           type: 'S2C_VOTING_STARTED',
           payload: { phase: 'VOTING' }
         });
@@ -318,7 +328,7 @@ export function handleConnection(ws: WebSocket): void {
         if (timer) {
           const gameWithTimer = { ...updatedGame, timer };
           games.set(currentSessionId, gameWithTimer);
-          broadcastToSession(currentSessionId, {
+          broadcast(currentSessionId, {
             type: 'S2C_TIMER_UPDATE',
             payload: { endTime: timer.endTime, duration: timer.duration, phase: 'VOTING' }
           });
@@ -330,16 +340,16 @@ export function handleConnection(ws: WebSocket): void {
         const updatedGame = game.startRevote(gameState);
         games.set(currentSessionId, updatedGame);
 
-        broadcastToSession(currentSessionId, {
+        broadcast(currentSessionId, {
           type: 'S2C_REVOTE_STARTED',
-          payload: { tiedPlayerIds: updatedGame.tiedPlayerIds || [], phase: 'REVOTE' }
+          payload: { tiedPlayerIds: updatedGame.tiedPlayerIds ?? [], phase: 'REVOTE' }
         });
 
         const timer = game.createTimer('REVOTE', updatedGame.settings);
         if (timer) {
           const gameWithTimer = { ...updatedGame, timer };
           games.set(currentSessionId, gameWithTimer);
-          broadcastToSession(currentSessionId, {
+          broadcast(currentSessionId, {
             type: 'S2C_TIMER_UPDATE',
             payload: { endTime: timer.endTime, duration: timer.duration, phase: 'REVOTE' }
           });
@@ -373,7 +383,7 @@ export function handleConnection(ws: WebSocket): void {
         );
         games.set(currentSessionId, updatedGame);
 
-        broadcastToSession(currentSessionId, {
+        broadcast(currentSessionId, {
           type: 'S2C_VOTE_SUBMITTED',
           payload: { voterId: currentPlayerId }
         });
@@ -381,7 +391,7 @@ export function handleConnection(ws: WebSocket): void {
         const alivePlayerCount = updatedGame.players.filter((p) => p.isAlive).length;
         const voteCount = updatedGame.votes.length;
 
-        broadcastToSession(currentSessionId, {
+        broadcast(currentSessionId, {
           type: 'S2C_VOTE_COUNT_UPDATE',
           payload: { received: voteCount, needed: alivePlayerCount }
         });
@@ -391,7 +401,7 @@ export function handleConnection(ws: WebSocket): void {
           const revealedGame = game.revealVotes(lockedGame);
           games.set(currentSessionId, revealedGame);
 
-          startVoteRevealSequence(currentSessionId);
+          startVoteRevealSequence(currentSessionId, games, playerConnections);
         }
         return;
       }
@@ -412,14 +422,14 @@ export function handleConnection(ws: WebSocket): void {
 
         for (const autoVote of autoVotes) {
           const voter = gameWithAutoVotes.players.find((p) => p.id === autoVote.voterId);
-          broadcastToSession(currentSessionId, {
+          broadcast(currentSessionId, {
             type: 'S2C_VOTE_SUBMITTED',
-            payload: { voterId: autoVote.voterId, isAutoVote: true, voterName: voter?.name || 'Unknown' }
+            payload: { voterId: autoVote.voterId, isAutoVote: true, voterName: voter?.name ?? 'Unknown' }
           });
         }
 
         const alivePlayerCount = gameWithAutoVotes.players.filter((p) => p.isAlive).length;
-        broadcastToSession(currentSessionId, {
+        broadcast(currentSessionId, {
           type: 'S2C_VOTE_COUNT_UPDATE',
           payload: { received: gameWithAutoVotes.votes.length, needed: alivePlayerCount }
         });
@@ -428,7 +438,7 @@ export function handleConnection(ws: WebSocket): void {
         const revealedGame = game.revealVotes(lockedGame);
         games.set(currentSessionId, revealedGame);
 
-        startVoteRevealSequence(currentSessionId);
+        startVoteRevealSequence(currentSessionId, games, playerConnections);
         return;
       }
 
@@ -436,7 +446,7 @@ export function handleConnection(ws: WebSocket): void {
         const updatedGame = game.revealVotes(gameState);
         games.set(currentSessionId, updatedGame);
 
-        broadcastToSession(currentSessionId, {
+        broadcast(currentSessionId, {
           type: 'S2C_VOTES_REVEALED',
           payload: { votes: updatedGame.revealedVotes, phase: 'VOTE_REVEAL' }
         });
@@ -450,10 +460,10 @@ export function handleConnection(ws: WebSocket): void {
         if (result.isTie && result.tiedPlayerIds) {
           const tiedPlayerNames = result.tiedPlayerIds.map((id) => {
             const player = result.game.players.find((p) => p.id === id);
-            return player?.name || 'Unknown';
+            return player?.name ?? 'Unknown';
           });
 
-          broadcastToSession(currentSessionId, {
+          broadcast(currentSessionId, {
             type: 'S2C_TIE_DETECTED',
             payload: {
               tiedPlayerIds: result.tiedPlayerIds,
@@ -465,17 +475,17 @@ export function handleConnection(ws: WebSocket): void {
           const selectedPlayer = result.game.players.find((p) => p.id === result.randomlySelectedPlayerId);
           const tiedPlayerNames = result.tiedPlayerIds?.map((id) => {
             const player = result.game.players.find((p) => p.id === id);
-            return player?.name || 'Unknown';
-          }) || [];
+            return player?.name ?? 'Unknown';
+          }) ?? [];
 
           if (selectedPlayer && selectedPlayer.role) {
-            broadcastToSession(currentSessionId, {
+            broadcast(currentSessionId, {
               type: 'S2C_TIEBREAKER_RESOLVED',
               payload: {
                 selectedPlayerId: selectedPlayer.id,
                 selectedPlayerName: selectedPlayer.name,
                 selectedPlayerRole: selectedPlayer.role,
-                tiedPlayerIds: result.tiedPlayerIds || [],
+                tiedPlayerIds: result.tiedPlayerIds ?? [],
                 tiedPlayerNames,
                 phase: 'TIEBREAKER_REVEAL'
               }
@@ -484,7 +494,7 @@ export function handleConnection(ws: WebSocket): void {
         } else {
           const banishedPlayer = result.game.players.find((p) => p.id === result.game.banishedPlayerId);
           if (banishedPlayer && banishedPlayer.role) {
-            broadcastToSession(currentSessionId, {
+            broadcast(currentSessionId, {
               type: 'S2C_PLAYER_BANISHED',
               payload: {
                 banishedPlayerId: banishedPlayer.id,
@@ -515,7 +525,7 @@ export function handleConnection(ws: WebSocket): void {
         const updatedGame = game.submitVote(gameState, currentPlayerId, event.payload.targetId);
         games.set(currentSessionId, updatedGame);
 
-        broadcastToSession(currentSessionId, {
+        broadcast(currentSessionId, {
           type: 'S2C_VOTE_SUBMITTED',
           payload: { voterId: currentPlayerId }
         });
@@ -523,7 +533,7 @@ export function handleConnection(ws: WebSocket): void {
         const alivePlayerCount = updatedGame.players.filter((p) => p.isAlive).length;
         const voteCount = updatedGame.votes.length;
 
-        broadcastToSession(currentSessionId, {
+        broadcast(currentSessionId, {
           type: 'S2C_VOTE_COUNT_UPDATE',
           payload: { received: voteCount, needed: alivePlayerCount }
         });
@@ -532,7 +542,7 @@ export function handleConnection(ws: WebSocket): void {
           const revealedGame = game.revealVotes(updatedGame);
           games.set(currentSessionId, revealedGame);
 
-          broadcastToSession(currentSessionId, {
+          broadcast(currentSessionId, {
             type: 'S2C_VOTES_REVEALED',
             payload: { votes: revealedGame.revealedVotes, phase: 'VOTE_REVEAL' }
           });
@@ -548,7 +558,7 @@ export function handleConnection(ws: WebSocket): void {
           const aliveTraitors = updatedGame.players.filter((p) => p.isAlive && p.role === 'TRAITOR').length;
           const aliveFaithful = updatedGame.players.filter((p) => p.isAlive && p.role === 'FAITHFUL').length;
 
-          broadcastToSession(currentSessionId, {
+          broadcast(currentSessionId, {
             type: 'S2C_GAME_END',
             payload: {
               winner: updatedGame.winner,
@@ -559,7 +569,7 @@ export function handleConnection(ws: WebSocket): void {
             }
           });
         } else {
-          broadcastToSession(currentSessionId, {
+          broadcast(currentSessionId, {
             type: 'S2C_CONTINUE_GAME',
             payload: { phase: updatedGame.phase, currentRound: updatedGame.currentRound }
           });
@@ -569,7 +579,7 @@ export function handleConnection(ws: WebSocket): void {
             if (timer) {
               const gameWithTimer = { ...updatedGame, timer };
               games.set(currentSessionId, gameWithTimer);
-              broadcastToSession(currentSessionId, {
+              broadcast(currentSessionId, {
                 type: 'S2C_TIMER_UPDATE',
                 payload: { endTime: timer.endTime, duration: timer.duration, phase: 'ROUNDTABLE' }
               });
@@ -585,7 +595,7 @@ export function handleConnection(ws: WebSocket): void {
 
         const aliveTraitorCount = game.getAliveTraitorCount(updatedGame);
 
-        broadcastToSession(currentSessionId, {
+        broadcast(currentSessionId, {
           type: 'S2C_NIGHT_STARTED',
           payload: {
             phase: 'NIGHT',
@@ -598,7 +608,7 @@ export function handleConnection(ws: WebSocket): void {
         if (timer) {
           const gameWithTimer = { ...updatedGame, timer };
           games.set(currentSessionId, gameWithTimer);
-          broadcastToSession(currentSessionId, {
+          broadcast(currentSessionId, {
             type: 'S2C_TIMER_UPDATE',
             payload: { endTime: timer.endTime, duration: timer.duration, phase: 'NIGHT' }
           });
@@ -634,7 +644,7 @@ export function handleConnection(ws: WebSocket): void {
             const result = game.resolveMurder(updatedGame);
             games.set(currentSessionId, result.game);
 
-            broadcastRecruitmentEvents(currentSessionId, result, result.game);
+            broadcastRecruitmentEvents(result, result.game, playerConnections);
 
             if (result.blocked) {
               broadcastMorningEventWithRecruitment(
@@ -647,19 +657,21 @@ export function handleConnection(ws: WebSocket): void {
                 },
                 result.recruitedPlayerId,
                 result.recruitedPlayerName,
-                result.game
+                result.game,
+                playerConnections
               );
             } else if (result.murderedPlayerId) {
               broadcastMorningEventWithRecruitment(
                 'S2C_MURDER_RESOLVED',
                 {
                   murderedPlayerId: result.murderedPlayerId,
-                  murderedPlayerName: result.murderedPlayerName!,
+                  murderedPlayerName: result.murderedPlayerName,
                   phase: 'MORNING',
                 },
                 result.recruitedPlayerId,
                 result.recruitedPlayerName,
-                result.game
+                result.game,
+                playerConnections
               );
             }
           } catch (err) {
@@ -673,7 +685,7 @@ export function handleConnection(ws: WebSocket): void {
         const result = game.resolveMurder(gameState);
         games.set(currentSessionId, result.game);
 
-        broadcastRecruitmentEvents(currentSessionId, result, result.game);
+        broadcastRecruitmentEvents(result, result.game, playerConnections);
 
         if (result.blocked) {
           broadcastMorningEventWithRecruitment(
@@ -686,19 +698,21 @@ export function handleConnection(ws: WebSocket): void {
             },
             result.recruitedPlayerId,
             result.recruitedPlayerName,
-            result.game
+            result.game,
+            playerConnections
           );
         } else if (result.murderedPlayerId) {
           broadcastMorningEventWithRecruitment(
             'S2C_MURDER_RESOLVED',
             {
               murderedPlayerId: result.murderedPlayerId,
-              murderedPlayerName: result.murderedPlayerName!,
+              murderedPlayerName: result.murderedPlayerName,
               phase: 'MORNING',
             },
             result.recruitedPlayerId,
             result.recruitedPlayerName,
-            result.game
+            result.game,
+            playerConnections
           );
         }
         return;
@@ -721,7 +735,8 @@ export function handleConnection(ws: WebSocket): void {
             },
             recruitedPlayer?.id,
             recruitedPlayer?.name,
-            updatedGame
+            updatedGame,
+            playerConnections
           );
         } else {
           broadcastMorningEventWithRecruitment(
@@ -729,7 +744,8 @@ export function handleConnection(ws: WebSocket): void {
             { phase: 'MORNING' },
             recruitedPlayer?.id,
             recruitedPlayer?.name,
-            updatedGame
+            updatedGame,
+            playerConnections
           );
         }
         return;
@@ -743,7 +759,7 @@ export function handleConnection(ws: WebSocket): void {
           const aliveTraitors = updatedGame.players.filter((p) => p.isAlive && p.role === 'TRAITOR').length;
           const aliveFaithful = updatedGame.players.filter((p) => p.isAlive && p.role === 'FAITHFUL').length;
 
-          broadcastToSession(currentSessionId, {
+          broadcast(currentSessionId, {
             type: 'S2C_GAME_END',
             payload: {
               winner: updatedGame.winner,
@@ -758,15 +774,15 @@ export function handleConnection(ws: WebSocket): void {
           games.set(currentSessionId, challengeResult.game);
 
           const challenge = challengeResult.challenge;
-          broadcastToSession(currentSessionId, {
+          broadcast(currentSessionId, {
             type: 'S2C_CHALLENGE_STARTED',
             payload: {
               phase: 'CHALLENGE',
               challengeType: challenge.type,
               startTime: challenge.startTime,
-              targetTime: challenge.targetTime,
-              shownPlayerIds: challenge.shownPlayerIds,
-              scrambledWord: challenge.scrambledWord
+              ...(challenge.targetTime !== undefined ? { targetTime: challenge.targetTime } : {}),
+              ...(challenge.shownPlayerIds !== undefined ? { shownPlayerIds: challenge.shownPlayerIds } : {}),
+              ...(challenge.scrambledWord !== undefined ? { scrambledWord: challenge.scrambledWord } : {}),
             }
           });
 
@@ -774,17 +790,19 @@ export function handleConnection(ws: WebSocket): void {
             setTimeout(() => {
               const currentGame = games.get(currentSessionId!);
               if (currentGame?.phase === 'CHALLENGE' && currentGame.challenge?.type === 'MISSING_PLAYER') {
-                broadcastToSession(currentSessionId!, {
+                broadcast(currentSessionId!, {
                   type: 'S2C_CHALLENGE_PHASE_UPDATE',
                   payload: {
-                    hiddenPlayerId: currentGame.challenge.hiddenPlayerId
+                    ...(currentGame.challenge.hiddenPlayerId !== undefined
+                      ? { hiddenPlayerId: currentGame.challenge.hiddenPlayerId }
+                      : {})
                   }
                 });
               }
             }, 3000);
           }
         } else {
-          broadcastToSession(currentSessionId, {
+          broadcast(currentSessionId, {
             type: 'S2C_CONTINUE_GAME',
             payload: { phase: updatedGame.phase, currentRound: updatedGame.currentRound }
           });
@@ -801,7 +819,7 @@ export function handleConnection(ws: WebSocket): void {
         const result = game.submitChallengeAnswer(gameState, currentPlayerId, event.payload.answer);
         games.set(currentSessionId, result.game);
 
-        broadcastToSession(currentSessionId, {
+        broadcast(currentSessionId, {
           type: 'S2C_CHALLENGE_ANSWER_RECEIVED',
           payload: { playerId: currentPlayerId }
         });
@@ -810,14 +828,14 @@ export function handleConnection(ws: WebSocket): void {
           const resolution = game.resolveChallenge(result.game);
           games.set(currentSessionId, resolution.game);
 
-          broadcastToSession(currentSessionId, {
+          broadcast(currentSessionId, {
             type: 'S2C_CHALLENGE_RESULT',
             payload: {
               phase: 'CHALLENGE_RESULT',
-              winnerId: resolution.winnerId,
-              winnerName: resolution.winnerName,
-              correctAnswer: resolution.correctAnswer,
-              shieldAwarded: resolution.shieldAwarded
+              shieldAwarded: resolution.shieldAwarded,
+              ...(resolution.winnerId !== undefined ? { winnerId: resolution.winnerId } : {}),
+              ...(resolution.winnerName !== undefined ? { winnerName: resolution.winnerName } : {}),
+              ...(resolution.correctAnswer !== undefined ? { correctAnswer: resolution.correctAnswer } : {}),
             }
           });
         }
@@ -830,14 +848,14 @@ export function handleConnection(ws: WebSocket): void {
             const resolution = game.resolveChallenge(gameState);
             games.set(currentSessionId, resolution.game);
 
-            broadcastToSession(currentSessionId, {
+            broadcast(currentSessionId, {
               type: 'S2C_CHALLENGE_RESULT',
               payload: {
                 phase: 'CHALLENGE_RESULT',
-                winnerId: resolution.winnerId,
-                winnerName: resolution.winnerName,
-                correctAnswer: resolution.correctAnswer,
-                shieldAwarded: resolution.shieldAwarded
+                shieldAwarded: resolution.shieldAwarded,
+                ...(resolution.winnerId !== undefined ? { winnerId: resolution.winnerId } : {}),
+                ...(resolution.winnerName !== undefined ? { winnerName: resolution.winnerName } : {}),
+                ...(resolution.correctAnswer !== undefined ? { correctAnswer: resolution.correctAnswer } : {}),
               }
             });
             return;
@@ -849,7 +867,7 @@ export function handleConnection(ws: WebSocket): void {
         const updatedGame = game.continueToRoundtable(gameState);
         games.set(currentSessionId, updatedGame);
 
-        broadcastToSession(currentSessionId, {
+        broadcast(currentSessionId, {
           type: 'S2C_ROUNDTABLE_STARTED',
           payload: { phase: 'ROUNDTABLE', currentRound: updatedGame.currentRound }
         });
@@ -858,7 +876,7 @@ export function handleConnection(ws: WebSocket): void {
         if (timer) {
           const gameWithTimer = { ...updatedGame, timer };
           games.set(currentSessionId, gameWithTimer);
-          broadcastToSession(currentSessionId, {
+          broadcast(currentSessionId, {
             type: 'S2C_TIMER_UPDATE',
             payload: { endTime: timer.endTime, duration: timer.duration, phase: 'ROUNDTABLE' }
           });
@@ -872,7 +890,7 @@ export function handleConnection(ws: WebSocket): void {
 
         const player = updatedGame.players.find((p) => p.id === currentPlayerId);
         if (player) {
-          broadcastToSession(currentSessionId, {
+          broadcast(currentSessionId, {
             type: 'S2C_SHIELD_REVEALED',
             payload: { playerId: currentPlayerId, playerName: player.name }
           });
@@ -908,7 +926,7 @@ export function handleConnection(ws: WebSocket): void {
           event.payload.avatar
         );
         games.set(currentSessionId, updatedGame);
-        broadcastToSession(currentSessionId, {
+        broadcast(currentSessionId, {
           type: 'S2C_AVATAR_UPDATED',
           payload: { players: updatedGame.players }
         });
@@ -971,7 +989,7 @@ export function handleConnection(ws: WebSocket): void {
             }
           });
         } else {
-          broadcastToSession(currentSessionId, {
+          broadcast(currentSessionId, {
             type: 'S2C_CHAT_MESSAGE',
             payload: chatMessage
           });
@@ -1027,7 +1045,7 @@ export function handleConnection(ws: WebSocket): void {
 
         games.set(currentSessionId, updatedGame);
 
-        broadcastToSession(currentSessionId, {
+        broadcast(currentSessionId, {
           type: 'S2C_PLAYER_DISCONNECTED',
           payload: { playerId: currentPlayerId, players: updatedGame.players }
         });
@@ -1035,3 +1053,6 @@ export function handleConnection(ws: WebSocket): void {
     }
   });
 }
+
+// Unused export kept only to satisfy the import in the unused context.ts stub.
+export type { Role };
