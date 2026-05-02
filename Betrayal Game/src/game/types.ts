@@ -111,6 +111,25 @@ export interface VoteTally {
   voteCount: number;
 }
 
+export interface VoteEntry {
+  voterName: string;
+  voterRole: Role;
+  targetName: string;
+  targetRole: Role;
+  isAutoVote?: boolean;
+  reasonText?: string;
+}
+
+export interface RoundRecord {
+  round: number;
+  votes: VoteEntry[];
+  banishedName?: string;
+  banishedRole?: Role;
+  murderedName?: string;
+  murderBlocked?: boolean;
+  shieldedName?: string;
+}
+
 export interface GameState {
   sessionId: string;
   phase: GamePhase;
@@ -124,6 +143,9 @@ export interface GameState {
   murderVotes: Vote[];
   lastMurderedPlayerId?: string;
   lastMurderBlocked?: boolean;
+  lastShieldedPlayerId?: string;
+  lastRoundVotes?: Vote[];
+  history: RoundRecord[];
   messages: ChatMessage[];
   timer?: TimerState;
   tiedPlayerIds?: string[];
@@ -211,6 +233,7 @@ export type S2CEvent =
       randomlySelectedPlayerRole?: Role;
       totalVotes?: number;
       settings: GameSettings;
+      history: RoundRecord[];
     } }
   | { type: 'S2C_PLAYER_RECONNECTED'; payload: { playerId: string; players: Player[] } }
   | { type: 'S2C_PLAYER_DISCONNECTED'; payload: { playerId: string; players: Player[] } }
@@ -257,6 +280,7 @@ export type S2CEvent =
       phase: GamePhase;
       remainingTraitors: number;
       remainingFaithful: number;
+      history: RoundRecord[];
     } }
   | { type: 'S2C_CONTINUE_GAME'; payload: { phase: GamePhase; currentRound: number } }
   | { type: 'S2C_NIGHT_STARTED'; payload: { 

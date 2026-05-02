@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import type { GameState, C2SEvent, Player, Role, Vote, ChatMessage, TimerState, VoteTally, GameSettings } from '../types';
+import type { GameState, C2SEvent, Player, Role, Vote, ChatMessage, TimerState, VoteTally, GameSettings, RoundRecord } from '../types';
 
 const getWebSocketUrl = () => {
   const domain = window.location.host;
@@ -205,6 +205,7 @@ export function useWebSocket() {
             : undefined,
           currentReveal,
           settings: payload.settings,
+          history: (payload as unknown as { history: RoundRecord[] }).history ?? [],
         });
         break;
       }
@@ -626,13 +627,14 @@ export function useWebSocket() {
       }
 
       case 'S2C_GAME_END': {
-        const payload = msg.payload as { winner: 'TRAITORS' | 'FAITHFUL'; phase: string; remainingTraitors: number; remainingFaithful: number };
+        const payload = msg.payload as { winner: 'TRAITORS' | 'FAITHFUL'; phase: string; remainingTraitors: number; remainingFaithful: number; history: RoundRecord[] };
         setGameState((prev) => prev ? {
           ...prev,
           phase: payload.phase as GameState['phase'],
           winner: payload.winner,
           remainingTraitors: payload.remainingTraitors,
           remainingFaithful: payload.remainingFaithful,
+          history: payload.history ?? [],
         } : null);
         break;
       }

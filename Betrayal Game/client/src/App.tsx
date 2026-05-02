@@ -82,6 +82,7 @@ function App() {
           winner={gameState?.winner}
           players={gameState?.players || []}
           myRole={gameState?.myRole}
+          history={gameState?.history}
         />
         {chatBox}
       </>

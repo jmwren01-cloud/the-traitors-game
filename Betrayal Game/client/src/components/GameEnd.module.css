@@ -232,6 +232,219 @@
   }
 }
 
+/* ============= TIMELINE ============= */
+
+.timeline {
+  width: 100%;
+  max-width: 700px;
+  margin-bottom: 2.5rem;
+}
+
+.timelineTitle {
+  font-size: 1.6rem;
+  font-weight: bold;
+  text-align: center;
+  margin-bottom: 1.2rem;
+  color: #e2c97e;
+  letter-spacing: 0.04em;
+}
+
+.timelineList {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.roundCard {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 14px;
+  padding: 18px 20px;
+  animation: roundSlideIn 0.5s ease-out backwards;
+}
+
+@keyframes roundSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.roundLabel {
+  font-size: 1.1rem;
+  font-weight: bold;
+  color: #e2c97e;
+  margin-bottom: 14px;
+  border-bottom: 1px solid rgba(226, 201, 126, 0.2);
+  padding-bottom: 8px;
+}
+
+/* Vote table */
+.voteSection {
+  margin-bottom: 14px;
+}
+
+.voteSectionTitle {
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #888;
+  margin-bottom: 8px;
+}
+
+.voteTable {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.voteRow {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 7px 10px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  font-size: 0.9rem;
+}
+
+.autoVoteRow {
+  border: 1px dashed rgba(255, 165, 0, 0.5);
+}
+
+.voteVoter {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex: 1;
+  min-width: 0;
+}
+
+.voterName,
+.targetName {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 90px;
+}
+
+.voteArrow {
+  color: #aaa;
+  flex-shrink: 0;
+}
+
+.voteTarget {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex: 1;
+  min-width: 0;
+}
+
+.voteReason {
+  width: 100%;
+  font-size: 0.78rem;
+  color: #aaa;
+  font-style: italic;
+  padding-left: 4px;
+}
+
+.autoBadge {
+  font-size: 0.68rem;
+  background: rgba(255, 165, 0, 0.25);
+  color: #ffa500;
+  border: 1px solid rgba(255, 165, 0, 0.5);
+  border-radius: 4px;
+  padding: 1px 5px;
+  flex-shrink: 0;
+}
+
+/* Role pills */
+.pillTraitor {
+  font-size: 0.7rem;
+  background: rgba(200, 0, 0, 0.3);
+  color: #ff8080;
+  border: 1px solid rgba(200, 0, 0, 0.5);
+  border-radius: 20px;
+  padding: 1px 8px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.pillFaithful {
+  font-size: 0.7rem;
+  background: rgba(0, 150, 0, 0.3);
+  color: #80ff80;
+  border: 1px solid rgba(0, 150, 0, 0.5);
+  border-radius: 20px;
+  padding: 1px 8px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* Outcome rows */
+.outcomeRow {
+  margin-top: 10px;
+}
+
+.banishOutcome,
+.murderOutcome,
+.shieldOutcome,
+.outcomeNeutral {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 0.92rem;
+  padding: 8px 10px;
+  border-radius: 8px;
+}
+
+.banishOutcome {
+  background: rgba(200, 150, 0, 0.15);
+  border: 1px solid rgba(200, 150, 0, 0.3);
+}
+
+.murderOutcome {
+  background: rgba(150, 0, 0, 0.2);
+  border: 1px solid rgba(200, 0, 0, 0.3);
+}
+
+.shieldOutcome {
+  background: rgba(0, 100, 200, 0.2);
+  border: 1px solid rgba(0, 150, 255, 0.3);
+}
+
+.outcomeNeutral {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: #777;
+}
+
+.outcomeIcon {
+  flex-shrink: 0;
+  font-size: 1rem;
+  line-height: 1.4;
+}
+
+.outcomeText {
+  line-height: 1.5;
+}
+
+.noVoteNote {
+  font-size: 0.85rem;
+  color: #666;
+  font-style: italic;
+  margin-bottom: 8px;
+}
+
+/* ============= RESPONSIVE ============= */
+
 @media (max-width: 480px) {
   .container {
     padding: 15px;

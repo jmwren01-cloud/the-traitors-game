@@ -95,6 +95,25 @@ export interface VoteTally {
   voteCount: number;
 }
 
+export interface VoteEntry {
+  voterName: string;
+  voterRole: Role;
+  targetName: string;
+  targetRole: Role;
+  isAutoVote?: boolean;
+  reasonText?: string;
+}
+
+export interface RoundRecord {
+  round: number;
+  votes: VoteEntry[];
+  banishedName?: string;
+  banishedRole?: Role;
+  murderedName?: string;
+  murderBlocked?: boolean;
+  shieldedName?: string;
+}
+
 export interface GameState {
   sessionId: string;
   phase: GamePhase;
@@ -131,6 +150,7 @@ export interface GameState {
   };
   settings?: GameSettings;
   challenge?: ChallengeState;
+  history?: RoundRecord[];
 }
 
 export type C2SEvent =

@@ -123,6 +123,17 @@ Start workflow: `cd "Betrayal Game" && npm run dev`
 - Fixed voting state not resetting between rounds: S2C_VOTING_STARTED, S2C_ROUNDTABLE_STARTED, and S2C_REVOTE_STARTED handlers now reset all reveal state (revealIndex, revealOrder, revealedVotes, currentTally, totalVotes, currentReveal)
 - Added safeguard in Voting.tsx: revealComplete now requires actual revealedVotes to prevent stale state from previous rounds
 
+## Game Replay & Results Summary (Completed 2026-05-02)
+- After a game ends, the Game Over screen shows a "How It Happened" round-by-round timeline
+- Each round card shows: complete vote breakdown (voter → target, role pills, auto-vote badge, optional vote reason), who was banished (with role revealed), and the night outcome (murder, shield block, or peaceful)
+- Server captures `RoundRecord[]` in `game.history` throughout the game:
+  - `banishPlayer()` snapshots `revealedVotes` to `lastRoundVotes` at the moment of banishment
+  - `resolveMurder()` stores `lastShieldedPlayerId` when a murder is blocked
+  - `continueToDayPhase()` builds and appends a RoundRecord after each night resolves
+  - `checkWinCondition()` also appends a RoundRecord when banishment directly ends the game
+- `history` is passed to clients via `S2C_GAME_END` and `S2C_RECONNECTED` payloads
+- Key files: `src/game/types.ts` (VoteEntry, RoundRecord types), `src/game/manager.ts`, `src/index.ts`, `client/src/types.ts`, `client/src/hooks/useWebSocket.ts`, `client/src/components/GameEnd.tsx`, `client/src/components/GameEnd.module.css`
+
 ## Spectator Mode (Completed 2026-05-02)
 - Dead players automatically enter spectator (ghost) mode instead of seeing the normal game screens
 - Ghost banner with floating 👻 icon and "You are a Ghost / Watch the game unfold from beyond..." subtitle

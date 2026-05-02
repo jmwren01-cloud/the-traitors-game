@@ -1,6 +1,6 @@
 // Game Manager - Core Game Logic
 
-import type { GameState, Player, Role, Vote, TimerState, GamePhase, GameSettings, ChallengeState, ChallengeType } from './types.js';
+import type { GameState, Player, Role, Vote, TimerState, GamePhase, GameSettings, ChallengeState, ChallengeType, RoundRecord, VoteEntry } from './types.js';
 import { DEFAULT_SETTINGS } from './types.js';
 
 // Word bank for Word Scramble challenge (simple 4-5 letter words)
@@ -71,6 +71,7 @@ export function createGame(hostName: string): GameState {
     murderVotes: [],
     messages: [],
     lastManualVotes: {},
+    history: [],
     settings: { ...DEFAULT_SETTINGS }
   };
 }
@@ -404,6 +405,7 @@ export function banishPlayer(game: GameState): BanishResult {
       const updatedPlayers = game.players.map((p: Player) =>
         p.id === randomlySelectedId ? { ...p, isAlive: false } : p
       );
+      const snapshotVotes = [...game.revealedVotes];
 
       return {
         game: {
@@ -413,7 +415,8 @@ export function banishPlayer(game: GameState): BanishResult {
           banishedPlayerId: randomlySelectedId,
           randomlySelectedPlayerId: randomlySelectedId,
           tiedPlayerIds: topCandidates,
-          isRevote: false
+          isRevote: false,
+          lastRoundVotes: snapshotVotes,
         },
         isTie: false,
         isRandomSelection: true,
@@ -422,7 +425,7 @@ export function banishPlayer(game: GameState): BanishResult {
       };
     }
 
-    // First tie: transition to REVOTE phase
+    // First tie: transition to REVOTE phase (don't snapshot yet — revote will determine final banishment)
     return {
       game: {
         ...game,
@@ -439,6 +442,7 @@ export function banishPlayer(game: GameState): BanishResult {
 
   // Clear winner - banish them
   const banishedId = topCandidates[0];
+  const snapshotVotes = [...game.revealedVotes];
   const updatedPlayers = game.players.map((p: Player) =>
     p.id === banishedId ? { ...p, isAlive: false } : p
   );
@@ -451,7 +455,8 @@ export function banishPlayer(game: GameState): BanishResult {
       phase: 'BANISH_REVEAL',
       votes: [],
       revealedVotes: [],
-      tiedPlayerIds: undefined
+      tiedPlayerIds: undefined,
+      lastRoundVotes: snapshotVotes,
     },
     isTie: false
   };
@@ -503,6 +508,33 @@ export function isGameEmpty(game: GameState): boolean {
 
 // ============= WIN CONDITION =============
 
+function buildRoundRecord(game: GameState, murderedName: string | undefined, murderBlocked: boolean, shieldedName: string | undefined): RoundRecord {
+  const votes: VoteEntry[] = (game.lastRoundVotes ?? []).map((v) => {
+    const voter = game.players.find((p: Player) => p.id === v.voterId);
+    const target = game.players.find((p: Player) => p.id === v.targetId);
+    return {
+      voterName: voter?.name ?? 'Unknown',
+      voterRole: (voter?.role ?? 'FAITHFUL') as Role,
+      targetName: target?.name ?? 'Unknown',
+      targetRole: (target?.role ?? 'FAITHFUL') as Role,
+      isAutoVote: v.isAutoVote,
+      reasonText: v.reasonText,
+    } satisfies VoteEntry;
+  });
+
+  const banishedPlayer = game.players.find((p: Player) => p.id === game.banishedPlayerId);
+
+  return {
+    round: game.currentRound,
+    votes,
+    banishedName: banishedPlayer?.name,
+    banishedRole: banishedPlayer?.role,
+    murderedName,
+    murderBlocked,
+    shieldedName,
+  };
+}
+
 export function checkWinCondition(game: GameState): GameState {
   if (game.phase !== 'BANISH_REVEAL' && game.phase !== 'CHECK_WIN' && game.phase !== 'TIEBREAKER_REVEAL') {
     throw new Error('Cannot check win condition in current phase');
@@ -511,10 +543,13 @@ export function checkWinCondition(game: GameState): GameState {
   const aliveTraitors = game.players.filter((p: Player) => p.isAlive && p.role === 'TRAITOR').length;
   const aliveFaithful = game.players.filter((p: Player) => p.isAlive && p.role === 'FAITHFUL').length;
 
-  // Traitors win if they equal or outnumber faithful
+  // Traitors win if they equal or outnumber faithful — game ended after banishment, no murder
   if (aliveTraitors >= aliveFaithful) {
+    const record = buildRoundRecord(game, undefined, false, undefined);
     return {
       ...game,
+      history: [...game.history, record],
+      lastRoundVotes: undefined,
       phase: 'GAME_END',
       winner: 'TRAITORS'
     };
@@ -522,8 +557,11 @@ export function checkWinCondition(game: GameState): GameState {
 
   // Faithful win if all traitors eliminated
   if (aliveTraitors === 0) {
+    const record = buildRoundRecord(game, undefined, false, undefined);
     return {
       ...game,
+      history: [...game.history, record],
+      lastRoundVotes: undefined,
       phase: 'GAME_END',
       winner: 'FAITHFUL'
     };
@@ -665,6 +703,7 @@ export function resolveMurder(game: GameState): MurderResult {
         players: updatedPlayers,
         lastMurderedPlayerId: undefined,
         lastMurderBlocked: true,
+        lastShieldedPlayerId: targetId,
         murderVotes: [],
         phase: 'MORNING'
       },
@@ -685,6 +724,7 @@ export function resolveMurder(game: GameState): MurderResult {
       players: updatedPlayers,
       lastMurderedPlayerId: targetId,
       lastMurderBlocked: false,
+      lastShieldedPlayerId: undefined,
       murderVotes: [],
       phase: 'MORNING'
     },
@@ -710,6 +750,17 @@ export function continueToDayPhase(game: GameState): GameState {
     throw new Error('Not in morning phase');
   }
 
+  // Build round record for this completed round (banishment + murder/block)
+  const murderedPlayer = game.players.find((p: Player) => p.id === game.lastMurderedPlayerId);
+  const shieldedPlayer = game.players.find((p: Player) => p.id === game.lastShieldedPlayerId);
+  const record = buildRoundRecord(
+    game,
+    murderedPlayer?.name,
+    game.lastMurderBlocked ?? false,
+    shieldedPlayer?.name
+  );
+  const newHistory = [...game.history, record];
+
   const aliveTraitors = game.players.filter((p: Player) => p.isAlive && p.role === 'TRAITOR').length;
   const aliveFaithful = game.players.filter((p: Player) => p.isAlive && p.role === 'FAITHFUL').length;
 
@@ -717,6 +768,9 @@ export function continueToDayPhase(game: GameState): GameState {
   if (aliveTraitors >= aliveFaithful) {
     return {
       ...game,
+      history: newHistory,
+      lastRoundVotes: undefined,
+      lastShieldedPlayerId: undefined,
       phase: 'GAME_END',
       winner: 'TRAITORS'
     };
@@ -725,6 +779,9 @@ export function continueToDayPhase(game: GameState): GameState {
   if (aliveTraitors === 0) {
     return {
       ...game,
+      history: newHistory,
+      lastRoundVotes: undefined,
+      lastShieldedPlayerId: undefined,
       phase: 'GAME_END',
       winner: 'FAITHFUL'
     };
@@ -737,6 +794,9 @@ export function continueToDayPhase(game: GameState): GameState {
   if (game.settings.challengesEnabled) {
     return {
       ...game,
+      history: newHistory,
+      lastRoundVotes: undefined,
+      lastShieldedPlayerId: undefined,
       phase: 'CHALLENGE',
       currentRound: nextRound,
       lastMurderBlocked: false
@@ -746,6 +806,9 @@ export function continueToDayPhase(game: GameState): GameState {
   // Continue directly to roundtable
   return {
     ...game,
+    history: newHistory,
+    lastRoundVotes: undefined,
+    lastShieldedPlayerId: undefined,
     phase: 'ROUNDTABLE',
     currentRound: nextRound,
     lastMurderBlocked: false

@@ -399,7 +399,8 @@ wss.on('connection', (ws: WebSocket) => {
               ? updatedGame.players.find((p) => p.id === updatedGame.randomlySelectedPlayerId)?.role
               : undefined,
             totalVotes: updatedGame.votes.length,
-            settings: updatedGame.settings
+            settings: updatedGame.settings,
+            history: updatedGame.history
           }
         };
         ws.send(JSON.stringify(reconnectResponse));
@@ -761,7 +762,8 @@ wss.on('connection', (ws: WebSocket) => {
               winner: updatedGame.winner,
               phase: 'GAME_END',
               remainingTraitors: aliveTraitors,
-              remainingFaithful: aliveFaithful
+              remainingFaithful: aliveFaithful,
+              history: updatedGame.history
             }
           });
         } else {
@@ -937,7 +939,8 @@ wss.on('connection', (ws: WebSocket) => {
               winner: updatedGame.winner,
               phase: 'GAME_END',
               remainingTraitors: aliveTraitors,
-              remainingFaithful: aliveFaithful
+              remainingFaithful: aliveFaithful,
+              history: updatedGame.history
             }
           });
         } else if (updatedGame.phase === 'CHALLENGE') {
