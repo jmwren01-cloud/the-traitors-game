@@ -183,6 +183,14 @@ export interface GameState {
    * skip the kill and proceed straight to the win check.
    */
   shieldBlockedBanishment?: boolean;
+  /**
+   * Set true when the single top vote-getter who is holding an unrevealed
+   * shield has explicitly declined to use it. The host's "Banish Player"
+   * control is gated on either reveal OR decline, so the shielded player's
+   * reveal opportunity cannot be skipped by a fast host click. Reset on each
+   * entry to VOTE_REVEAL.
+   */
+  shieldDeclined?: boolean;
   /** Game creation time (ms epoch). Used for persisted stats records. */
   startedAt?: number;
   /** Set after writeGameRecord runs so we don't double-record on duplicate end-game broadcasts. */
@@ -216,6 +224,7 @@ export type C2SEvent =
   | { type: 'C2S_SUBMIT_CHALLENGE_ANSWER'; payload: { answer: string | number } }
   | { type: 'C2S_CONTINUE_TO_ROUNDTABLE'; payload: Record<string, never> }
   | { type: 'C2S_REVEAL_SHIELD'; payload: Record<string, never> }
+  | { type: 'C2S_DECLINE_SHIELD'; payload: Record<string, never> }
   | { type: 'C2S_SET_AVATAR'; payload: { color?: string; avatar?: string } }
   | { type: 'C2S_SUBMIT_RECRUITMENT'; payload: { targetId: string } }
   | { type: 'C2S_IDENTIFY'; payload: { deviceToken: string; playerName: string } }

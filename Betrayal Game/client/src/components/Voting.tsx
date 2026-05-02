@@ -39,6 +39,11 @@ export function Voting({ players, myPlayerId, phase, votes: _votes, banishedPlay
   const [reasonText, setReasonText] = useState('');
   const [hasVoted, setHasVoted] = useState(false);
   const [shieldToast, setShieldToast] = useState<string | null>(null);
+  // Two-step shield reveal: first click opens this confirmation modal so the
+  // shielded player has to consciously choose between burning the shield
+  // (Reveal) and accepting the banishment (Decline). Reset whenever the phase
+  // changes so a stale modal can never persist between rounds.
+  const [shieldChoiceOpen, setShieldChoiceOpen] = useState(false);
   const prevPhaseRef = useRef(phase);
   const prevRevealIndexRef = useRef<number | undefined>(undefined);
   const banishSoundPlayedRef = useRef(false);
@@ -345,13 +350,48 @@ export function Voting({ players, myPlayerId, phase, votes: _votes, banishedPlay
           const isTopCandidate = topCandidates.some((t) => t.playerId === myPlayerId);
           const canRevealShield = me?.isAlive && me?.hasShield && !me?.shieldRevealed && isTopCandidate;
           if (!canRevealShield) return null;
+          if (!shieldChoiceOpen) {
+            return (
+              <button
+                className={styles.shieldRevealBtn}
+                onClick={() => setShieldChoiceOpen(true)}
+              >
+                🛡️ Reveal Your Shield?
+              </button>
+            );
+          }
+          // Confirmation card — explicit choice between burning the shield
+          // and accepting the banishment. Closing this without a choice is
+          // intentionally not allowed; the host's "Banish" is server-gated
+          // until one of these two buttons is pressed.
           return (
-            <button
-              className={styles.shieldRevealBtn}
-              onClick={() => onSend({ type: 'C2S_REVEAL_SHIELD', payload: {} })}
-            >
-              🛡️ Reveal Your Shield!
-            </button>
+            <div className={styles.shieldChoiceCard} role="dialog" aria-label="Shield decision">
+              <p className={styles.shieldChoiceTitle}>You hold a shield.</p>
+              <p className={styles.shieldChoiceBody}>
+                The vote is going against you. Burn your shield to cancel the
+                banishment, or accept the banishment and keep your shield secret.
+              </p>
+              <div className={styles.shieldChoiceButtons}>
+                <button
+                  className={styles.shieldRevealBtn}
+                  onClick={() => {
+                    setShieldChoiceOpen(false);
+                    onSend({ type: 'C2S_REVEAL_SHIELD', payload: {} });
+                  }}
+                >
+                  🛡️ Reveal Shield
+                </button>
+                <button
+                  className={styles.shieldDeclineBtn}
+                  onClick={() => {
+                    setShieldChoiceOpen(false);
+                    onSend({ type: 'C2S_DECLINE_SHIELD', payload: {} });
+                  }}
+                >
+                  Accept Banishment
+                </button>
+              </div>
+            </div>
           );
         })()}
 

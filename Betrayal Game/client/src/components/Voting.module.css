@@ -810,6 +810,55 @@
   50%      { box-shadow: 0 6px 28px rgba(255, 215, 0, 0.85); }
 }
 
+.shieldChoiceCard {
+  margin: 16px auto;
+  max-width: 420px;
+  padding: 16px 18px;
+  background: rgba(26, 26, 46, 0.92);
+  border: 2px solid #ffd700;
+  border-radius: 14px;
+  text-align: center;
+  animation: shieldPulse 2.5s ease-in-out infinite;
+}
+
+.shieldChoiceTitle {
+  margin: 0 0 8px;
+  font-weight: 700;
+  font-size: 1.05rem;
+  color: #ffd700;
+}
+
+.shieldChoiceBody {
+  margin: 0 0 14px;
+  font-size: 0.95rem;
+  color: #e8e8e8;
+  line-height: 1.4;
+}
+
+.shieldChoiceButtons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: center;
+}
+
+.shieldDeclineBtn {
+  display: inline-block;
+  padding: 14px 22px;
+  background: transparent;
+  color: #e8e8e8;
+  border: 2px solid #6c6c8a;
+  border-radius: 28px;
+  font-weight: 600;
+  font-size: 1rem;
+  cursor: pointer;
+  min-height: 54px;
+}
+
+.shieldDeclineBtn:hover {
+  background: rgba(108, 108, 138, 0.18);
+}
+
 @media (prefers-reduced-motion: reduce) {
   .deadPlayerCard,
   .voteCard.selected,

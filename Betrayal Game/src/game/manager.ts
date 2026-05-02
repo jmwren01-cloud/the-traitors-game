@@ -405,8 +405,49 @@ export function revealVotes(game: GameState): GameState {
   return {
     ...game,
     phase: 'VOTE_REVEAL',
-    revealedVotes: [...game.votes]
+    revealedVotes: [...game.votes],
+    // Each new VOTE_REVEAL window starts with a fresh shield decision. The
+    // banish gate in banishPlayer() reads shieldDeclined to know whether the
+    // shielded top candidate has already opted out of using their shield.
+    shieldDeclined: false,
   };
+}
+
+/**
+ * Mark that the shielded top vote-getter has explicitly chosen NOT to burn
+ * their shield. Required so the gameplay flow can resume the banishment
+ * without consuming the shield, while still keeping the host's "Banish"
+ * action gated until the player has made a real decision.
+ */
+export function declineShield(game: GameState, playerId: string): GameState {
+  if (game.phase !== 'VOTE_REVEAL') {
+    throw new Error('Shield decisions can only be made during the vote reveal');
+  }
+  const player = game.players.find((p: Player) => p.id === playerId);
+  if (!player || !player.isAlive) {
+    throw new Error('Player not found or not alive');
+  }
+  if (!player.hasShield || player.shieldRevealed) {
+    throw new Error('You have no shield to decline');
+  }
+
+  // Reuse the same single-top-candidate guard as revealShield() so a
+  // mid-tie player can't pre-decline and bypass the tiebreaker flow.
+  const counts = new Map<string, number>();
+  for (const v of game.revealedVotes) {
+    counts.set(v.targetId, (counts.get(v.targetId) ?? 0) + 1);
+  }
+  let topCount = 0;
+  const topCandidates: string[] = [];
+  counts.forEach((n, id) => {
+    if (n > topCount) { topCount = n; topCandidates.length = 0; topCandidates.push(id); }
+    else if (n === topCount && topCount > 0) { topCandidates.push(id); }
+  });
+  if (topCandidates.length !== 1 || topCandidates[0] !== playerId) {
+    throw new Error('Only the single top vote-getter can decline a shield');
+  }
+
+  return { ...game, shieldDeclined: true };
 }
 
 export interface BanishResult {
@@ -444,6 +485,18 @@ export function banishPlayer(game: GameState): BanishResult {
 
   if (topCandidates.length === 0) {
     throw new Error('No votes cast');
+  }
+
+  // Shield-reveal gate: when there is a single, alive top vote-getter who
+  // is holding an unrevealed shield, the banishment cannot proceed until
+  // that player has made an explicit decision (reveal OR decline). This
+  // prevents the host from racing past the player's reveal prompt.
+  if (topCandidates.length === 1 && !game.shieldDeclined) {
+    const candidateId = topCandidates[0]!;
+    const candidate = game.players.find((p: Player) => p.id === candidateId);
+    if (candidate && candidate.isAlive && candidate.hasShield && !candidate.shieldRevealed) {
+      throw new Error('Waiting for shielded player to choose: reveal shield or accept banishment');
+    }
   }
 
   // Handle tie

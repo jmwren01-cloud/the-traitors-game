@@ -1059,6 +1059,55 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
         return;
       }
 
+      if (event.type === 'C2S_DECLINE_SHIELD') {
+        // Player explicitly chooses NOT to use their shield. We mark the
+        // decision in state and then auto-resolve the banishment so the host
+        // doesn't have to retry — the shielded player has spoken.
+        let updated;
+        try {
+          updated = game.declineShield(gameState, currentPlayerId);
+        } catch (err) {
+          sendError(ws, (err as Error).message);
+          return;
+        }
+        setGame(updated);
+
+        // Auto-banish using the same handler logic as C2S_BANISH_PLAYER.
+        try {
+          const result = game.banishPlayer(updated);
+          setGame(result.game);
+
+          if (result.isTie && result.tiedPlayerIds) {
+            // Decline can never produce a tie because the gate only fires for
+            // a SINGLE top candidate; this branch is defensive only.
+            const tiedPlayerNames = result.tiedPlayerIds.map((id) => {
+              const player = result.game.players.find((p) => p.id === id);
+              return player?.name ?? 'Unknown';
+            });
+            broadcast(currentSessionId, {
+              type: 'S2C_TIE_DETECTED',
+              payload: { tiedPlayerIds: result.tiedPlayerIds, tiedPlayerNames, phase: 'TIE_DETECTED' }
+            });
+          } else {
+            const banishedPlayer = result.game.players.find((p) => p.id === result.game.banishedPlayerId);
+            if (banishedPlayer && banishedPlayer.role) {
+              broadcast(currentSessionId, {
+                type: 'S2C_PLAYER_BANISHED',
+                payload: {
+                  banishedPlayerId: banishedPlayer.id,
+                  banishedPlayerName: banishedPlayer.name,
+                  banishedPlayerRole: banishedPlayer.role,
+                  phase: 'BANISH_REVEAL'
+                }
+              });
+            }
+          }
+        } catch (err) {
+          sendError(ws, (err as Error).message);
+        }
+        return;
+      }
+
       if (event.type === 'C2S_REVEAL_SHIELD') {
         // Phase guards live inside revealShield() — it throws if not in
         // VOTE_REVEAL, not the top vote-getter, or not actually shielded.
