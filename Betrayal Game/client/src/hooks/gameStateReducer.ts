@@ -377,7 +377,7 @@ export function gameStateReducer(state: GameState | null, msg: Msg): GameState |
     }
 
     case 'S2C_MURDER_RESOLVED': {
-      const payload = msg.payload as { murderedPlayerId: string; murderedPlayerName: string; phase: string };
+      const payload = msg.payload as { murderedPlayerId: string; murderedPlayerName: string; phase: string; recruitedPlayerId?: string; recruitedPlayerName?: string };
       if (!state) return null;
       return {
         ...state,
@@ -386,6 +386,9 @@ export function gameStateReducer(state: GameState | null, msg: Msg): GameState |
         players: state.players.map((p) =>
           p.id === payload.murderedPlayerId ? { ...p, isAlive: false } : p
         ),
+        recruitedPlayer: payload.recruitedPlayerId && payload.recruitedPlayerName
+          ? { id: payload.recruitedPlayerId, name: payload.recruitedPlayerName }
+          : undefined,
       };
     }
 

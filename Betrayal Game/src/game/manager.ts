@@ -783,7 +783,8 @@ export function resolveMurder(game: GameState): MurderResult {
   let recruitedPlayerId: string | undefined;
   let recruitedPlayerName: string | undefined;
 
-  if (game.pendingRecruitmentTargetId) {
+  if (game.pendingRecruitmentTargetId && game.pendingRecruitmentTargetId !== targetId) {
+    // Only recruit if the recruit target is NOT also the murder target (murder takes priority)
     const recruitTarget = game.players.find(
       (p: Player) =>
         p.id === game.pendingRecruitmentTargetId && p.isAlive && p.role === 'FAITHFUL'
@@ -792,7 +793,9 @@ export function resolveMurder(game: GameState): MurderResult {
       recruitedPlayerId = recruitTarget.id;
       recruitedPlayerName = recruitTarget.name;
       playersWithRecruitment = game.players.map((p: Player) =>
-        p.id === recruitedPlayerId ? { ...p, role: 'TRAITOR' as Role } : p
+        p.id === recruitedPlayerId
+          ? { ...p, role: 'TRAITOR' as Role, recruitmentUsed: true }
+          : p
       );
     }
   }

@@ -900,7 +900,9 @@ wss.on('connection', (ws: WebSocket) => {
                 payload: {
                   murderedPlayerId: result.murderedPlayerId,
                   murderedPlayerName: result.murderedPlayerName!,
-                  phase: 'MORNING'
+                  phase: 'MORNING',
+                  recruitedPlayerId: result.recruitedPlayerId,
+                  recruitedPlayerName: result.recruitedPlayerName,
                 }
               });
             }
@@ -936,7 +938,9 @@ wss.on('connection', (ws: WebSocket) => {
             payload: {
               murderedPlayerId: result.murderedPlayerId,
               murderedPlayerName: result.murderedPlayerName!,
-              phase: 'MORNING'
+              phase: 'MORNING',
+              recruitedPlayerId: result.recruitedPlayerId,
+              recruitedPlayerName: result.recruitedPlayerName,
             }
           });
         }

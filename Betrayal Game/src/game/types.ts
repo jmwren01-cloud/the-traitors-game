@@ -302,7 +302,9 @@ export type S2CEvent =
   | { type: 'S2C_MURDER_RESOLVED'; payload: { 
       murderedPlayerId: string; 
       murderedPlayerName: string;
-      phase: GamePhase 
+      phase: GamePhase;
+      recruitedPlayerId?: string;
+      recruitedPlayerName?: string;
     } }
   | { type: 'S2C_MORNING_STARTED'; payload: { 
       phase: GamePhase;

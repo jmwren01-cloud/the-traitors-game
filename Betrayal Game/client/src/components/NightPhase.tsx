@@ -88,9 +88,14 @@ export function NightPhase({
     ? players.filter((p) => traitorIds.includes(p.id) && p.id !== myPlayerId && p.isAlive)
     : [];
 
+  // Recruitment targets exclude the player's own murder vote target to avoid contradictory selection
+  const recruitablePlayers = aliveFaithful.filter((p) => p.id !== selectedTarget);
+
   const handleSubmitMurder = () => {
     if (selectedTarget) {
       vibrate('heavy');
+      // If the current recruit target is the same as the murder target, clear it
+      if (selectedRecruitTarget === selectedTarget) setSelectedRecruitTarget(null);
       onSend({ type: 'C2S_SUBMIT_MURDER', payload: { targetId: selectedTarget } });
       setHasVoted(true);
     }
@@ -183,7 +188,7 @@ export function NightPhase({
                 ) : (
                   <>
                     <div className={styles.targetGrid}>
-                      {aliveFaithful.map((player) => {
+                      {recruitablePlayers.map((player) => {
                         const colorHex = getColorHex(player.color);
                         const avatarEmoji = getAvatarEmoji(player.avatar);
                         return (
