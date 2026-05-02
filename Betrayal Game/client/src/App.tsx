@@ -10,6 +10,7 @@ import { Timer } from './components/Timer';
 import { ConnectionStatus } from './components/ConnectionStatus';
 import { Challenge } from './components/Challenge';
 import { Spectator } from './components/Spectator';
+import { HostDashboard } from './components/HostDashboard';
 import { useSoundContext } from './contexts/SoundContext';
 import './App.css';
 
@@ -58,6 +59,24 @@ function App() {
   const myPlayer = gameState?.players?.find((p) => p.id === gameState?.myPlayerId);
   const isAlive = myPlayer?.isAlive ?? true;
 
+  const hostDashboard = gameState && phase !== 'LOBBY' ? (
+    <HostDashboard
+      players={gameState.players || []}
+      myPlayerId={gameState.myPlayerId}
+      phase={phase}
+      votes={gameState.votes}
+      revealedVotes={gameState.revealedVotes}
+      currentTally={gameState.currentTally}
+      voteCount={gameState.voteCount}
+      murderVoteProgress={gameState.murderVoteProgress}
+      murderVoterIds={gameState.murderVoterIds}
+      traitorIds={gameState.traitorIds}
+      currentRound={gameState.currentRound}
+      tiedPlayerIds={gameState.tiedPlayerIds}
+      onSend={send}
+    />
+  ) : null;
+
   const chatBox = showChat ? (
     <ChatBox
       messages={gameState?.messages || []}
@@ -97,6 +116,7 @@ function App() {
       <>
         <ConnectionStatus connected={connected} reconnecting={reconnecting} />
         {soundToggle}
+        {hostDashboard}
         {timer}
         <Spectator
           players={gameState?.players || []}
@@ -124,6 +144,7 @@ function App() {
       <>
         <ConnectionStatus connected={connected} reconnecting={reconnecting} />
         {soundToggle}
+        {hostDashboard}
         {timer}
         <NightPhase
           players={gameState?.players || []}
@@ -148,6 +169,7 @@ function App() {
       <>
         <ConnectionStatus connected={connected} reconnecting={reconnecting} />
         {soundToggle}
+        {hostDashboard}
         {timer}
         <Voting
           players={gameState?.players || []}
@@ -178,6 +200,7 @@ function App() {
       <>
         <ConnectionStatus connected={connected} reconnecting={reconnecting} />
         {soundToggle}
+        {hostDashboard}
         <RoleReveal
           myRole={gameState?.myRole}
           traitorIds={gameState?.traitorIds}
@@ -196,6 +219,7 @@ function App() {
       <>
         <ConnectionStatus connected={connected} reconnecting={reconnecting} />
         {soundToggle}
+        {hostDashboard}
         <Challenge
           challenge={gameState?.challenge}
           players={gameState?.players || []}

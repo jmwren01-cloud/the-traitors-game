@@ -361,14 +361,16 @@ export function gameStateReducer(state: GameState | null, msg: Msg): GameState |
         currentRound: payload.currentRound,
         aliveTraitorCount: payload.aliveTraitorCount,
         murderVoteProgress: undefined,
+        murderVoterIds: [],
       } : null;
     }
 
     case 'S2C_MURDER_SUBMITTED': {
-      const payload = msg.payload as { votesReceived: number; votesNeeded: number };
+      const payload = msg.payload as { voterId: string; votesReceived: number; votesNeeded: number };
       return state ? {
         ...state,
         murderVoteProgress: { received: payload.votesReceived, needed: payload.votesNeeded },
+        murderVoterIds: [...(state.murderVoterIds ?? []), payload.voterId].filter((v, i, a) => a.indexOf(v) === i),
       } : null;
     }
 

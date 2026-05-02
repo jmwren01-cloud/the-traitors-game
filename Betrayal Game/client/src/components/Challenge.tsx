@@ -92,11 +92,6 @@ export function Challenge({
     onSend({ type: 'C2S_SUBMIT_CHALLENGE_ANSWER', payload: { answer: playerName } });
   };
 
-  const handleContinue = () => {
-    vibrate('light');
-    onSend({ type: 'C2S_CONTINUE_TO_ROUNDTABLE', payload: {} });
-  };
-
   const me = players.find((p) => p.id === myPlayerId);
   const isAlive = me?.isAlive ?? true;
 
@@ -135,11 +130,6 @@ export function Challenge({
           </p>
         )}
 
-        {me?.isHost && (
-          <button className={styles.continueBtn} onClick={handleContinue}>
-            Continue to Discussion
-          </button>
-        )}
       </div>
     );
   }
@@ -168,11 +158,6 @@ export function Challenge({
               </p>
             )}
             <p className={styles.waitingText}>Waiting for others...</p>
-            {me?.isHost && (
-              <button className={styles.endChallengeBtn} onClick={handleContinue}>
-                End Challenge
-              </button>
-            )}
           </div>
         )}
       </div>

@@ -13,7 +13,7 @@ interface RoleRevealProps {
   onSend: (event: C2SEvent) => void;
 }
 
-export function RoleReveal({ myRole, traitorIds, players, myPlayerId, phase, onSend }: RoleRevealProps) {
+export function RoleReveal({ myRole, traitorIds, players, myPlayerId, phase }: RoleRevealProps) {
   const [revealed, setRevealed] = useState(false);
   const [showTraitors, setShowTraitors] = useState(false);
   const isHost = players.find((p) => p.id === myPlayerId)?.isHost;
@@ -45,24 +45,11 @@ export function RoleReveal({ myRole, traitorIds, players, myPlayerId, phase, onS
     }
   }, [revealed, myRole, traitorIds]);
 
-  const handleAssignRoles = () => {
-    onSend({ type: 'C2S_ASSIGN_ROLES', payload: {} });
-  };
-
-  const handleStartRoundtable = () => {
-    onSend({ type: 'C2S_START_ROUNDTABLE', payload: {} });
-  };
-
   if (phase === 'ROLE_ASSIGN') {
     return (
       <div className={styles.container}>
         <h1 className={styles.title}>Prepare Yourselves...</h1>
         <p className={styles.subtitle}>Roles are about to be assigned</p>
-        {isHost && (
-          <button className={styles.primaryBtn} onClick={handleAssignRoles}>
-            Assign Roles
-          </button>
-        )}
         {!isHost && <p className={styles.waiting}>Waiting for host...</p>}
       </div>
     );
@@ -102,12 +89,6 @@ export function RoleReveal({ myRole, traitorIds, players, myPlayerId, phase, onS
               })}
           </div>
         </div>
-      )}
-
-      {revealed && isHost && (
-        <button className={styles.continueBtn} onClick={handleStartRoundtable}>
-          Continue to Roundtable
-        </button>
       )}
 
       {revealed && !isHost && (

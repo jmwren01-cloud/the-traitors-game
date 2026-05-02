@@ -88,10 +88,6 @@ export function NightPhase({
     }
   };
 
-  const handleContinueToDay = () => {
-    onSend({ type: 'C2S_CONTINUE_TO_DAY', payload: {} });
-  };
-
   if (phase === 'NIGHT') {
     if (isTraitor) {
       return (
@@ -217,11 +213,7 @@ export function NightPhase({
             </div>
           )}
 
-          {isHost && (
-            <button className={styles.primaryBtn} onClick={handleContinueToDay}>
-              Continue to Roundtable
-            </button>
-          )}
+          {!isHost && <p className={styles.waiting}>Waiting for host to continue...</p>}
         </div>
       </div>
     );

@@ -97,10 +97,6 @@ export function Voting({ players, myPlayerId, phase, votes: _votes, banishedPlay
     }
   };
 
-  const handleCheckWin = () => {
-    onSend({ type: 'C2S_CHECK_WIN', payload: {} });
-  };
-
   if (phase === 'ROUNDTABLE') {
     const deadPlayers = players.filter((p) => !p.isAlive);
     
@@ -144,16 +140,6 @@ export function Voting({ players, myPlayerId, phase, votes: _votes, banishedPlay
           </div>
         )}
 
-        {isHost && isRound1 && (
-          <button className={styles.primaryBtn} onClick={() => onSend({ type: 'C2S_START_NIGHT', payload: {} })}>
-            Proceed to Night
-          </button>
-        )}
-        {isHost && !isRound1 && (
-          <button className={styles.primaryBtn} onClick={() => onSend({ type: 'C2S_START_VOTING', payload: {} })}>
-            Start Voting
-          </button>
-        )}
         {!isHost && isRound1 && <p className={styles.waiting}>Waiting for host to proceed to night...</p>}
         {!isHost && !isRound1 && <p className={styles.waiting}>Waiting for host to start voting...</p>}
       </div>
@@ -219,14 +205,6 @@ export function Voting({ players, myPlayerId, phase, votes: _votes, banishedPlay
         )}
         {hasVoted && !voteCount && <p className={styles.votedText}>Vote submitted. Waiting for others...</p>}
         
-        {isHost && voteCount && voteCount.received < voteCount.needed && (
-          <button 
-            className={styles.secondaryBtn} 
-            onClick={() => onSend({ type: 'C2S_FORCE_RESOLVE_VOTING', payload: {} })}
-          >
-            Force Resolve ({voteCount.needed - voteCount.received} auto-votes)
-          </button>
-        )}
       </div>
     );
   }
@@ -334,15 +312,6 @@ export function Voting({ players, myPlayerId, phase, votes: _votes, banishedPlay
           </p>
         )}
 
-        {revealComplete && isHost && (
-          <button 
-            className={styles.dangerBtn} 
-            onClick={() => onSend({ type: 'C2S_BANISH_PLAYER', payload: {} })}
-          >
-            {isTie ? 'Proceed to Revote' : 'Banish Player'}
-          </button>
-        )}
-
         {revealComplete && !isHost && (
           <p className={styles.waiting}>Waiting for host to proceed...</p>
         )}
@@ -368,11 +337,6 @@ export function Voting({ players, myPlayerId, phase, votes: _votes, banishedPlay
           ))}
         </div>
 
-        {isHost && (
-          <button className={styles.primaryBtn} onClick={() => onSend({ type: 'C2S_START_REVOTE', payload: {} })}>
-            Start Revote
-          </button>
-        )}
         {!isHost && <p className={styles.waiting}>Waiting for host to start revote...</p>}
       </div>
     );
@@ -420,14 +384,6 @@ export function Voting({ players, myPlayerId, phase, votes: _votes, banishedPlay
         )}
         {hasVoted && !voteCount && <p className={styles.votedText}>Vote submitted. Waiting for others...</p>}
         
-        {isHost && voteCount && voteCount.received < voteCount.needed && (
-          <button 
-            className={styles.secondaryBtn} 
-            onClick={() => onSend({ type: 'C2S_FORCE_RESOLVE_VOTING', payload: {} })}
-          >
-            Force Resolve ({voteCount.needed - voteCount.received} auto-votes)
-          </button>
-        )}
       </div>
     );
   }
@@ -468,11 +424,6 @@ export function Voting({ players, myPlayerId, phase, votes: _votes, banishedPlay
           <p className={styles.failMessage}>An innocent has been banished by fate...</p>
         )}
 
-        {isHost && (
-          <button className={styles.primaryBtn} onClick={handleCheckWin}>
-            Continue
-          </button>
-        )}
       </div>
     );
   }
@@ -497,12 +448,6 @@ export function Voting({ players, myPlayerId, phase, votes: _votes, banishedPlay
           <p className={styles.successMessage}>A traitor has been eliminated!</p>
         ) : (
           <p className={styles.failMessage}>An innocent has been banished...</p>
-        )}
-
-        {phase === 'BANISH_REVEAL' && isHost && (
-          <button className={styles.primaryBtn} onClick={handleCheckWin}>
-            Continue
-          </button>
         )}
 
         {phase === 'CHECK_WIN' && (

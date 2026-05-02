@@ -155,6 +155,7 @@ export interface GameState {
   settings?: GameSettings;
   challenge?: ChallengeState;
   history?: RoundRecord[];
+  murderVoterIds?: string[];
 }
 
 export type C2SEvent =
