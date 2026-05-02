@@ -88,9 +88,13 @@ export function NightPhase({
     ? players.filter((p) => traitorIds.includes(p.id) && p.id !== myPlayerId && p.isAlive)
     : [];
 
+  // Recruitment targets exclude whoever this traitor is currently voting to murder
+  const recruitablePlayers = aliveFaithful.filter((p) => p.id !== selectedTarget);
+
   const handleSubmitMurder = () => {
     if (selectedTarget) {
       vibrate('heavy');
+      if (selectedRecruitTarget === selectedTarget) setSelectedRecruitTarget(null);
       onSend({ type: 'C2S_SUBMIT_MURDER', payload: { targetId: selectedTarget } });
       setHasVoted(true);
     }
@@ -183,7 +187,7 @@ export function NightPhase({
                 ) : (
                   <>
                     <div className={styles.targetGrid}>
-                      {aliveFaithful.map((player) => {
+                      {recruitablePlayers.map((player) => {
                         const colorHex = getColorHex(player.color);
                         const avatarEmoji = getAvatarEmoji(player.avatar);
                         return (
@@ -305,10 +309,8 @@ export function NightPhase({
                 </>
               ) : (
                 <>
-                  <h3 className={styles.recruitRevealTitle}>A player was recruited...</h3>
-                  <p className={styles.recruitRevealMessage}>
-                    <strong>{recruitedPlayer.name}</strong> has joined the Traitors.
-                  </p>
+                  <h3 className={styles.recruitRevealTitle}>Someone was recruited...</h3>
+                  <p className={styles.recruitRevealMessage}>A Faithful player secretly joined the Traitors last night.</p>
                 </>
               )}
             </div>

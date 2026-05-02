@@ -783,7 +783,9 @@ export function resolveMurder(game: GameState): MurderResult {
   let recruitedPlayerId: string | undefined;
   let recruitedPlayerName: string | undefined;
 
-  if (game.pendingRecruitmentTargetId) {
+  // Recruitment and murder are independent selections; if the same target is chosen
+  // for both, murder takes priority and the recruitment is silently cancelled.
+  if (game.pendingRecruitmentTargetId && game.pendingRecruitmentTargetId !== targetId) {
     const recruitTarget = game.players.find(
       (p: Player) =>
         p.id === game.pendingRecruitmentTargetId && p.isAlive && p.role === 'FAITHFUL'
@@ -799,28 +801,6 @@ export function resolveMurder(game: GameState): MurderResult {
     }
   }
 
-  // If the murder target was recruited this same night, recruitment takes precedence:
-  // the newly converted traitor survives and no murder occurs.
-  if (recruitedPlayerId && recruitedPlayerId === targetId) {
-    return {
-      game: {
-        ...game,
-        players: playersWithRecruitment,
-        lastMurderedPlayerId: undefined,
-        lastMurderBlocked: false,
-        lastShieldedPlayerId: undefined,
-        lastRecruitedPlayerId: recruitedPlayerId,
-        pendingRecruitmentTargetId: undefined,
-        murderVotes: [],
-        phase: 'MORNING'
-      },
-      blocked: false,
-      recruitedPlayerId,
-      recruitedPlayerName,
-    };
-  }
-
-  // Refresh target after possible role flip
   const finalTarget = playersWithRecruitment.find((p: Player) => p.id === targetId)!;
 
   // Check if target has a shield
