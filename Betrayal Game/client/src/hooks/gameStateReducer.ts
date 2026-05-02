@@ -452,8 +452,12 @@ export function gameStateReducer(state: GameState | null, msg: Msg): GameState |
         targetTime?: number;
         shownPlayerIds?: string[];
         scrambledWord?: string;
+        endTime?: number;
+        duration?: number;
+        eligibleCount?: number;
       };
-      return state ? {
+      if (!state) return null;
+      const next: GameState = {
         ...state,
         phase: payload.phase as GameState['phase'],
         challenge: {
@@ -463,12 +467,27 @@ export function gameStateReducer(state: GameState | null, msg: Msg): GameState |
           shownPlayerIds: payload.shownPlayerIds,
           scrambledWord: payload.scrambledWord,
           completed: false,
+          answeredCount: 0,
+          eligibleCount: payload.eligibleCount,
         },
-      } : null;
+      };
+      if (payload.endTime !== undefined && payload.duration !== undefined) {
+        next.timer = { endTime: payload.endTime, duration: payload.duration, phase: 'CHALLENGE' };
+      }
+      return next;
     }
 
     case 'S2C_CHALLENGE_ANSWER_RECEIVED': {
-      return state;
+      const payload = msg.payload as { playerId: string; received: number; needed: number };
+      if (!state || !state.challenge) return state;
+      return {
+        ...state,
+        challenge: {
+          ...state.challenge,
+          answeredCount: payload.received,
+          eligibleCount: payload.needed,
+        },
+      };
     }
 
     case 'S2C_CHALLENGE_PHASE_UPDATE': {

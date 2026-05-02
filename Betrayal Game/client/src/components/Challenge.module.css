@@ -202,6 +202,27 @@
   font-style: italic;
 }
 
+.timerBar {
+  position: fixed;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 5;
+}
+
+.answerCount {
+  display: inline-block;
+  padding: 6px 14px;
+  margin: 0 0 16px 0;
+  border-radius: 16px;
+  background: rgba(76, 175, 80, 0.15);
+  border: 1px solid rgba(76, 175, 80, 0.4);
+  color: #8bd48f;
+  font-size: 0.9rem;
+  font-weight: 600;
+  letter-spacing: 0.4px;
+}
+
 .submitted {
   color: #4caf50;
   font-size: 1.1rem;

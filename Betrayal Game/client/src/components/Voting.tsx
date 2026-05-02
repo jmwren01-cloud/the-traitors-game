@@ -36,11 +36,30 @@ export function Voting({ players, myPlayerId, phase, votes: _votes, banishedPlay
   const [selectedTarget, setSelectedTarget] = useState<string | null>(null);
   const [reasonText, setReasonText] = useState('');
   const [hasVoted, setHasVoted] = useState(false);
+  const [shieldToast, setShieldToast] = useState<string | null>(null);
   const prevPhaseRef = useRef(phase);
   const prevRevealIndexRef = useRef<number | undefined>(undefined);
   const banishSoundPlayedRef = useRef(false);
   const tieSoundPlayedRef = useRef(false);
+  const prevRevealedRef = useRef<Set<string>>(new Set());
   const { play } = useSoundContext();
+
+  // Detect newly revealed shields and show a toast
+  useEffect(() => {
+    const currentRevealed = new Set(players.filter((p) => p.shieldRevealed).map((p) => p.id));
+    const prev = prevRevealedRef.current;
+    for (const id of currentRevealed) {
+      if (!prev.has(id)) {
+        const player = players.find((p) => p.id === id);
+        if (player) {
+          setShieldToast(`🛡️ ${player.name} revealed a shield!`);
+          play('roleReveal');
+          window.setTimeout(() => setShieldToast(null), 4000);
+        }
+      }
+    }
+    prevRevealedRef.current = currentRevealed;
+  }, [players, play]);
 
   useEffect(() => {
     if ((phase === 'VOTING' || phase === 'REVOTE') && prevPhaseRef.current !== phase) {
@@ -97,11 +116,22 @@ export function Voting({ players, myPlayerId, phase, votes: _votes, banishedPlay
     }
   };
 
+  const renderShieldIndicator = (player: Player) => {
+    const visible = (player.id === myPlayerId && player.hasShield) || player.shieldRevealed;
+    if (!visible) return null;
+    return <span className={styles.shieldBadge} title="Has Shield">🛡️</span>;
+  };
+
+  const shieldToastEl = shieldToast ? (
+    <div className={styles.shieldToast}>{shieldToast}</div>
+  ) : null;
+
   if (phase === 'ROUNDTABLE') {
     const deadPlayers = players.filter((p) => !p.isAlive);
     
     return (
       <div className={styles.container}>
+        {shieldToastEl}
         <h1 className={styles.title}>The Roundtable</h1>
         {isRound1 && (
           <div className={styles.round1Banner}>
@@ -117,7 +147,7 @@ export function Voting({ players, myPlayerId, phase, votes: _votes, banishedPlay
             return (
               <div key={player.id} className={`${styles.playerCard} ${player.id === myPlayerId ? styles.me : ''}`} style={{ borderColor: colorHex }}>
                 <div className={styles.avatar} style={{ background: colorHex, color: '#000' }}>{avatarEmoji}</div>
-                <span className={styles.name}>{player.name}</span>
+                <span className={styles.name}>{player.name}{renderShieldIndicator(player)}</span>
               </div>
             );
           })}
@@ -149,6 +179,7 @@ export function Voting({ players, myPlayerId, phase, votes: _votes, banishedPlay
   if (phase === 'VOTING') {
     return (
       <div className={styles.container}>
+        {shieldToastEl}
         <h1 className={styles.title}>Vote to Banish</h1>
         <p className={styles.subtitle}>Who is the traitor among you?</p>
 
@@ -166,7 +197,7 @@ export function Voting({ players, myPlayerId, phase, votes: _votes, banishedPlay
                 onClick={() => !isDisabled && canVote && setSelectedTarget(player.id)}
               >
                 <div className={styles.avatar} style={{ background: colorHex, color: '#000' }}>{avatarEmoji}</div>
-                <span className={styles.name}>{player.name}</span>
+                <span className={styles.name}>{player.name}{renderShieldIndicator(player)}</span>
                 {player.id === myPlayerId && <span className={styles.youLabel}>You</span>}
               </div>
             );
@@ -225,6 +256,7 @@ export function Voting({ players, myPlayerId, phase, votes: _votes, banishedPlay
 
     return (
       <div className={styles.container}>
+        {shieldToastEl}
         <h1 className={styles.title}>
           {revealComplete ? 'All Votes Revealed' : 'The Votes Are Being Revealed'}
         </h1>
@@ -305,6 +337,21 @@ export function Voting({ players, myPlayerId, phase, votes: _votes, banishedPlay
             <strong>{topCandidates[0].playerName}</strong> will be banished!
           </p>
         )}
+
+        {revealComplete && (() => {
+          const me = players.find((p) => p.id === myPlayerId);
+          const isTopCandidate = topCandidates.some((t) => t.playerId === myPlayerId);
+          const canRevealShield = me?.isAlive && me?.hasShield && !me?.shieldRevealed && isTopCandidate;
+          if (!canRevealShield) return null;
+          return (
+            <button
+              className={styles.shieldRevealBtn}
+              onClick={() => onSend({ type: 'C2S_REVEAL_SHIELD', payload: {} })}
+            >
+              🛡️ Reveal Your Shield!
+            </button>
+          );
+        })()}
 
         {revealComplete && isTie && (
           <p className={styles.tieMessage}>

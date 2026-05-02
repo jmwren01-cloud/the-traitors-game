@@ -10,6 +10,47 @@ import {
 } from './utils.js';
 import { startVoteRevealSequence } from './voteReveal.js';
 
+const activeChallengeTimers = new Map<string, NodeJS.Timeout>();
+
+function clearChallengeTimer(sessionId: string): void {
+  const t = activeChallengeTimers.get(sessionId);
+  if (t) {
+    clearTimeout(t);
+    activeChallengeTimers.delete(sessionId);
+  }
+}
+
+/**
+ * Clean up all in-memory timers/intervals associated with a session.
+ * Call this when a game session is destroyed (e.g. all players gone, manual cleanup).
+ */
+export function cleanupSessionTimers(sessionId: string): void {
+  clearChallengeTimer(sessionId);
+}
+
+function countEligibleAnswerers(state: GameState): number {
+  return state.players.filter(
+    (p) => p.isAlive && p.lastChallengeWinRound !== state.currentRound - 1
+  ).length;
+}
+
+function broadcastChallengeResult(
+  sessionId: string,
+  resolution: { winnerId?: string; winnerName?: string; correctAnswer?: string | number; shieldAwarded: boolean },
+  broadcast: (sessionId: string, event: S2CEvent) => void
+): void {
+  broadcast(sessionId, {
+    type: 'S2C_CHALLENGE_RESULT',
+    payload: {
+      phase: 'CHALLENGE_RESULT',
+      shieldAwarded: resolution.shieldAwarded,
+      ...(resolution.winnerId !== undefined ? { winnerId: resolution.winnerId } : {}),
+      ...(resolution.winnerName !== undefined ? { winnerName: resolution.winnerName } : {}),
+      ...(resolution.correctAnswer !== undefined ? { correctAnswer: resolution.correctAnswer } : {}),
+    }
+  });
+}
+
 export interface WsContext {
   games: Map<string, GameState>;
   playerConnections: Map<string, WebSocket>;
@@ -775,20 +816,32 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
           });
         } else if (updatedGame.phase === 'CHALLENGE') {
           const challengeResult = game.createChallenge(updatedGame);
-          setGame(challengeResult.game);
+          const timer = game.createTimer('CHALLENGE', challengeResult.game.settings);
+          const gameWithTimer = timer ? { ...challengeResult.game, timer } : challengeResult.game;
+          setGame(gameWithTimer);
 
           const challenge = challengeResult.challenge;
+          const eligibleCount = countEligibleAnswerers(gameWithTimer);
           broadcast(currentSessionId, {
             type: 'S2C_CHALLENGE_STARTED',
             payload: {
               phase: 'CHALLENGE',
               challengeType: challenge.type,
               startTime: challenge.startTime,
+              eligibleCount,
               ...(challenge.targetTime !== undefined ? { targetTime: challenge.targetTime } : {}),
               ...(challenge.shownPlayerIds !== undefined ? { shownPlayerIds: challenge.shownPlayerIds } : {}),
               ...(challenge.scrambledWord !== undefined ? { scrambledWord: challenge.scrambledWord } : {}),
+              ...(timer ? { endTime: timer.endTime, duration: timer.duration } : {}),
             }
           });
+
+          if (timer) {
+            broadcast(currentSessionId, {
+              type: 'S2C_TIMER_UPDATE',
+              payload: { endTime: timer.endTime, duration: timer.duration, phase: 'CHALLENGE' }
+            });
+          }
 
           if (challenge.type === 'MISSING_PLAYER') {
             setTimeout(() => {
@@ -805,6 +858,23 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
               }
             }, 3000);
           }
+
+          // Server-authoritative auto-resolve when timer expires
+          clearChallengeTimer(currentSessionId);
+          const sessionId = currentSessionId;
+          const expiryMs = timer ? Math.max(0, timer.endTime - Date.now()) : 60000;
+          activeChallengeTimers.set(sessionId, setTimeout(() => {
+            activeChallengeTimers.delete(sessionId);
+            const currentGame = games.get(sessionId);
+            if (!currentGame || currentGame.phase !== 'CHALLENGE' || !currentGame.challenge) return;
+            try {
+              const resolution = game.resolveChallenge(currentGame);
+              setGame(resolution.game);
+              broadcastChallengeResult(sessionId, resolution, broadcast);
+            } catch (e) {
+              console.error('Challenge auto-resolve error:', e);
+            }
+          }, expiryMs));
         } else {
           broadcast(currentSessionId, {
             type: 'S2C_CONTINUE_GAME',
@@ -823,25 +893,21 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
         const result = game.submitChallengeAnswer(gameState, currentPlayerId, event.payload.answer);
         setGame(result.game);
 
+        const needed = countEligibleAnswerers(result.game);
+        const received = result.game.challenge?.answers.size ?? 0;
+
         broadcast(currentSessionId, {
           type: 'S2C_CHALLENGE_ANSWER_RECEIVED',
-          payload: { playerId: currentPlayerId }
+          payload: { playerId: currentPlayerId, received, needed }
         });
 
-        if (result.isWinner && result.game.challenge) {
+        // Resolve early if we have a winner OR all eligible players have answered
+        const allAnswered = received >= needed && needed > 0;
+        if ((result.isWinner || allAnswered) && result.game.challenge) {
+          clearChallengeTimer(currentSessionId);
           const resolution = game.resolveChallenge(result.game);
           setGame(resolution.game);
-
-          broadcast(currentSessionId, {
-            type: 'S2C_CHALLENGE_RESULT',
-            payload: {
-              phase: 'CHALLENGE_RESULT',
-              shieldAwarded: resolution.shieldAwarded,
-              ...(resolution.winnerId !== undefined ? { winnerId: resolution.winnerId } : {}),
-              ...(resolution.winnerName !== undefined ? { winnerName: resolution.winnerName } : {}),
-              ...(resolution.correctAnswer !== undefined ? { correctAnswer: resolution.correctAnswer } : {}),
-            }
-          });
+          broadcastChallengeResult(currentSessionId, resolution, broadcast);
         }
         return;
       }
@@ -849,25 +915,17 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
       if (event.type === 'C2S_CONTINUE_TO_ROUNDTABLE') {
         if (gameState.phase !== 'CHALLENGE_RESULT') {
           if (gameState.phase === 'CHALLENGE' && gameState.challenge?.type === 'TIME_ESTIMATE') {
+            clearChallengeTimer(currentSessionId);
             const resolution = game.resolveChallenge(gameState);
             setGame(resolution.game);
-
-            broadcast(currentSessionId, {
-              type: 'S2C_CHALLENGE_RESULT',
-              payload: {
-                phase: 'CHALLENGE_RESULT',
-                shieldAwarded: resolution.shieldAwarded,
-                ...(resolution.winnerId !== undefined ? { winnerId: resolution.winnerId } : {}),
-                ...(resolution.winnerName !== undefined ? { winnerName: resolution.winnerName } : {}),
-                ...(resolution.correctAnswer !== undefined ? { correctAnswer: resolution.correctAnswer } : {}),
-              }
-            });
+            broadcastChallengeResult(currentSessionId, resolution, broadcast);
             return;
           }
           sendError(ws, 'Not in challenge result phase');
           return;
         }
 
+        clearChallengeTimer(currentSessionId);
         const updatedGame = game.continueToRoundtable(gameState);
         setGame(updatedGame);
 

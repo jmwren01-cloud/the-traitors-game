@@ -29,6 +29,9 @@ export function createTimer(phase: GamePhase, settings: GameSettings): TimerStat
     case 'NIGHT':
       duration = settings.timerDurations.night;
       break;
+    case 'CHALLENGE':
+      duration = settings.challengeTimerSeconds;
+      break;
     default:
       return undefined;
   }
@@ -112,6 +115,10 @@ export function updateSettings(game: GameState, partialSettings: Partial<GameSet
 
   if (partialSettings.challengesEnabled !== undefined) {
     newSettings.challengesEnabled = partialSettings.challengesEnabled;
+  }
+
+  if (partialSettings.challengeTimerSeconds !== undefined) {
+    newSettings.challengeTimerSeconds = Math.min(120, Math.max(30, partialSettings.challengeTimerSeconds));
   }
 
   return {

@@ -57,6 +57,10 @@ function deserializeGame(json: string): GameState {
     const entries = Array.isArray(rawAnswers) ? (rawAnswers as Array<[string, { answer: string | number; timestamp: number }]>) : [];
     parsed.challenge.answers = new Map(entries);
   }
+  // Backfill defaults for fields added after games were persisted
+  if (parsed.settings && parsed.settings.challengeTimerSeconds === undefined) {
+    parsed.settings.challengeTimerSeconds = 60;
+  }
   return parsed as GameState;
 }
 

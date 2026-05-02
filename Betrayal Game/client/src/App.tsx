@@ -229,6 +229,7 @@ function App() {
           players={gameState?.players || []}
           myPlayerId={gameState?.myPlayerId}
           phase={phase}
+          timer={gameState?.timer}
           onSend={send}
         />
         {chatBox}

@@ -4,7 +4,7 @@ import { readFileSync, existsSync, statSync } from 'fs';
 import { join, dirname, extname } from 'path';
 import { fileURLToPath } from 'url';
 import type { GameState } from './game/types.js';
-import { handleConnection } from './ws/router.js';
+import { handleConnection, cleanupSessionTimers } from './ws/router.js';
 import { cleanupExpiredDisconnections } from './ws/utils.js';
 import {
   initDb,
@@ -106,6 +106,7 @@ const setGame = (state: GameState) => {
   saveGame(db, state);
 };
 const removeGame = (sessionId: string) => {
+  cleanupSessionTimers(sessionId);
   games.delete(sessionId);
   deleteGame(db, sessionId);
 };

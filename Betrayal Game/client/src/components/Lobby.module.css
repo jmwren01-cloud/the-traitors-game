@@ -330,6 +330,12 @@
   border-radius: 10px;
 }
 
+.shieldBadge {
+  font-size: 1rem;
+  margin-left: 6px;
+  filter: drop-shadow(0 0 4px rgba(255, 215, 0, 0.6));
+}
+
 .disconnected {
   opacity: 0.5;
   border: 1px dashed #888;

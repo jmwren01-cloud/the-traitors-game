@@ -11,6 +11,7 @@ export interface GameSettings {
   minPlayers: number;
   round1DiscussionOnly: boolean;
   challengesEnabled: boolean;
+  challengeTimerSeconds: number;
 }
 
 export type ChallengeType = 'TIME_ESTIMATE' | 'MISSING_PLAYER' | 'WORD_SCRAMBLE';
@@ -27,6 +28,8 @@ export interface ChallengeState {
   correctAnswer?: string | number;
   completed: boolean;
   shieldAwarded?: boolean;
+  answeredCount?: number;
+  eligibleCount?: number;
 }
 
 export type GamePhase = 

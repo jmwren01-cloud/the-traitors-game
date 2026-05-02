@@ -14,6 +14,7 @@ const baseState: GameState = {
     minPlayers: 6,
     round1DiscussionOnly: true,
     challengesEnabled: true,
+    challengeTimerSeconds: 60,
   },
 };
 

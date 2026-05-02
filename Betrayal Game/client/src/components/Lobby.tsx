@@ -167,6 +167,9 @@ export function Lobby({ sessionId, players, myPlayerId, settings, onSend }: Lobb
                 </div>
                 <span className={styles.playerName}>
                   {player.name}
+                  {((isMe && player.hasShield) || player.shieldRevealed) && (
+                    <span className={styles.shieldBadge} title="Has Shield">🛡️</span>
+                  )}
                   {player.isHost && <span className={styles.hostBadge}>HOST</span>}
                   {isMe && <span className={styles.youBadge}>YOU</span>}
                   {player.isConnected === false && <span className={styles.disconnectedBadge}>AWAY</span>}
@@ -330,6 +333,34 @@ export function Lobby({ sessionId, players, myPlayerId, settings, onSend }: Lobb
                   Round 1 Discussion Only (no banishment)
                 </label>
               </div>
+
+              <div className={styles.settingGroup}>
+                <label className={styles.checkboxLabel}>
+                  <input
+                    type="checkbox"
+                    checked={settings.challengesEnabled}
+                    onChange={(e) => updateSettings({ challengesEnabled: e.target.checked })}
+                  />
+                  Shield Challenges Enabled
+                </label>
+              </div>
+
+              {settings.challengesEnabled && (
+                <div className={styles.settingGroup}>
+                  <label>Challenge Time</label>
+                  <div className={styles.settingControl}>
+                    <button
+                      onClick={() => updateSettings({ challengeTimerSeconds: Math.max(30, settings.challengeTimerSeconds - 15) })}
+                      disabled={settings.challengeTimerSeconds <= 30}
+                    >-</button>
+                    <span>{settings.challengeTimerSeconds}s</span>
+                    <button
+                      onClick={() => updateSettings({ challengeTimerSeconds: Math.min(120, settings.challengeTimerSeconds + 15) })}
+                      disabled={settings.challengeTimerSeconds >= 120}
+                    >+</button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>

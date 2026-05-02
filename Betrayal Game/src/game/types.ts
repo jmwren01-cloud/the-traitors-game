@@ -11,6 +11,7 @@ export interface GameSettings {
   minPlayers: number;            // 5-10
   round1DiscussionOnly: boolean; // Skip banishment in round 1
   challengesEnabled: boolean;    // Enable shield challenges
+  challengeTimerSeconds: number; // 30-120 seconds, default 60
 }
 
 export type ChallengeType = 'TIME_ESTIMATE' | 'MISSING_PLAYER' | 'WORD_SCRAMBLE';
@@ -39,7 +40,8 @@ export const DEFAULT_SETTINGS: GameSettings = {
   traitorCount: 1,
   minPlayers: 5,
   round1DiscussionOnly: true,
-  challengesEnabled: true
+  challengesEnabled: true,
+  challengeTimerSeconds: 60
 };
 
 export type GamePhase = 
@@ -339,8 +341,11 @@ export type S2CEvent =
       targetTime?: number;
       shownPlayerIds?: string[];
       scrambledWord?: string;
+      endTime?: number;
+      duration?: number;
+      eligibleCount?: number;
     } }
-  | { type: 'S2C_CHALLENGE_ANSWER_RECEIVED'; payload: { playerId: string } }
+  | { type: 'S2C_CHALLENGE_ANSWER_RECEIVED'; payload: { playerId: string; received: number; needed: number } }
   | { type: 'S2C_CHALLENGE_PHASE_UPDATE'; payload: {
       hiddenPlayerId?: string;
     } }

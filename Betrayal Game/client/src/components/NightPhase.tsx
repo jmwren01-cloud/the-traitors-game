@@ -149,7 +149,7 @@ export function NightPhase({
                   >
                     <div className={styles.avatar} style={{ background: colorHex, color: '#000' }}>
                       {avatarEmoji}
-                      {player.shieldRevealed && <span className={styles.shieldBadge}>🛡️</span>}
+                      {(player.shieldRevealed || (player.id === myPlayerId && player.hasShield)) && <span className={styles.shieldBadge}>🛡️</span>}
                     </div>
                     <span className={styles.name}>{player.name}</span>
                   </div>

@@ -758,6 +758,58 @@
   }
 }
 
+.shieldBadge {
+  font-size: 1rem;
+  margin-left: 6px;
+  filter: drop-shadow(0 0 4px rgba(255, 215, 0, 0.7));
+}
+
+.shieldToast {
+  position: fixed;
+  top: 70px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: linear-gradient(135deg, #ffd700, #ffa500);
+  color: #1a1a2e;
+  padding: 14px 24px;
+  border-radius: 28px;
+  font-weight: 700;
+  font-size: 1rem;
+  box-shadow: 0 6px 24px rgba(255, 165, 0, 0.55);
+  z-index: 1000;
+  animation: shieldToastIn 0.35s ease-out;
+}
+
+@keyframes shieldToastIn {
+  from { opacity: 0; transform: translate(-50%, -16px); }
+  to   { opacity: 1; transform: translate(-50%, 0); }
+}
+
+.shieldRevealBtn {
+  display: block;
+  margin: 16px auto;
+  padding: 14px 28px;
+  background: linear-gradient(135deg, #ffd700, #ffa500);
+  color: #1a1a2e;
+  border: none;
+  border-radius: 28px;
+  font-weight: 700;
+  font-size: 1.1rem;
+  cursor: pointer;
+  box-shadow: 0 4px 16px rgba(255, 215, 0, 0.5);
+  min-height: 54px;
+  animation: shieldPulse 1.5s ease-in-out infinite;
+}
+
+.shieldRevealBtn:hover {
+  transform: scale(1.05);
+}
+
+@keyframes shieldPulse {
+  0%, 100% { box-shadow: 0 4px 16px rgba(255, 215, 0, 0.5); }
+  50%      { box-shadow: 0 6px 28px rgba(255, 215, 0, 0.85); }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .deadPlayerCard,
   .voteCard.selected,
