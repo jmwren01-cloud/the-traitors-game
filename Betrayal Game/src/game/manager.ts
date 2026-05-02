@@ -402,22 +402,21 @@ export function revealVotes(game: GameState): GameState {
     throw new Error('Not in voting phase');
   }
 
+  // Per-player shield decisions are tracked on Player.shieldDeclinedAtRound,
+  // so a fresh VOTE_REVEAL window doesn't need to reset anything globally —
+  // the gate in banishPlayer() compares shieldDeclinedAtRound to currentRound.
   return {
     ...game,
     phase: 'VOTE_REVEAL',
     revealedVotes: [...game.votes],
-    // Each new VOTE_REVEAL window starts with a fresh shield decision. The
-    // banish gate in banishPlayer() reads shieldDeclined to know whether the
-    // shielded top candidate has already opted out of using their shield.
-    shieldDeclined: false,
   };
 }
 
 /**
- * Mark that the shielded top vote-getter has explicitly chosen NOT to burn
- * their shield. Required so the gameplay flow can resume the banishment
- * without consuming the shield, while still keeping the host's "Banish"
- * action gated until the player has made a real decision.
+ * Mark that a shielded player at risk of banishment has explicitly chosen
+ * NOT to burn their shield this round. Allowed for any tied top-candidate
+ * during VOTE_REVEAL, so revote-tie scenarios with multiple shielded tied
+ * players can collect each decision independently.
  */
 export function declineShield(game: GameState, playerId: string): GameState {
   if (game.phase !== 'VOTE_REVEAL') {
@@ -431,23 +430,31 @@ export function declineShield(game: GameState, playerId: string): GameState {
     throw new Error('You have no shield to decline');
   }
 
-  // Reuse the same single-top-candidate guard as revealShield() so a
-  // mid-tie player can't pre-decline and bypass the tiebreaker flow.
+  const topCandidates = computeTopCandidates(game.revealedVotes);
+  if (!topCandidates.includes(playerId)) {
+    throw new Error('Only a top vote-getter can make a shield decision');
+  }
+
+  return {
+    ...game,
+    players: game.players.map((p: Player) =>
+      p.id === playerId ? { ...p, shieldDeclinedAtRound: game.currentRound } : p
+    ),
+  };
+}
+
+function computeTopCandidates(revealedVotes: Vote[]): string[] {
   const counts = new Map<string, number>();
-  for (const v of game.revealedVotes) {
+  for (const v of revealedVotes) {
     counts.set(v.targetId, (counts.get(v.targetId) ?? 0) + 1);
   }
   let topCount = 0;
-  const topCandidates: string[] = [];
+  const top: string[] = [];
   counts.forEach((n, id) => {
-    if (n > topCount) { topCount = n; topCandidates.length = 0; topCandidates.push(id); }
-    else if (n === topCount && topCount > 0) { topCandidates.push(id); }
+    if (n > topCount) { topCount = n; top.length = 0; top.push(id); }
+    else if (n === topCount && topCount > 0) { top.push(id); }
   });
-  if (topCandidates.length !== 1 || topCandidates[0] !== playerId) {
-    throw new Error('Only the single top vote-getter can decline a shield');
-  }
-
-  return { ...game, shieldDeclined: true };
+  return top;
 }
 
 export interface BanishResult {
@@ -487,15 +494,25 @@ export function banishPlayer(game: GameState): BanishResult {
     throw new Error('No votes cast');
   }
 
-  // Shield-reveal gate: when there is a single, alive top vote-getter who
-  // is holding an unrevealed shield, the banishment cannot proceed until
-  // that player has made an explicit decision (reveal OR decline). This
-  // prevents the host from racing past the player's reveal prompt.
-  if (topCandidates.length === 1 && !game.shieldDeclined) {
-    const candidateId = topCandidates[0]!;
+  // Shield-reveal gate: any alive top candidate (single OR among tied) who
+  // holds an unrevealed shield AND has not yet declined this round must be
+  // given the chance to reveal. The gate covers the normal banishment path
+  // AND the revote random-tiebreaker path, so the host cannot race past a
+  // shielded player's reveal prompt — even when the random pick has not
+  // happened yet (we don't know who the random pick will be, so we wait
+  // for every shielded tied candidate to decide first).
+  for (const candidateId of topCandidates) {
     const candidate = game.players.find((p: Player) => p.id === candidateId);
-    if (candidate && candidate.isAlive && candidate.hasShield && !candidate.shieldRevealed) {
-      throw new Error('Waiting for shielded player to choose: reveal shield or accept banishment');
+    if (
+      candidate &&
+      candidate.isAlive &&
+      candidate.hasShield &&
+      !candidate.shieldRevealed &&
+      candidate.shieldDeclinedAtRound !== game.currentRound
+    ) {
+      throw new Error(
+        `Waiting for ${candidate.name} to choose: reveal shield or accept banishment`
+      );
     }
   }
 
@@ -1382,12 +1399,13 @@ export function revealShield(game: GameState, playerId: string): RevealShieldRes
     if (n > topCount) { topCount = n; topCandidates.length = 0; topCandidates.push(id); }
     else if (n === topCount && topCount > 0) { topCandidates.push(id); }
   });
-  // Shield can only be revealed when there is a SINGLE clear top candidate
-  // about to be banished. If the vote is tied the round flows to TIE_DETECTED
-  // / REVOTE / TIEBREAKER_REVEAL — burning the shield in that window would
-  // bypass the tiebreaker logic entirely.
-  if (topCandidates.length !== 1 || topCandidates[0] !== playerId) {
-    throw new Error('Shield can only be revealed when you are the single top vote-getter');
+  // Reveal is allowed for any top candidate (single OR among tied). For
+  // the first-vote tie this routes the round straight past TIE_DETECTED /
+  // REVOTE — but that's the right call: the player has chosen to burn the
+  // shield to escape banishment, and the cancellation applies to the in-
+  // flight vote regardless of whether a tiebreaker was about to run.
+  if (!topCandidates.includes(playerId)) {
+    throw new Error('Shield can only be revealed when you are a top vote-getter');
   }
 
   // Consume the shield, mark it revealed for the toast, cancel the banishment,

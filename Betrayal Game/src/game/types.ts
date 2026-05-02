@@ -73,6 +73,13 @@ export interface Player {
   isConnected: boolean;
   hasShield: boolean;
   shieldRevealed: boolean;
+  /**
+   * Round number in which the player explicitly declined to use their
+   * shield. Tracked per-player (not per-game) so that revote-tie scenarios
+   * with multiple shielded tied candidates can collect each player's
+   * decision independently before random selection happens.
+   */
+  shieldDeclinedAtRound?: number;
   lastChallengeWinRound?: number;
   color?: string;
   avatar?: string;
@@ -183,14 +190,6 @@ export interface GameState {
    * skip the kill and proceed straight to the win check.
    */
   shieldBlockedBanishment?: boolean;
-  /**
-   * Set true when the single top vote-getter who is holding an unrevealed
-   * shield has explicitly declined to use it. The host's "Banish Player"
-   * control is gated on either reveal OR decline, so the shielded player's
-   * reveal opportunity cannot be skipped by a fast host click. Reset on each
-   * entry to VOTE_REVEAL.
-   */
-  shieldDeclined?: boolean;
   /** Game creation time (ms epoch). Used for persisted stats records. */
   startedAt?: number;
   /** Set after writeGameRecord runs so we don't double-record on duplicate end-game broadcasts. */

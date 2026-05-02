@@ -59,6 +59,7 @@ export interface Player {
   isConnected?: boolean;
   hasShield?: boolean;
   shieldRevealed?: boolean;
+  shieldDeclinedAtRound?: number;
   color?: string;
   avatar?: string;
   recruitmentUsed?: boolean;
