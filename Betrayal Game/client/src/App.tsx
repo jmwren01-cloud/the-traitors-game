@@ -160,6 +160,7 @@ function App() {
           myPlayerRecruitmentUsed={myPlayer?.recruitmentUsed}
           justRecruited={gameState?.justRecruited}
           recruitedPlayer={gameState?.recruitedPlayer}
+          nightRecruitmentSubmittedBy={gameState?.nightRecruitmentSubmittedBy}
           onSend={send}
         />
         {chatBox}

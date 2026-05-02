@@ -364,6 +364,7 @@ export function gameStateReducer(state: GameState | null, msg: Msg): GameState |
         murderVoterIds: [],
         justRecruited: undefined,
         recruitedPlayer: undefined,
+        nightRecruitmentSubmittedBy: undefined,
       } : null;
     }
 
@@ -573,6 +574,7 @@ export function gameStateReducer(state: GameState | null, msg: Msg): GameState |
         players: state.players.map((p) =>
           p.id === payload.recruiterId ? { ...p, recruitmentUsed: true } : p
         ),
+        nightRecruitmentSubmittedBy: payload.recruiterId,
       };
     }
 

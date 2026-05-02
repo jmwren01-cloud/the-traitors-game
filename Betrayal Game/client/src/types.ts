@@ -160,6 +160,7 @@ export interface GameState {
   murderVoterIds?: string[];
   justRecruited?: boolean;
   recruitedPlayer?: { id: string; name: string };
+  nightRecruitmentSubmittedBy?: string;
 }
 
 export type C2SEvent =

@@ -19,6 +19,7 @@ interface NightPhaseProps {
   myPlayerRecruitmentUsed?: boolean;
   justRecruited?: boolean;
   recruitedPlayer?: { id: string; name: string };
+  nightRecruitmentSubmittedBy?: string;
   onSend: (event: C2SEvent) => void;
 }
 
@@ -36,6 +37,7 @@ export function NightPhase({
   myPlayerRecruitmentUsed,
   justRecruited,
   recruitedPlayer,
+  nightRecruitmentSubmittedBy,
   onSend,
 }: NightPhaseProps) {
   const [selectedTarget, setSelectedTarget] = useState<string | null>(null);
@@ -171,51 +173,67 @@ export function NightPhase({
 
             {hasVoted && <p className={styles.waiting}>Waiting for other traitors... Murder will auto-resolve when all votes are in.</p>}
 
-            {!myPlayerRecruitmentUsed && (
-              <div className={styles.recruitSection}>
-                <h2 className={styles.sectionTitle}>🤝 Recruit a Faithful</h2>
-                <p className={styles.recruitSubtitle}>One-time ability — Convert a Faithful player to your side</p>
+            {(() => {
+              const iSubmitted = myPlayerRecruitmentUsed && nightRecruitmentSubmittedBy === myPlayerId;
+              const someoneElseSubmitted = !!nightRecruitmentSubmittedBy && nightRecruitmentSubmittedBy !== myPlayerId;
+              const usedPreviously = myPlayerRecruitmentUsed && !nightRecruitmentSubmittedBy;
 
-                {myPlayerRecruitmentUsed ? (
-                  <p className={styles.waiting}>Recruitment submitted. They will join you after this night...</p>
-                ) : (
-                  <>
-                    <div className={styles.targetGrid}>
-                      {aliveFaithful.map((player) => {
-                        const colorHex = getColorHex(player.color);
-                        const avatarEmoji = getAvatarEmoji(player.avatar);
-                        return (
-                          <div
-                            key={player.id}
-                            className={`${styles.targetCard} ${styles.recruitTarget} ${selectedRecruitTarget === player.id ? styles.recruitSelected : ''}`}
-                            style={{ borderColor: selectedRecruitTarget === player.id ? colorHex : undefined }}
-                            onClick={() => setSelectedRecruitTarget(player.id)}
-                          >
-                            <div className={styles.avatar} style={{ background: colorHex, color: '#000' }}>
-                              {avatarEmoji}
-                            </div>
-                            <span className={styles.name}>{player.name}</span>
+              if (iSubmitted) {
+                return (
+                  <div className={styles.recruitSection}>
+                    <h2 className={styles.sectionTitle}>🤝 Recruit a Faithful</h2>
+                    <p className={styles.waiting}>✅ Recruitment submitted — they will join your ranks at dawn.</p>
+                  </div>
+                );
+              }
+              if (someoneElseSubmitted) {
+                return (
+                  <div className={styles.recruitSection}>
+                    <h2 className={styles.sectionTitle}>🤝 Recruit a Faithful</h2>
+                    <p className={styles.waiting}>A fellow Traitor has already submitted a recruitment for this night.</p>
+                  </div>
+                );
+              }
+              if (usedPreviously) {
+                return (
+                  <div className={styles.recruitUsed}>
+                    <span>🤝 Recruitment ability already used</span>
+                  </div>
+                );
+              }
+              return (
+                <div className={styles.recruitSection}>
+                  <h2 className={styles.sectionTitle}>🤝 Recruit a Faithful</h2>
+                  <p className={styles.recruitSubtitle}>One-time ability — Convert a Faithful player to your side</p>
+                  <div className={styles.targetGrid}>
+                    {aliveFaithful.map((player) => {
+                      const colorHex = getColorHex(player.color);
+                      const avatarEmoji = getAvatarEmoji(player.avatar);
+                      return (
+                        <div
+                          key={player.id}
+                          className={`${styles.targetCard} ${styles.recruitTarget} ${selectedRecruitTarget === player.id ? styles.recruitSelected : ''}`}
+                          style={{ borderColor: selectedRecruitTarget === player.id ? colorHex : undefined }}
+                          onClick={() => setSelectedRecruitTarget(player.id)}
+                        >
+                          <div className={styles.avatar} style={{ background: colorHex, color: '#000' }}>
+                            {avatarEmoji}
                           </div>
-                        );
-                      })}
-                    </div>
-                    <button
-                      className={styles.recruitBtn}
-                      onClick={handleSubmitRecruitment}
-                      disabled={!selectedRecruitTarget}
-                    >
-                      Recruit Player
-                    </button>
-                  </>
-                )}
-              </div>
-            )}
-
-            {myPlayerRecruitmentUsed && (
-              <div className={styles.recruitUsed}>
-                <span>🤝 Recruitment ability already used</span>
-              </div>
-            )}
+                          <span className={styles.name}>{player.name}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <button
+                    className={styles.recruitBtn}
+                    onClick={handleSubmitRecruitment}
+                    disabled={!selectedRecruitTarget}
+                  >
+                    Recruit Player
+                  </button>
+                </div>
+              );
+            })()}
           </div>
         </div>
       );
