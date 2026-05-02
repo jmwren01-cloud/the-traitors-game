@@ -1,0 +1,147 @@
+This is a strong, production-sensible task. I would run it with a few refinements.
+
+## RAG score
+
+| Area                        | RAG | Review                                                                   |
+| --------------------------- | --: | ------------------------------------------------------------------------ |
+| Product value               |  🟢 | Creates the right front door for the platform                            |
+| Scope                       |  🟢 | Routing and UX only, no engine/schema risk                               |
+| UX quality                  |  🟢 | Outcome-led cards + help-me-choose flow is the right first step          |
+| Technical risk              |  🟠 | App routing is duplicated across role/client blocks, so easy to miss one |
+| Future AI-builder readiness |  🟢 | Sets up #222 conversational AI builder cleanly                           |
+| Backward compatibility      |  🟢 | Keeps existing CreateWizard via advanced configuration                   |
+| Testability                 |  🟢 | Clear test cases and data-testid requirements                            |
+| Risk of overbuild           |  🟢 | Avoids full wizard and comparison table                                  |
+
+## What is good
+
+The scope is exactly right for #225:
+
+```txt
+Create Insight front door
+→ explain Diagnostic vs BSR
+→ help user self-select
+→ route into existing flows
+```
+
+It does **not** try to build the conversational AI builder, and it does not touch the engine. That is the correct constraint.
+
+The copy direction is also right. This page should sell the workflow in outcome language, not expose technical concepts.
+
+## What I would tighten before running
+
+### 1. Advanced configuration behaviour needs to be explicit
+
+The task says the CreateWizard modal remains accessible via “Advanced configuration”. But the new page is separate from `DiagnosticsPage`, where that modal currently lives. A link alone cannot open a modal on another page unless you implement a query-param or route state.
+
+Refine this:
+
+```txt
+Advanced configuration should navigate back to the existing DiagnosticsPage with a query param, e.g. /diagnostics?advancedCreate=1 or /client/:slug/diagnostics?advancedCreate=1, and DiagnosticsPage should open the existing CreateWizard when that param is present.
+
+If query-param modal opening is too much for this task, the Advanced configuration link may route to the DiagnosticsPage with existing create button visible, but it must not be a dead link.
+```
+
+That prevents ambiguity.
+
+### 2. “All six scenarios” is inaccurate
+
+Question 1 has three options and Question 2 has four options, so there are **12 combinations**, not six. Your written recommendation rules group them, which is fine. Change wording to:
+
+```txt
+correct recommendation logic across the specified grouped cases
+```
+
+or explicitly test the important cases only.
+
+### 3. Route placement in `App.tsx` must be precise
+
+Because the app has WDC layout and ClientLayout, you want:
+
+* `/create-insight` inside WDCLayout authenticated routes
+* `/client/:slug/create-insight` inside ClientLayout client routes
+
+Do not add it to public route blocks.
+
+Add:
+
+```txt
+The page should render inside the same layout context as the diagnostics page: WDCLayout for /create-insight and ClientLayout for /client/:slug/create-insight.
+```
+
+### 4. Fast Diagnostic CTA should not say “Open Scorecard builder” if no route is available
+
+The route `/client/:slug/config` exists, but whether that is truly the scorecard builder depends on client setup. Add:
+
+```txt
+If /client/:slug/config is not appropriate for the current client or no scorecard exists, show explanatory copy rather than forcing navigation.
+```
+
+This may be hard to detect now, so for v1 route to config and keep the copy cautious.
+
+### 5. “No engine/schema imports” test may be brittle
+
+Testing no engine imports from a component is unusual. Fine if project already has a pattern, but otherwise make it a code review requirement rather than a test.
+
+```txt
+No engine/schema imports in CreateInsightPage. Verify by grep/code review rather than a brittle unit test if needed.
+```
+
+## Updated additions to the task
+
+Add these amendments:
+
+```txt
+Advanced configuration behaviour
+
+The "Advanced configuration" action must not be a dead link.
+
+Preferred implementation:
+- Navigate to /diagnostics?advancedCreate=1 or /client/:slug/diagnostics?advancedCreate=1.
+- Update DiagnosticsPage.tsx to open the existing CreateWizard when advancedCreate=1 is present.
+- Preserve existing CreateWizard implementation.
+
+Fallback if query-param modal opening is too invasive:
+- Route to the diagnostics page and make the existing Create New Diagnostic button visible.
+- Add a TODO for query-param modal opening.
+```
+
+```txt
+Layout routing requirement
+
+/create-insight should render inside WDCLayout.
+/client/:slug/create-insight should render inside ClientLayout.
+
+Do not add CreateInsightPage to public/unauthenticated route blocks.
+```
+
+```txt
+Recommendation logic wording
+
+Question 1 has three options and Question 2 has four options. Implement the grouped recommendation rules from the spec. Tests should cover the key grouped cases, not necessarily every permutation.
+```
+
+```txt
+Code hygiene
+
+CreateInsightPage must not import engine, diagnostic-engine, schema, server, or AI modules. It should be UI/routing only.
+If adding an explicit test for this is brittle, verify with grep/code review.
+```
+
+## Final recommendation
+
+Run it with those refinements.
+
+This is a good product move after the trace/explainability work because it begins shifting the platform from:
+
+```txt
+advanced config editor
+```
+
+to:
+
+```txt
+guided commercial insight builder
+```
+
+That is exactly the transition needed before the conversational AI builder in #222.
