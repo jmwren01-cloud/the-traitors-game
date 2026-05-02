@@ -1397,12 +1397,16 @@ export function revealShield(game: GameState, playerId: string): RevealShieldRes
     p.id === playerId ? { ...p, hasShield: false, shieldRevealed: true } : p
   );
 
+  // Strip any prior banishedPlayerId from the spread — under
+  // exactOptionalPropertyTypes we cannot assign `undefined`; the field must
+  // be absent. The shielded outcome is "no one banished".
+  const { banishedPlayerId: _stripped, ...gameWithoutBanish } = game;
+  void _stripped;
   return {
     game: {
-      ...game,
+      ...gameWithoutBanish,
       players: updatedPlayers,
       phase: 'BANISH_REVEAL',
-      banishedPlayerId: undefined,
       shieldBlockedBanishment: true,
       votes: [],
       revealedVotes: [],

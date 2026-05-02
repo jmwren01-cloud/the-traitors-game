@@ -142,6 +142,8 @@ function App() {
           currentReveal={gameState?.currentReveal}
           tiedPlayerNames={gameState?.tiedPlayerNames}
           randomlySelectedPlayer={gameState?.randomlySelectedPlayer}
+          shieldBlockedBanishment={gameState?.shieldBlockedBanishment}
+          shieldBlockedBanishmentName={gameState?.shieldBlockedBanishmentName}
         />
         {chatBox}
       </>

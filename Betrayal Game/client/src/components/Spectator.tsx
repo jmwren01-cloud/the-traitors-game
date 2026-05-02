@@ -21,6 +21,11 @@ interface SpectatorProps {
   };
   tiedPlayerNames?: string[];
   randomlySelectedPlayer?: { id: string; name: string; role: Role };
+  // When the in-flight banishment was cancelled by a revealed shield, the
+  // active Voting view shows a special "shield blocked" branch. Spectators
+  // need the same signal so they aren't left wondering why no one died.
+  shieldBlockedBanishment?: boolean;
+  shieldBlockedBanishmentName?: string;
 }
 
 const PHASE_LABELS: Partial<Record<string, string>> = {
@@ -53,6 +58,8 @@ export function Spectator({
   currentReveal,
   tiedPlayerNames,
   randomlySelectedPlayer,
+  shieldBlockedBanishment,
+  shieldBlockedBanishmentName,
 }: SpectatorProps) {
   const alivePlayers = players.filter((p) => p.isAlive);
   const deadPlayers = players.filter((p) => !p.isAlive);
@@ -157,7 +164,19 @@ export function Spectator({
           </div>
         )}
 
-        {(phase === 'BANISH_REVEAL' || phase === 'TIEBREAKER_REVEAL') && (banishedPlayer ?? randomlySelectedPlayer) && (
+        {phase === 'BANISH_REVEAL' && shieldBlockedBanishment && (
+          <div className={styles.banishReveal}>
+            <div className={styles.banishIcon}>🛡️</div>
+            <div className={styles.banishName}>
+              {shieldBlockedBanishmentName
+                ? `${shieldBlockedBanishmentName} revealed a shield!`
+                : 'A shield was revealed!'}
+            </div>
+            <div className={styles.banishRole}>The banishment was cancelled.</div>
+          </div>
+        )}
+
+        {(phase === 'BANISH_REVEAL' || phase === 'TIEBREAKER_REVEAL') && !shieldBlockedBanishment && (banishedPlayer ?? randomlySelectedPlayer) && (
           <div className={styles.banishReveal}>
             <div className={styles.banishIcon}>🔨</div>
             <div className={styles.banishName}>{(banishedPlayer ?? randomlySelectedPlayer)!.name}</div>
