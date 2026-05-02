@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import type { Player, RoundRecord } from '../types';
+import { getColorHex, getAvatarEmoji } from '../avatarConstants';
 import styles from './GameEnd.module.css';
 import { useSoundContext } from '../contexts/SoundContext';
 import { vibrate } from '../utils/haptics';
@@ -147,7 +148,7 @@ export function GameEnd({ winner, players, myRole, history }: GameEndProps) {
           <div className={styles.playerList}>
             {traitors.map((p) => (
               <div key={p.id} className={`${styles.playerCard} ${styles.traitorCard}`}>
-                <div className={styles.avatar}>{p.name[0]?.toUpperCase()}</div>
+                <div className={styles.avatar} style={{ background: getColorHex(p.color), color: '#000' }}>{getAvatarEmoji(p.avatar)}</div>
                 <span>{p.name}</span>
                 {!p.isAlive && <span className={styles.eliminated}>Eliminated</span>}
               </div>
@@ -160,7 +161,7 @@ export function GameEnd({ winner, players, myRole, history }: GameEndProps) {
           <div className={styles.playerList}>
             {faithful.map((p) => (
               <div key={p.id} className={`${styles.playerCard} ${styles.faithfulCard}`}>
-                <div className={styles.avatar}>{p.name[0]?.toUpperCase()}</div>
+                <div className={styles.avatar} style={{ background: getColorHex(p.color), color: '#000' }}>{getAvatarEmoji(p.avatar)}</div>
                 <span>{p.name}</span>
                 {!p.isAlive && <span className={styles.eliminated}>Eliminated</span>}
               </div>

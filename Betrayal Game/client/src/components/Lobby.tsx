@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import type { Player, C2SEvent, GameSettings } from '../types';
+import { PLAYER_COLORS, PLAYER_AVATARS, getColorHex, getAvatarEmoji } from '../avatarConstants';
 import styles from './Lobby.module.css';
 
 interface LobbyProps {
@@ -19,6 +20,9 @@ export function Lobby({ sessionId, players, myPlayerId, settings, onSend }: Lobb
   const isHost = players.find((p) => p.id === myPlayerId)?.isHost;
   const minPlayers = settings?.minPlayers || 5;
   const canStart = players.length >= minPlayers;
+  const myPlayer = players.find((p) => p.id === myPlayerId);
+
+  const takenColors = players.filter((p) => p.id !== myPlayerId).map((p) => p.color).filter(Boolean) as string[];
 
   const handleCreate = () => {
     if (playerName.trim()) {
@@ -34,6 +38,15 @@ export function Lobby({ sessionId, players, myPlayerId, settings, onSend }: Lobb
 
   const handleStart = () => {
     onSend({ type: 'C2S_START_GAME', payload: {} });
+  };
+
+  const handleColorSelect = (colorId: string) => {
+    if (takenColors.includes(colorId)) return;
+    onSend({ type: 'C2S_SET_AVATAR', payload: { color: colorId } });
+  };
+
+  const handleAvatarSelect = (avatarId: string) => {
+    onSend({ type: 'C2S_SET_AVATAR', payload: { avatar: avatarId } });
   };
 
   const updateSettings = (partialSettings: Partial<GameSettings>) => {
@@ -123,7 +136,6 @@ export function Lobby({ sessionId, players, myPlayerId, settings, onSend }: Lobb
             try {
               await navigator.clipboard.writeText(sessionId);
             } catch {
-              // Fallback for insecure contexts
               const textArea = document.createElement('textarea');
               textArea.value = sessionId;
               document.body.appendChild(textArea);
@@ -139,16 +151,75 @@ export function Lobby({ sessionId, players, myPlayerId, settings, onSend }: Lobb
 
       <div className={styles.playerList}>
         <h2>Players ({players.length}/22)</h2>
-        {players.map((player) => (
-          <div key={player.id} className={`${styles.playerCard} ${player.id === myPlayerId ? styles.me : ''} ${player.isConnected === false ? styles.disconnected : ''}`}>
-            <span className={styles.playerName}>
-              {player.name}
-              {player.isHost && <span className={styles.hostBadge}>HOST</span>}
-              {player.id === myPlayerId && <span className={styles.youBadge}>YOU</span>}
-              {player.isConnected === false && <span className={styles.disconnectedBadge}>AWAY</span>}
-            </span>
-          </div>
-        ))}
+        {players.map((player) => {
+          const colorHex = getColorHex(player.color);
+          const avatarEmoji = getAvatarEmoji(player.avatar);
+          const isMe = player.id === myPlayerId;
+          return (
+            <div
+              key={player.id}
+              className={`${styles.playerCard} ${isMe ? styles.me : ''} ${player.isConnected === false ? styles.disconnected : ''}`}
+              style={{ borderLeftColor: colorHex }}
+            >
+              <div className={styles.playerCardRow}>
+                <div className={styles.playerAvatarBubble} style={{ background: colorHex }}>
+                  {avatarEmoji}
+                </div>
+                <span className={styles.playerName}>
+                  {player.name}
+                  {player.isHost && <span className={styles.hostBadge}>HOST</span>}
+                  {isMe && <span className={styles.youBadge}>YOU</span>}
+                  {player.isConnected === false && <span className={styles.disconnectedBadge}>AWAY</span>}
+                </span>
+              </div>
+
+              {isMe && (
+                <div className={styles.pickerPanel}>
+                  <div className={styles.pickerSection}>
+                    <span className={styles.pickerLabel}>Color</span>
+                    <div className={styles.colorSwatches}>
+                      {PLAYER_COLORS.map((c) => {
+                        const taken = takenColors.includes(c.id);
+                        const selected = myPlayer?.color === c.id;
+                        return (
+                          <button
+                            key={c.id}
+                            className={`${styles.colorSwatch} ${selected ? styles.selectedSwatch : ''} ${taken ? styles.takenSwatch : ''}`}
+                            style={{ background: c.hex }}
+                            onClick={() => handleColorSelect(c.id)}
+                            disabled={taken}
+                            title={taken ? `${c.label} (taken)` : c.label}
+                            aria-label={c.label}
+                          />
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <div className={styles.pickerSection}>
+                    <span className={styles.pickerLabel}>Icon</span>
+                    <div className={styles.avatarOptions}>
+                      {PLAYER_AVATARS.map((a) => {
+                        const selected = myPlayer?.avatar === a.id;
+                        return (
+                          <button
+                            key={a.id}
+                            className={`${styles.avatarOption} ${selected ? styles.selectedAvatar : ''}`}
+                            onClick={() => handleAvatarSelect(a.id)}
+                            title={a.label}
+                            aria-label={a.label}
+                          >
+                            {a.emoji}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })}
       </div>
 
       {isHost && settings && (

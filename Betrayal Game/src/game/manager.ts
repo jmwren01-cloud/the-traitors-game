@@ -2,6 +2,7 @@
 
 import type { GameState, Player, Role, Vote, TimerState, GamePhase, GameSettings, ChallengeState, ChallengeType, RoundRecord, VoteEntry } from './types.js';
 import { DEFAULT_SETTINGS } from './types.js';
+import { pickAvailableColor, pickRandomAvatar, COLOR_IDS, AVATAR_IDS } from './avatarConstants.js';
 
 // Word bank for Word Scramble challenge (simple 4-5 letter words)
 const WORD_BANK = [
@@ -57,7 +58,9 @@ export function createGame(hostName: string): GameState {
     isHost: true,
     isConnected: true,
     hasShield: false,
-    shieldRevealed: false
+    shieldRevealed: false,
+    color: pickAvailableColor([]),
+    avatar: pickRandomAvatar()
   };
 
   return {
@@ -132,6 +135,8 @@ export function addPlayer(game: GameState, playerName: string): { game: GameStat
   }
 
   const playerId = generatePlayerId();
+  const takenColors = game.players.map((p: Player) => p.color).filter(Boolean) as string[];
+  const takenAvatars = game.players.map((p: Player) => p.avatar).filter(Boolean) as string[];
   const newPlayer: Player = {
     id: playerId,
     name: playerName,
@@ -139,13 +144,48 @@ export function addPlayer(game: GameState, playerName: string): { game: GameStat
     isHost: false,
     isConnected: true,
     hasShield: false,
-    shieldRevealed: false
+    shieldRevealed: false,
+    color: pickAvailableColor(takenColors),
+    avatar: AVATAR_IDS.find((a) => !takenAvatars.includes(a)) ?? pickRandomAvatar()
   };
 
   return {
     game: { ...game, players: [...game.players, newPlayer] },
     playerId
   };
+}
+
+export function setAvatar(game: GameState, playerId: string, color?: string, avatar?: string): GameState {
+  if (game.phase !== 'LOBBY') {
+    throw new Error('Can only change avatar in the lobby');
+  }
+
+  const player = game.players.find((p: Player) => p.id === playerId);
+  if (!player) {
+    throw new Error('Player not found');
+  }
+
+  if (color !== undefined) {
+    if (!COLOR_IDS.includes(color)) {
+      throw new Error('Invalid color choice');
+    }
+    const takenByOther = game.players.some((p: Player) => p.id !== playerId && p.color === color);
+    if (takenByOther) {
+      throw new Error('Color already taken by another player');
+    }
+  }
+
+  if (avatar !== undefined && !AVATAR_IDS.includes(avatar)) {
+    throw new Error('Invalid avatar choice');
+  }
+
+  const updatedPlayers = game.players.map((p: Player) =>
+    p.id === playerId
+      ? { ...p, color: color ?? p.color, avatar: avatar ?? p.avatar }
+      : p
+  );
+
+  return { ...game, players: updatedPlayers };
 }
 
 // ============= ROLE ASSIGNMENT =============

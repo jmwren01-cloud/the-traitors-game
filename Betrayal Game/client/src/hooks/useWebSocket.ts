@@ -627,6 +627,12 @@ export function useWebSocket() {
         break;
       }
 
+      case 'S2C_AVATAR_UPDATED': {
+        const payload = msg.payload as { players: Player[] };
+        setGameState((prev) => prev ? { ...prev, players: payload.players } : null);
+        break;
+      }
+
       case 'S2C_GAME_END': {
         const payload = msg.payload as { winner: 'TRAITORS' | 'FAITHFUL'; phase: string; remainingTraitors: number; remainingFaithful: number; history: RoundRecord[] };
         setGameState((prev) => prev ? {

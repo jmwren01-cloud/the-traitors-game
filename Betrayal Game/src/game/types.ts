@@ -72,6 +72,8 @@ export interface Player {
   hasShield: boolean;
   shieldRevealed: boolean;
   lastChallengeWinRound?: number;
+  color?: string;
+  avatar?: string;
 }
 
 export interface Vote {
@@ -191,7 +193,8 @@ export type C2SEvent =
   | { type: 'C2S_SEND_MESSAGE'; payload: { message: string; channel: ChatChannel } }
   | { type: 'C2S_SUBMIT_CHALLENGE_ANSWER'; payload: { answer: string | number } }
   | { type: 'C2S_CONTINUE_TO_ROUNDTABLE'; payload: Record<string, never> }
-  | { type: 'C2S_REVEAL_SHIELD'; payload: Record<string, never> };
+  | { type: 'C2S_REVEAL_SHIELD'; payload: Record<string, never> }
+  | { type: 'C2S_SET_AVATAR'; payload: { color?: string; avatar?: string } };
 
 // Server-to-Client Events
 export type S2CEvent =
@@ -324,6 +327,7 @@ export type S2CEvent =
       shieldAwarded: boolean;
     } }
   | { type: 'S2C_SHIELD_REVEALED'; payload: { playerId: string; playerName: string } }
+  | { type: 'S2C_AVATAR_UPDATED'; payload: { players: Player[] } }
   | { type: 'S2C_CHAT_MESSAGE'; payload: ChatMessage }
   | { type: 'S2C_TIMER_UPDATE'; payload: { endTime: number; duration: number; phase: GamePhase } }
   | { type: 'S2C_ERROR'; payload: { message: string } };

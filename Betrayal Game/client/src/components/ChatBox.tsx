@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
-import type { ChatMessage, Role, C2SEvent, ChatChannel } from '../types';
+import type { ChatMessage, Role, C2SEvent, ChatChannel, Player } from '../types';
+import { getColorHex, getAvatarEmoji } from '../avatarConstants';
 import styles from './ChatBox.module.css';
 import { vibrateOnce } from '../utils/haptics';
 
@@ -10,9 +11,10 @@ interface ChatBoxProps {
   isAlive?: boolean;
   onSend: (event: C2SEvent) => void;
   disabled?: boolean;
+  players?: Player[];
 }
 
-export function ChatBox({ messages, myPlayerId, myRole, isAlive = true, onSend, disabled }: ChatBoxProps) {
+export function ChatBox({ messages, myPlayerId, myRole, isAlive = true, onSend, disabled, players = [] }: ChatBoxProps) {
   const [message, setMessage] = useState('');
   const [activeChannel, setActiveChannel] = useState<ChatChannel>('general');
   const [isMinimized, setIsMinimized] = useState(false);
@@ -26,7 +28,6 @@ export function ChatBox({ messages, myPlayerId, myRole, isAlive = true, onSend, 
   const isTraitor = myRole === 'TRAITOR';
   const canAccessTraitorChat = isTraitor && isAlive;
 
-  // Filter messages by channel
   const generalMessages = useMemo(() => 
     messages.filter((m) => m.channel === 'general' || !m.channel), 
     [messages]
@@ -38,7 +39,6 @@ export function ChatBox({ messages, myPlayerId, myRole, isAlive = true, onSend, 
 
   const currentMessages = activeChannel === 'traitor' ? traitorMessages : generalMessages;
 
-  // Initialize last seen counts on first render to avoid false unread counts
   useEffect(() => {
     if (lastSeenGeneral === null) {
       setLastSeenGeneral(generalMessages.length);
@@ -48,11 +48,9 @@ export function ChatBox({ messages, myPlayerId, myRole, isAlive = true, onSend, 
     }
   }, [generalMessages.length, traitorMessages.length, lastSeenGeneral, lastSeenTraitor]);
 
-  // Calculate unread counts (only count new messages since last seen)
   const unreadGeneral = lastSeenGeneral !== null ? Math.max(0, generalMessages.length - lastSeenGeneral) : 0;
   const unreadTraitor = lastSeenTraitor !== null ? Math.max(0, traitorMessages.length - lastSeenTraitor) : 0;
 
-  // Save scroll position before switching tabs
   const saveScrollPosition = useCallback(() => {
     if (messagesContainerRef.current) {
       setScrollPositions((prev) => ({
@@ -62,11 +60,9 @@ export function ChatBox({ messages, myPlayerId, myRole, isAlive = true, onSend, 
     }
   }, [activeChannel]);
 
-  // Handle tab switch
   const handleTabSwitch = useCallback((channel: ChatChannel) => {
     saveScrollPosition();
     setActiveChannel(channel);
-    // Mark messages as seen when switching to that tab
     if (channel === 'general') {
       setLastSeenGeneral(generalMessages.length);
     } else {
@@ -74,20 +70,17 @@ export function ChatBox({ messages, myPlayerId, myRole, isAlive = true, onSend, 
     }
   }, [saveScrollPosition, generalMessages.length, traitorMessages.length]);
 
-  // Restore scroll position after tab switch
   useEffect(() => {
     if (messagesContainerRef.current) {
       const savedPosition = scrollPositions[activeChannel];
       if (savedPosition > 0) {
         messagesContainerRef.current.scrollTop = savedPosition;
       } else {
-        // Scroll to bottom if no saved position
         messagesEndRef.current?.scrollIntoView({ behavior: 'auto' });
       }
     }
   }, [activeChannel, scrollPositions]);
 
-  // Scroll to bottom when new messages arrive in active channel
   useEffect(() => {
     if (messagesEndRef.current && messagesContainerRef.current) {
       const container = messagesContainerRef.current;
@@ -98,7 +91,6 @@ export function ChatBox({ messages, myPlayerId, myRole, isAlive = true, onSend, 
     }
   }, [currentMessages.length]);
 
-  // Reset to general channel if traitor access is lost
   useEffect(() => {
     if (!canAccessTraitorChat && activeChannel === 'traitor') {
       setActiveChannel('general');
@@ -110,7 +102,6 @@ export function ChatBox({ messages, myPlayerId, myRole, isAlive = true, onSend, 
     const trimmed = message.trim();
     if (!trimmed || disabled) return;
 
-    // Prevent sending traitor messages if not allowed
     if (activeChannel === 'traitor' && !canAccessTraitorChat) {
       return;
     }
@@ -136,6 +127,8 @@ export function ChatBox({ messages, myPlayerId, myRole, isAlive = true, onSend, 
     if (count <= 0) return null;
     return count > 9 ? '9+' : count.toString();
   };
+
+  const getPlayerById = (id: string) => players.find((p) => p.id === id);
 
   if (isMinimized) {
     const totalUnread = unreadGeneral + (canAccessTraitorChat ? unreadTraitor : 0);
@@ -194,18 +187,30 @@ export function ChatBox({ messages, myPlayerId, myRole, isAlive = true, onSend, 
             {activeChannel === 'traitor' ? 'No traitor messages yet' : 'No messages yet'}
           </p>
         ) : (
-          currentMessages.map((msg) => (
-            <div
-              key={msg.id}
-              className={`${styles.message} ${msg.playerId === myPlayerId ? styles.mine : ''} ${msg.channel === 'traitor' ? styles.traitorMessage : ''}`}
-            >
-              <div className={styles.messageHeader}>
-                <span className={styles.playerName}>{msg.playerName}</span>
-                <span className={styles.timestamp}>{formatTime(msg.timestamp)}</span>
+          currentMessages.map((msg) => {
+            const msgPlayer = getPlayerById(msg.playerId);
+            const colorHex = getColorHex(msgPlayer?.color);
+            const avatarEmoji = getAvatarEmoji(msgPlayer?.avatar);
+            const isMe = msg.playerId === myPlayerId;
+            return (
+              <div
+                key={msg.id}
+                className={`${styles.message} ${isMe ? styles.mine : ''} ${msg.channel === 'traitor' ? styles.traitorMessage : ''}`}
+              >
+                <div className={styles.messageHeader}>
+                  <span
+                    className={styles.playerAvatar}
+                    style={{ background: colorHex, color: '#000' }}
+                  >
+                    {avatarEmoji}
+                  </span>
+                  <span className={styles.playerName} style={{ color: colorHex }}>{msg.playerName}</span>
+                  <span className={styles.timestamp}>{formatTime(msg.timestamp)}</span>
+                </div>
+                <p className={styles.messageText}>{msg.message}</p>
               </div>
-              <p className={styles.messageText}>{msg.message}</p>
-            </div>
-          ))
+            );
+          })
         )}
         <div ref={messagesEndRef} />
       </div>

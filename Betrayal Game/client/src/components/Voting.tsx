@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import type { Player, C2SEvent, Role, Vote, VoteTally } from '../types';
+import { getColorHex, getAvatarEmoji } from '../avatarConstants';
 import styles from './Voting.module.css';
 import { useSoundContext } from '../contexts/SoundContext';
 import { vibrate } from '../utils/haptics';
@@ -114,12 +115,16 @@ export function Voting({ players, myPlayerId, phase, votes: _votes, banishedPlay
         <p className={styles.subtitle}>Discuss amongst yourselves...</p>
 
         <div className={styles.playerGrid}>
-          {alivePlayers.map((player) => (
-            <div key={player.id} className={`${styles.playerCard} ${player.id === myPlayerId ? styles.me : ''}`}>
-              <div className={styles.avatar}>{player.name[0]?.toUpperCase()}</div>
-              <span className={styles.name}>{player.name}</span>
-            </div>
-          ))}
+          {alivePlayers.map((player) => {
+            const colorHex = getColorHex(player.color);
+            const avatarEmoji = getAvatarEmoji(player.avatar);
+            return (
+              <div key={player.id} className={`${styles.playerCard} ${player.id === myPlayerId ? styles.me : ''}`} style={{ borderColor: colorHex }}>
+                <div className={styles.avatar} style={{ background: colorHex, color: '#000' }}>{avatarEmoji}</div>
+                <span className={styles.name}>{player.name}</span>
+              </div>
+            );
+          })}
         </div>
 
         {deadPlayers.length > 0 && (
@@ -129,7 +134,7 @@ export function Voting({ players, myPlayerId, phase, votes: _votes, banishedPlay
               {deadPlayers.map((player) => (
                 <div key={player.id} className={styles.deadPlayerCard}>
                   <div className={styles.deadAvatar}>
-                    {player.name[0]?.toUpperCase()}
+                    {getAvatarEmoji(player.avatar)}
                     <span className={styles.crossMark}>✕</span>
                   </div>
                   <span className={styles.deadName}>{player.name}</span>
@@ -162,17 +167,24 @@ export function Voting({ players, myPlayerId, phase, votes: _votes, banishedPlay
         <p className={styles.subtitle}>Who is the traitor among you?</p>
 
         <div className={styles.playerGrid}>
-          {alivePlayers.map((player) => (
-            <div
-              key={player.id}
-              className={`${styles.voteCard} ${selectedTarget === player.id ? styles.selected : ''} ${player.id === myPlayerId ? styles.disabled : ''}`}
-              onClick={() => player.id !== myPlayerId && canVote && setSelectedTarget(player.id)}
-            >
-              <div className={styles.avatar}>{player.name[0]?.toUpperCase()}</div>
-              <span className={styles.name}>{player.name}</span>
-              {player.id === myPlayerId && <span className={styles.youLabel}>You</span>}
-            </div>
-          ))}
+          {alivePlayers.map((player) => {
+            const colorHex = getColorHex(player.color);
+            const avatarEmoji = getAvatarEmoji(player.avatar);
+            const isDisabled = player.id === myPlayerId;
+            const isSelected = selectedTarget === player.id;
+            return (
+              <div
+                key={player.id}
+                className={`${styles.voteCard} ${isSelected ? styles.selected : ''} ${isDisabled ? styles.disabled : ''}`}
+                style={{ borderColor: isSelected ? colorHex : undefined, '--player-color': colorHex } as React.CSSProperties}
+                onClick={() => !isDisabled && canVote && setSelectedTarget(player.id)}
+              >
+                <div className={styles.avatar} style={{ background: colorHex, color: '#000' }}>{avatarEmoji}</div>
+                <span className={styles.name}>{player.name}</span>
+                {player.id === myPlayerId && <span className={styles.youLabel}>You</span>}
+              </div>
+            );
+          })}
         </div>
 
         {canVote && selectedTarget && (
@@ -223,7 +235,6 @@ export function Voting({ players, myPlayerId, phase, votes: _votes, banishedPlay
     const revealOrderLength = serverTotalVotes ?? players.filter((p) => p.isAlive).length;
     const currentIndex = revealIndex ?? 0;
     const isRevealing = currentIndex < revealOrderLength && revealOrderLength > 0;
-    // Only consider reveal complete if we have actual revealed votes AND index matches
     const revealComplete = currentIndex >= revealOrderLength && revealOrderLength > 0 && (revealedVotes?.length ?? 0) > 0;
     const totalVotes = revealedVotes?.length || revealOrderLength;
 
@@ -231,6 +242,8 @@ export function Voting({ players, myPlayerId, phase, votes: _votes, banishedPlay
     const topVoteCount = sortedTally[0]?.voteCount || 0;
     const topCandidates = sortedTally.filter((t) => t.voteCount === topVoteCount && topVoteCount > 0);
     const isTie = topCandidates.length > 1;
+
+    const getPlayerForId = (id: string) => players.find((p) => p.id === id);
 
     return (
       <div className={styles.container}>
@@ -252,13 +265,19 @@ export function Voting({ players, myPlayerId, phase, votes: _votes, banishedPlay
           <div className={`${styles.currentRevealCard} ${currentReveal.vote.isAutoVote ? styles.autoVoteCard : ''}`}>
             <div className={styles.revealHeader}>
               <div className={styles.voterSection}>
-                <div className={styles.avatar}>{currentReveal.voterName[0]?.toUpperCase()}</div>
+                {(() => {
+                  const vp = players.find((p) => p.name === currentReveal.voterName);
+                  return <div className={styles.avatar} style={{ background: getColorHex(vp?.color), color: '#000' }}>{getAvatarEmoji(vp?.avatar)}</div>;
+                })()}
                 <span className={styles.voterName}>{currentReveal.voterName}</span>
                 {currentReveal.vote.isAutoVote && <span className={styles.autoVoteTag}>Auto</span>}
               </div>
               <span className={styles.votedFor}>voted for</span>
               <div className={styles.targetSection}>
-                <div className={styles.avatarTarget}>{currentReveal.targetName[0]?.toUpperCase()}</div>
+                {(() => {
+                  const tp = players.find((p) => p.name === currentReveal.targetName);
+                  return <div className={styles.avatarTarget} style={{ background: getColorHex(tp?.color), color: '#000' }}>{getAvatarEmoji(tp?.avatar)}</div>;
+                })()}
                 <span className={styles.targetName}>{currentReveal.targetName}</span>
               </div>
             </div>
@@ -279,21 +298,26 @@ export function Voting({ players, myPlayerId, phase, votes: _votes, banishedPlay
           <div className={styles.tallySection}>
             <h3 className={styles.tallyTitle}>{revealComplete ? 'Final Tally' : 'Current Tally'}</h3>
             <div className={styles.tallyList}>
-              {sortedTally.map((tally) => (
-                <div 
-                  key={tally.playerId} 
-                  className={`${styles.tallyItem} ${revealComplete && tally.voteCount === topVoteCount && topVoteCount > 0 ? styles.topTallyItem : ''}`}
-                >
-                  <span className={styles.tallyName}>{tally.playerName}</span>
-                  <div className={styles.tallyBar}>
-                    <div 
-                      className={styles.tallyBarFill} 
-                      style={{ width: `${Math.min((tally.voteCount / (totalVotes || 1)) * 100, 100)}%` }}
-                    />
+              {sortedTally.map((tally) => {
+                const p = getPlayerForId(tally.playerId);
+                const colorHex = getColorHex(p?.color);
+                return (
+                  <div 
+                    key={tally.playerId} 
+                    className={`${styles.tallyItem} ${revealComplete && tally.voteCount === topVoteCount && topVoteCount > 0 ? styles.topTallyItem : ''}`}
+                  >
+                    <div className={styles.tallyAvatar} style={{ background: colorHex, color: '#000' }}>{getAvatarEmoji(p?.avatar)}</div>
+                    <span className={styles.tallyName}>{tally.playerName}</span>
+                    <div className={styles.tallyBar}>
+                      <div 
+                        className={styles.tallyBarFill} 
+                        style={{ width: `${Math.min((tally.voteCount / (totalVotes || 1)) * 100, 100)}%`, background: colorHex }}
+                      />
+                    </div>
+                    <span className={styles.tallyCount}>{tally.voteCount}</span>
                   </div>
-                  <span className={styles.tallyCount}>{tally.voteCount}</span>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         )}
@@ -363,17 +387,24 @@ export function Voting({ players, myPlayerId, phase, votes: _votes, banishedPlay
         </div>
 
         <div className={styles.playerGrid}>
-          {tiedPlayers.map((player) => (
-            <div
-              key={player.id}
-              className={`${styles.voteCard} ${selectedTarget === player.id ? styles.selected : ''} ${player.id === myPlayerId ? styles.disabled : ''}`}
-              onClick={() => player.id !== myPlayerId && canVote && setSelectedTarget(player.id)}
-            >
-              <div className={styles.avatar}>{player.name[0]?.toUpperCase()}</div>
-              <span className={styles.name}>{player.name}</span>
-              {player.id === myPlayerId && <span className={styles.youLabel}>You</span>}
-            </div>
-          ))}
+          {tiedPlayers.map((player) => {
+            const colorHex = getColorHex(player.color);
+            const avatarEmoji = getAvatarEmoji(player.avatar);
+            const isDisabled = player.id === myPlayerId;
+            const isSelected = selectedTarget === player.id;
+            return (
+              <div
+                key={player.id}
+                className={`${styles.voteCard} ${isSelected ? styles.selected : ''} ${isDisabled ? styles.disabled : ''}`}
+                style={{ borderColor: isSelected ? colorHex : undefined }}
+                onClick={() => !isDisabled && canVote && setSelectedTarget(player.id)}
+              >
+                <div className={styles.avatar} style={{ background: colorHex, color: '#000' }}>{avatarEmoji}</div>
+                <span className={styles.name}>{player.name}</span>
+                {player.id === myPlayerId && <span className={styles.youLabel}>You</span>}
+              </div>
+            );
+          })}
         </div>
 
         {canVote && (
@@ -402,6 +433,9 @@ export function Voting({ players, myPlayerId, phase, votes: _votes, banishedPlay
   }
 
   if (phase === 'TIEBREAKER_REVEAL' && randomlySelectedPlayer && tiedPlayerNames) {
+    const rspPlayer = players.find((p) => p.id === randomlySelectedPlayer.id);
+    const rspColorHex = getColorHex(rspPlayer?.color);
+    const rspAvatarEmoji = getAvatarEmoji(rspPlayer?.avatar);
     return (
       <div className={styles.container}>
         <h1 className={styles.title}>Tiebreaker!</h1>
@@ -421,7 +455,7 @@ export function Voting({ players, myPlayerId, phase, votes: _votes, banishedPlay
         </div>
 
         <div className={`${styles.revealCard} ${randomlySelectedPlayer.role === 'TRAITOR' ? styles.traitor : styles.faithful}`}>
-          <div className={styles.bigAvatar}>{randomlySelectedPlayer.name[0]?.toUpperCase()}</div>
+          <div className={styles.bigAvatar} style={{ background: rspColorHex, color: '#000' }}>{rspAvatarEmoji}</div>
           <h2>{randomlySelectedPlayer.name}</h2>
           <p className={styles.roleReveal}>
             was randomly selected and was a <strong>{randomlySelectedPlayer.role}</strong>
@@ -444,12 +478,15 @@ export function Voting({ players, myPlayerId, phase, votes: _votes, banishedPlay
   }
 
   if ((phase === 'BANISH_REVEAL' || phase === 'CHECK_WIN') && banishedPlayer) {
+    const bp = players.find((p) => p.id === banishedPlayer.id);
+    const bpColorHex = getColorHex(bp?.color);
+    const bpAvatarEmoji = getAvatarEmoji(bp?.avatar);
     return (
       <div className={styles.container}>
         <h1 className={styles.title}>Banishment</h1>
 
         <div className={`${styles.revealCard} ${banishedPlayer.role === 'TRAITOR' ? styles.traitor : styles.faithful}`}>
-          <div className={styles.bigAvatar}>{banishedPlayer.name[0]?.toUpperCase()}</div>
+          <div className={styles.bigAvatar} style={{ background: bpColorHex, color: '#000' }}>{bpAvatarEmoji}</div>
           <h2>{banishedPlayer.name}</h2>
           <p className={styles.roleReveal}>
             was a <strong>{banishedPlayer.role}</strong>

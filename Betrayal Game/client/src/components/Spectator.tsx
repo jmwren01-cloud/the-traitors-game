@@ -1,4 +1,5 @@
 import type { Player, Vote, VoteTally, Role } from '../types';
+import { getColorHex, getAvatarEmoji } from '../avatarConstants';
 import styles from './Spectator.module.css';
 
 interface SpectatorProps {
@@ -63,7 +64,6 @@ export function Spectator({
 
   return (
     <div className={`${styles.container} ${isNight ? styles.nightMode : ''}`}>
-      {/* Ghost banner */}
       <div className={styles.ghostBanner}>
         <span className={styles.ghostIcon}>👻</span>
         <div>
@@ -72,7 +72,6 @@ export function Spectator({
         </div>
       </div>
 
-      {/* Phase indicator */}
       <div className={`${styles.phaseCard} ${isNight ? styles.nightCard : ''}`}>
         {currentRound && (
           <div className={styles.roundLabel}>Round {currentRound}</div>
@@ -82,14 +81,12 @@ export function Spectator({
           {PHASE_LABELS[phase] ?? phase}
         </div>
 
-        {/* Night phase flavour */}
         {isNight && (
           <p className={styles.nightFlavour}>
             The Traitors are meeting in secret...
           </p>
         )}
 
-        {/* Morning reveal */}
         {isMorning && murderedPlayer && (
           <div className={styles.morningReveal}>
             <div className={styles.morningIcon}>💀</div>
@@ -110,7 +107,6 @@ export function Spectator({
           <p className={styles.nightFlavour}>Nobody was harmed last night.</p>
         )}
 
-        {/* Voting progress */}
         {phase === 'VOTING' && voteCount && (
           <div className={styles.voteProgress}>
             <div className={styles.voteProgressLabel}>
@@ -125,7 +121,6 @@ export function Spectator({
           </div>
         )}
 
-        {/* Vote reveal stream */}
         {phase === 'VOTE_REVEAL' && (
           <div className={styles.revealSection}>
             <div className={styles.revealCount}>{revealCount} / {total} votes revealed</div>
@@ -141,25 +136,27 @@ export function Spectator({
                 {currentTally
                   .slice()
                   .sort((a, b) => b.voteCount - a.voteCount)
-                  .map((t) => (
-                    <div key={t.playerId} className={styles.tallyRow}>
-                      <span className={styles.tallyName}>{t.playerName}</span>
-                      <span className={styles.tallyCount}>{t.voteCount}</span>
-                    </div>
-                  ))}
+                  .map((t) => {
+                    const p = players.find((pl) => pl.id === t.playerId);
+                    return (
+                      <div key={t.playerId} className={styles.tallyRow}>
+                        <span className={styles.tallyAvatar} style={{ background: getColorHex(p?.color) }}>{getAvatarEmoji(p?.avatar)}</span>
+                        <span className={styles.tallyName}>{t.playerName}</span>
+                        <span className={styles.tallyCount}>{t.voteCount}</span>
+                      </div>
+                    );
+                  })}
               </div>
             )}
           </div>
         )}
 
-        {/* Tie */}
         {phase === 'TIE_DETECTED' && tiedPlayerNames && (
           <div className={styles.tieInfo}>
             Tied: {tiedPlayerNames.join(' & ')}
           </div>
         )}
 
-        {/* Banish reveal */}
         {(phase === 'BANISH_REVEAL' || phase === 'TIEBREAKER_REVEAL') && (banishedPlayer ?? randomlySelectedPlayer) && (
           <div className={styles.banishReveal}>
             <div className={styles.banishIcon}>🔨</div>
@@ -171,25 +168,28 @@ export function Spectator({
         )}
       </div>
 
-      {/* Player list */}
       <div className={styles.playerSection}>
         <div className={styles.sectionTitle}>
           Alive <span className={styles.count}>({alivePlayers.length})</span>
         </div>
         <div className={styles.playerGrid}>
-          {alivePlayers.map((p) => (
-            <div key={p.id} className={styles.playerChip}>
-              <span className={styles.playerAvatar}>
-                {p.name.charAt(0).toUpperCase()}
-              </span>
-              <span className={styles.playerName}>
-                {p.name}
-                {p.id === myPlayerId && ' (you)'}
-              </span>
-              {p.hasShield && <span className={styles.shield}>🛡️</span>}
-              {!p.isConnected && <span className={styles.away}>AWAY</span>}
-            </div>
-          ))}
+          {alivePlayers.map((p) => {
+            const colorHex = getColorHex(p.color);
+            const avatarEmoji = getAvatarEmoji(p.avatar);
+            return (
+              <div key={p.id} className={styles.playerChip} style={{ borderColor: colorHex }}>
+                <span className={styles.playerAvatar} style={{ background: colorHex, color: '#000' }}>
+                  {avatarEmoji}
+                </span>
+                <span className={styles.playerName}>
+                  {p.name}
+                  {p.id === myPlayerId && ' (you)'}
+                </span>
+                {p.hasShield && <span className={styles.shield}>🛡️</span>}
+                {!p.isConnected && <span className={styles.away}>AWAY</span>}
+              </div>
+            );
+          })}
         </div>
 
         {deadPlayers.length > 0 && (
@@ -198,22 +198,26 @@ export function Spectator({
               Eliminated <span className={styles.count}>({deadPlayers.length})</span>
             </div>
             <div className={styles.playerGrid}>
-              {deadPlayers.map((p) => (
-                <div key={p.id} className={`${styles.playerChip} ${styles.deadChip}`}>
-                  <span className={`${styles.playerAvatar} ${styles.deadAvatar}`}>
-                    {p.name.charAt(0).toUpperCase()}
-                  </span>
-                  <span className={`${styles.playerName} ${styles.deadName}`}>
-                    {p.name}
-                    {p.id === myPlayerId && ' (you)'}
-                  </span>
-                  {p.role && (
-                    <span className={`${styles.roleTag} ${p.role === 'TRAITOR' ? styles.traitorTag : styles.faithfulTag}`}>
-                      {p.role === 'TRAITOR' ? '🗡️' : '🤝'}
+              {deadPlayers.map((p) => {
+                const colorHex = getColorHex(p.color);
+                const avatarEmoji = getAvatarEmoji(p.avatar);
+                return (
+                  <div key={p.id} className={`${styles.playerChip} ${styles.deadChip}`}>
+                    <span className={`${styles.playerAvatar} ${styles.deadAvatar}`} style={{ background: colorHex, color: '#000', opacity: 0.5 }}>
+                      {avatarEmoji}
                     </span>
-                  )}
-                </div>
-              ))}
+                    <span className={`${styles.playerName} ${styles.deadName}`}>
+                      {p.name}
+                      {p.id === myPlayerId && ' (you)'}
+                    </span>
+                    {p.role && (
+                      <span className={`${styles.roleTag} ${p.role === 'TRAITOR' ? styles.traitorTag : styles.faithfulTag}`}>
+                        {p.role === 'TRAITOR' ? '🗡️' : '🤝'}
+                      </span>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           </>
         )}

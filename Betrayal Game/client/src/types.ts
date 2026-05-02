@@ -56,6 +56,8 @@ export interface Player {
   isConnected?: boolean;
   hasShield?: boolean;
   shieldRevealed?: boolean;
+  color?: string;
+  avatar?: string;
 }
 
 export interface Vote {
@@ -180,4 +182,5 @@ export type C2SEvent =
   | { type: 'C2S_SEND_MESSAGE'; payload: { message: string; channel: ChatChannel } }
   | { type: 'C2S_SUBMIT_CHALLENGE_ANSWER'; payload: { answer: string | number } }
   | { type: 'C2S_CONTINUE_TO_ROUNDTABLE'; payload: Record<string, never> }
-  | { type: 'C2S_REVEAL_SHIELD'; payload: Record<string, never> };
+  | { type: 'C2S_REVEAL_SHIELD'; payload: Record<string, never> }
+  | { type: 'C2S_SET_AVATAR'; payload: { color?: string; avatar?: string } };

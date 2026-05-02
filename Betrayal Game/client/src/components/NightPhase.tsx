@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import type { Player, C2SEvent, Role } from '../types';
+import { getColorHex, getAvatarEmoji } from '../avatarConstants';
 import styles from './NightPhase.module.css';
 import { useSoundContext } from '../contexts/SoundContext';
 import { vibrate } from '../utils/haptics';
@@ -68,15 +69,11 @@ export function NightPhase({
 
   const isHost = players.find((p) => p.id === myPlayerId)?.isHost;
   const isTraitor = myRole === 'TRAITOR';
-  // Filter murder targets: only alive players who are NOT traitors
-  // Use traitorIds when available, fallback to role check
   const aliveFaithful = players.filter((p) => {
     if (!p.isAlive || p.id === myPlayerId) return false;
-    // Use traitorIds if available (most reliable)
     if (traitorIds && traitorIds.length > 0) {
       return !traitorIds.includes(p.id);
     }
-    // Fallback: exclude known traitors by role
     return p.role !== 'TRAITOR';
   });
   const fellowTraitors = traitorIds 
@@ -107,12 +104,16 @@ export function NightPhase({
               <div className={styles.fellowTraitorsSection}>
                 <h3 className={styles.fellowTraitorsTitle}>Your Fellow Traitors</h3>
                 <div className={styles.fellowTraitorsList}>
-                  {fellowTraitors.map((traitor) => (
-                    <div key={traitor.id} className={styles.traitorBadge}>
-                      <div className={styles.traitorAvatar}>{traitor.name[0]?.toUpperCase()}</div>
-                      <span className={styles.traitorName}>{traitor.name}</span>
-                    </div>
-                  ))}
+                  {fellowTraitors.map((traitor) => {
+                    const colorHex = getColorHex(traitor.color);
+                    const avatarEmoji = getAvatarEmoji(traitor.avatar);
+                    return (
+                      <div key={traitor.id} className={styles.traitorBadge} style={{ borderColor: colorHex }}>
+                        <div className={styles.traitorAvatar} style={{ background: colorHex, color: '#000' }}>{avatarEmoji}</div>
+                        <span className={styles.traitorName}>{traitor.name}</span>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             )}
@@ -124,19 +125,24 @@ export function NightPhase({
             <h2 className={styles.sectionTitle}>Choose Your Victim</h2>
 
             <div className={styles.targetGrid}>
-              {aliveFaithful.map((player) => (
-                <div
-                  key={player.id}
-                  className={`${styles.targetCard} ${selectedTarget === player.id ? styles.selected : ''} ${player.shieldRevealed ? styles.hasShield : ''}`}
-                  onClick={() => !hasVoted && setSelectedTarget(player.id)}
-                >
-                  <div className={styles.avatar}>
-                    {player.name[0]?.toUpperCase()}
-                    {player.shieldRevealed && <span className={styles.shieldBadge}>🛡️</span>}
+              {aliveFaithful.map((player) => {
+                const colorHex = getColorHex(player.color);
+                const avatarEmoji = getAvatarEmoji(player.avatar);
+                return (
+                  <div
+                    key={player.id}
+                    className={`${styles.targetCard} ${selectedTarget === player.id ? styles.selected : ''} ${player.shieldRevealed ? styles.hasShield : ''}`}
+                    style={{ borderColor: selectedTarget === player.id ? colorHex : undefined }}
+                    onClick={() => !hasVoted && setSelectedTarget(player.id)}
+                  >
+                    <div className={styles.avatar} style={{ background: colorHex, color: '#000' }}>
+                      {avatarEmoji}
+                      {player.shieldRevealed && <span className={styles.shieldBadge}>🛡️</span>}
+                    </div>
+                    <span className={styles.name}>{player.name}</span>
                   </div>
-                  <span className={styles.name}>{player.name}</span>
-                </div>
-              ))}
+                );
+              })}
             </div>
 
             {murderVoteProgress && (
@@ -181,6 +187,7 @@ export function NightPhase({
   }
 
   if (phase === 'MORNING') {
+    const murderedPlayerObj = murderedPlayer ? players.find((p) => p.id === murderedPlayer.id) : undefined;
     return (
       <div className={styles.container}>
         <div className={styles.morningOverlay}>
@@ -188,7 +195,12 @@ export function NightPhase({
 
           {murderedPlayer ? (
             <div className={styles.deathReveal}>
-              <div className={styles.bigAvatar}>{murderedPlayer.name[0]?.toUpperCase()}</div>
+              <div
+                className={styles.bigAvatar}
+                style={{ background: getColorHex(murderedPlayerObj?.color), color: '#000' }}
+              >
+                {getAvatarEmoji(murderedPlayerObj?.avatar)}
+              </div>
               <h2>{murderedPlayer.name}</h2>
               <p className={styles.deathMessage}>was found dead this morning...</p>
             </div>

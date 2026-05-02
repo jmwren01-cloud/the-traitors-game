@@ -66,6 +66,7 @@ function App() {
       isAlive={isAlive}
       onSend={send}
       disabled={isChatDisabled}
+      players={gameState?.players || []}
     />
   ) : null;
 

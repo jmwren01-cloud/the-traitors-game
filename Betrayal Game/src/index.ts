@@ -1075,6 +1075,21 @@ wss.on('connection', (ws: WebSocket) => {
         return;
       }
 
+      if (event.type === 'C2S_SET_AVATAR') {
+        const updatedGame = game.setAvatar(
+          gameState,
+          currentPlayerId,
+          event.payload.color,
+          event.payload.avatar
+        );
+        games.set(currentSessionId, updatedGame);
+        broadcastToSession(currentSessionId, {
+          type: 'S2C_AVATAR_UPDATED',
+          payload: { players: updatedGame.players }
+        });
+        return;
+      }
+
       if (event.type === 'C2S_SEND_MESSAGE') {
         const player = gameState.players.find((p) => p.id === currentPlayerId);
         if (!player) {
