@@ -616,6 +616,20 @@ export function transferHost(game: GameState, newHostId: string): GameState {
   };
 }
 
+/**
+ * End the game immediately at the host's request. Sets phase to GAME_END
+ * with no winner so the client can render an "ended early" state. Game
+ * record persistence is intentionally skipped by the router for this path.
+ */
+export function endGameEarly(game: GameState): GameState {
+  return {
+    ...game,
+    phase: 'GAME_END',
+    winner: undefined,
+    timer: undefined,
+  };
+}
+
 export function findNewHost(game: GameState): string | null {
   const connectedPlayers = game.players.filter((p: Player) => p.isConnected && p.id !== game.hostId);
   if (connectedPlayers.length === 0) return null;

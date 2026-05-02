@@ -229,7 +229,9 @@ export type C2SEvent =
   | { type: 'C2S_IDENTIFY'; payload: { deviceToken: string; playerName: string } }
   | { type: 'C2S_GET_PLAYER_STATS'; payload: Record<string, never> }
   | { type: 'C2S_GET_LEADERBOARD'; payload: { metric: 'winRate' | 'gamesPlayed' | 'traitorWins' } }
-  | { type: 'C2S_GET_GLOBAL_STATS'; payload: Record<string, never> };
+  | { type: 'C2S_GET_GLOBAL_STATS'; payload: Record<string, never> }
+  | { type: 'C2S_TRANSFER_HOST'; payload: { targetPlayerId: string } }
+  | { type: 'C2S_END_GAME_EARLY'; payload: Record<string, never> };
 
 // Server-to-Client Events
 export type S2CEvent =
@@ -327,11 +329,17 @@ export type S2CEvent =
       phase: GamePhase 
     } }
   | { type: 'S2C_GAME_END'; payload: { 
-      winner: 'TRAITORS' | 'FAITHFUL'; 
+      winner?: 'TRAITORS' | 'FAITHFUL'; 
       phase: GamePhase;
       remainingTraitors: number;
       remainingFaithful: number;
       history: RoundRecord[];
+      reason?: 'HOST_ENDED';
+    } }
+  | { type: 'S2C_HOST_TRANSFERRED'; payload: { 
+      newHostId: string; 
+      newHostName: string; 
+      players: Player[];
     } }
   | { type: 'S2C_CONTINUE_GAME'; payload: { phase: GamePhase; currentRound: number } }
   | { type: 'S2C_NIGHT_STARTED'; payload: { 

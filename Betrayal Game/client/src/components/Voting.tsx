@@ -526,14 +526,6 @@ export function Voting({ players, myPlayerId, phase, votes: _votes, banishedPlay
           🛡️ {shieldBlockedBanishmentName ?? 'The shielded player'} consumed their shield to block the banishment.
         </div>
         <p className={styles.banishMessage}>No one is banished this round.</p>
-        {isHost && phase === 'BANISH_REVEAL' && (
-          <button
-            className={styles.voteBtn}
-            onClick={() => onSend({ type: 'C2S_CHECK_WIN', payload: {} })}
-          >
-            Continue
-          </button>
-        )}
         {!isHost && (
           <p className={styles.waiting}>Waiting for host to continue...</p>
         )}

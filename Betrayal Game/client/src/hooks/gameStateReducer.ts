@@ -572,15 +572,21 @@ export function gameStateReducer(state: GameState | null, msg: Msg): GameState |
     }
 
     case 'S2C_GAME_END': {
-      const payload = msg.payload as { winner: 'TRAITORS' | 'FAITHFUL'; phase: string; remainingTraitors: number; remainingFaithful: number; history: RoundRecord[] };
+      const payload = msg.payload as { winner?: 'TRAITORS' | 'FAITHFUL'; phase: string; remainingTraitors: number; remainingFaithful: number; history: RoundRecord[]; reason?: 'HOST_ENDED' };
       return state ? {
         ...state,
         phase: payload.phase as GameState['phase'],
         winner: payload.winner,
+        endReason: payload.reason,
         remainingTraitors: payload.remainingTraitors,
         remainingFaithful: payload.remainingFaithful,
         history: payload.history ?? [],
       } : null;
+    }
+
+    case 'S2C_HOST_TRANSFERRED': {
+      const payload = msg.payload as { newHostId: string; newHostName: string; players: Player[] };
+      return state ? { ...state, players: payload.players } : null;
     }
 
     case 'S2C_CHAT_MESSAGE': {

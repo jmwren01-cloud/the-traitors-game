@@ -1180,6 +1180,65 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
         return;
       }
 
+      if (event.type === 'C2S_TRANSFER_HOST') {
+        const currentPlayer = gameState.players.find((p) => p.id === currentPlayerId);
+        if (!currentPlayer?.isHost) {
+          sendError(ws, 'Only the host can transfer host');
+          return;
+        }
+        const targetId = event.payload.targetPlayerId;
+        const target = gameState.players.find((p) => p.id === targetId);
+        if (!target) {
+          sendError(ws, 'Target player not found');
+          return;
+        }
+        if (target.id === currentPlayerId) {
+          sendError(ws, 'You are already the host');
+          return;
+        }
+        try {
+          const updatedGame = game.transferHost(gameState, targetId);
+          setGame(updatedGame);
+          broadcast(currentSessionId, {
+            type: 'S2C_HOST_TRANSFERRED',
+            payload: {
+              newHostId: target.id,
+              newHostName: target.name,
+              players: updatedGame.players,
+            }
+          });
+        } catch (err) {
+          sendError(ws, (err as Error).message);
+        }
+        return;
+      }
+
+      if (event.type === 'C2S_END_GAME_EARLY') {
+        const currentPlayer = gameState.players.find((p) => p.id === currentPlayerId);
+        if (!currentPlayer?.isHost) {
+          sendError(ws, 'Only the host can end the game');
+          return;
+        }
+        if (gameState.phase === 'GAME_END') {
+          return;
+        }
+        const updatedGame = game.endGameEarly(gameState);
+        setGame(updatedGame);
+        const aliveTraitors = updatedGame.players.filter((p) => p.isAlive && p.role === 'TRAITOR').length;
+        const aliveFaithful = updatedGame.players.filter((p) => p.isAlive && p.role === 'FAITHFUL').length;
+        broadcast(currentSessionId, {
+          type: 'S2C_GAME_END',
+          payload: {
+            phase: 'GAME_END',
+            remainingTraitors: aliveTraitors,
+            remainingFaithful: aliveFaithful,
+            history: updatedGame.history,
+            reason: 'HOST_ENDED',
+          }
+        });
+        return;
+      }
+
       if (event.type === 'C2S_SET_AVATAR') {
         const updatedGame = game.setAvatar(
           gameState,

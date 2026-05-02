@@ -12,6 +12,7 @@ import styles from './GameEnd.module.css';
 
 interface GameEndProps {
   winner?: 'TRAITORS' | 'FAITHFUL';
+  endReason?: 'HOST_ENDED';
   players: Player[];
   myRole?: string;
   history?: RoundRecord[];
@@ -136,9 +137,10 @@ function RoundCard({ record, index }: { record: RoundRecord; index: number }) {
 }
 
 export function GameEnd({
-  winner, players, myRole, history,
+  winner, endReason, players, myRole, history,
   myPlayerId: _myPlayerId, playerStats, leaderboard, globalStats, onSend,
 }: GameEndProps) {
+  const hostEnded = endReason === 'HOST_ENDED' || !winner;
   const traitors = players.filter((p) => p.role === 'TRAITOR');
   const faithful = players.filter((p) => p.role === 'FAITHFUL');
   const { play } = useSoundContext();
@@ -179,7 +181,7 @@ export function GameEnd({
     (winner === 'FAITHFUL' && myRole === 'FAITHFUL');
 
   return (
-    <div className={`${styles.container} ${winner === 'TRAITORS' ? styles.traitorWin : styles.faithfulWin}`}>
+    <div className={`${styles.container} ${winner === 'TRAITORS' ? styles.traitorWin : winner === 'FAITHFUL' ? styles.faithfulWin : ''}`}>
       {/* Cinematic skip control — visible until stage 4 */}
       {stage < 4 && (
         <button className={styles.skipBtn} onClick={skip} aria-label="Skip cinematic">
@@ -193,17 +195,23 @@ export function GameEnd({
       {/* Stage 1+ — winner banner */}
       {stage >= 1 && (
         <div key="banner" className={`${styles.winnerBanner} ${styles.stageEnter}`}>
-          <h2>{winner === 'TRAITORS' ? 'The Traitors Win!' : 'The Faithful Win!'}</h2>
+          <h2>
+            {hostEnded
+              ? 'Game Ended Early'
+              : winner === 'TRAITORS' ? 'The Traitors Win!' : 'The Faithful Win!'}
+          </h2>
           <p className={styles.winnerSubtitle}>
-            {winner === 'TRAITORS'
+            {hostEnded
+              ? 'The host called the game early. No winner was recorded.'
+              : winner === 'TRAITORS'
               ? 'Deception prevails. The Traitors have outwitted the castle.'
               : 'Justice prevails. The Traitors have been exposed.'}
           </p>
         </div>
       )}
 
-      {/* Stage 2+ — personal verdict */}
-      {stage >= 2 && (
+      {/* Stage 2+ — personal verdict (skipped when game was ended early) */}
+      {stage >= 2 && !hostEnded && (
         <div key="verdict" className={`${isWinner ? styles.victoryMessage : styles.defeatMessage} ${styles.stageEnter}`}>
           <p>{isWinner ? '🏆 Congratulations — you survived the deception.' : '💀 Better luck next time…'}</p>
         </div>

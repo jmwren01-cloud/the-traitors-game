@@ -10,7 +10,7 @@ import { Timer } from './components/Timer';
 import { ConnectionStatus } from './components/ConnectionStatus';
 import { Challenge } from './components/Challenge';
 import { Spectator } from './components/Spectator';
-import { HostDashboard } from './components/HostDashboard';
+import { HostPanel } from './components/HostPanel';
 import { HUD } from './components/HUD';
 import hudStyles from './components/HUD.module.css';
 import { useSoundContext } from './contexts/SoundContext';
@@ -65,20 +65,24 @@ function App() {
   const myPlayer = gameState?.players?.find((p) => p.id === gameState?.myPlayerId);
   const isAlive = myPlayer?.isAlive ?? true;
 
-  const hostDashboard = gameState && phase !== 'LOBBY' ? (
-    <HostDashboard
+  const minPlayers = gameState?.settings?.minPlayers ?? 5;
+  const canStartGame = phase === 'LOBBY' && (gameState?.players?.length ?? 0) >= minPlayers;
+  const hostPanel = gameState ? (
+    <HostPanel
       players={gameState.players || []}
       myPlayerId={gameState.myPlayerId}
       phase={phase}
       votes={gameState.votes}
-      revealedVotes={gameState.revealedVotes}
-      currentTally={gameState.currentTally}
       voteCount={gameState.voteCount}
       murderVoteProgress={gameState.murderVoteProgress}
       murderVoterIds={gameState.murderVoterIds}
       traitorIds={gameState.traitorIds}
       currentRound={gameState.currentRound}
       tiedPlayerIds={gameState.tiedPlayerIds}
+      timer={gameState.timer}
+      canStartGame={canStartGame}
+      minPlayers={minPlayers}
+      round1DiscussionOnly={gameState.settings?.round1DiscussionOnly ?? false}
       onSend={send}
     />
   ) : null;
@@ -126,6 +130,7 @@ function App() {
         {soundToggle}
         <GameEnd
           winner={gameState?.winner}
+          endReason={gameState?.endReason}
           players={gameState?.players || []}
           myRole={gameState?.myRole}
           history={gameState?.history}
@@ -148,7 +153,7 @@ function App() {
         <ConnectionStatus connected={connected} reconnecting={reconnecting} />
         {soundToggle}
         {hud}
-        {hostDashboard}
+        {hostPanel}
         {timer}
         <Spectator
           players={gameState?.players || []}
@@ -179,7 +184,7 @@ function App() {
         <ConnectionStatus connected={connected} reconnecting={reconnecting} />
         {soundToggle}
         {hud}
-        {hostDashboard}
+        {hostPanel}
         {timer}
         <NightPhase
           players={gameState?.players || []}
@@ -209,7 +214,7 @@ function App() {
         <ConnectionStatus connected={connected} reconnecting={reconnecting} />
         {soundToggle}
         {hud}
-        {hostDashboard}
+        {hostPanel}
         {timer}
         <Voting
           players={gameState?.players || []}
@@ -242,7 +247,7 @@ function App() {
       <>
         <ConnectionStatus connected={connected} reconnecting={reconnecting} />
         {soundToggle}
-        {hostDashboard}
+        {hostPanel}
         <RoleReveal
           myRole={gameState?.myRole}
           traitorIds={gameState?.traitorIds}
@@ -262,7 +267,7 @@ function App() {
         <ConnectionStatus connected={connected} reconnecting={reconnecting} />
         {soundToggle}
         {hud}
-        {hostDashboard}
+        {hostPanel}
         <Challenge
           challenge={gameState?.challenge}
           players={gameState?.players || []}
@@ -280,6 +285,7 @@ function App() {
     <>
       <ConnectionStatus connected={connected} reconnecting={reconnecting} />
       {soundToggle}
+      {hostPanel}
       <Lobby
         sessionId={gameState?.sessionId}
         players={gameState?.players || []}

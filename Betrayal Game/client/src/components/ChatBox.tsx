@@ -221,6 +221,11 @@ export function ChatBox({ messages, myPlayerId, myRole, isAlive = true, onSend, 
           type="text"
           value={message}
           onChange={(e) => setMessage(e.target.value)}
+          onFocus={() => {
+            window.setTimeout(() => {
+              messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+            }, 250);
+          }}
           placeholder={
             disabled 
               ? 'Chat disabled' 
@@ -230,6 +235,11 @@ export function ChatBox({ messages, myPlayerId, myRole, isAlive = true, onSend, 
           }
           maxLength={200}
           disabled={disabled}
+          enterKeyHint="send"
+          inputMode="text"
+          autoComplete="off"
+          autoCorrect="off"
+          spellCheck={false}
           className={`${styles.input} ${activeChannel === 'traitor' ? styles.traitorInput : ''}`}
         />
         <button

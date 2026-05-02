@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import type { Player, C2SEvent, GameSettings } from '../types';
 import { PLAYER_COLORS, PLAYER_AVATARS, getColorHex, getAvatarEmoji } from '../avatarConstants';
 import { getOrCreateDeviceToken, getSavedPlayerName, savePlayerName, isValidPlayerName } from '../utils/identity';
@@ -29,7 +29,55 @@ export function Lobby({
 
   const [pendingAction, setPendingAction] = useState<null | { type: 'create' } | { type: 'join'; sessionId: string }>(null);
   const [showProfileDrawer, setShowProfileDrawer] = useState(false);
+  const [copied, setCopied] = useState(false);
   const lastIdentifiedActionRef = useRef<string | null>(null);
+  const copiedTimeoutRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (copiedTimeoutRef.current !== null) {
+        window.clearTimeout(copiedTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  const handleCopySession = useCallback(async () => {
+    if (!sessionId) return;
+    let success = false;
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(sessionId);
+        success = true;
+      } else {
+        throw new Error('clipboard unavailable');
+      }
+    } catch {
+      try {
+        const textArea = document.createElement('textarea');
+        textArea.value = sessionId;
+        textArea.setAttribute('readonly', '');
+        textArea.style.position = 'absolute';
+        textArea.style.left = '-9999px';
+        document.body.appendChild(textArea);
+        textArea.select();
+        textArea.setSelectionRange(0, sessionId.length);
+        success = document.execCommand('copy');
+        document.body.removeChild(textArea);
+      } catch {
+        success = false;
+      }
+    }
+    if (success) {
+      setCopied(true);
+      if (copiedTimeoutRef.current !== null) {
+        window.clearTimeout(copiedTimeoutRef.current);
+      }
+      copiedTimeoutRef.current = window.setTimeout(() => {
+        setCopied(false);
+        copiedTimeoutRef.current = null;
+      }, 2000);
+    }
+  }, [sessionId]);
 
   // When identity is confirmed, fire the pending create/join action.
   useEffect(() => {
@@ -80,10 +128,6 @@ export function Lobby({
 
   const isIdentifying = pendingAction !== null;
   const nameValid = isValidPlayerName(playerName.trim());
-
-  const handleStart = () => {
-    onSend({ type: 'C2S_START_GAME', payload: {} });
-  };
 
   const handleColorSelect = (colorId: string) => {
     if (takenColors.includes(colorId)) return;
@@ -200,22 +244,14 @@ export function Lobby({
       <div className={styles.sessionInfo}>
         <span>Session ID:</span>
         <code className={styles.sessionId}>{sessionId}</code>
-        <button 
-          className={styles.copyBtn}
-          onClick={async () => {
-            try {
-              await navigator.clipboard.writeText(sessionId);
-            } catch {
-              const textArea = document.createElement('textarea');
-              textArea.value = sessionId;
-              document.body.appendChild(textArea);
-              textArea.select();
-              document.execCommand('copy');
-              document.body.removeChild(textArea);
-            }
-          }}
+        <button
+          type="button"
+          className={`${styles.copyBtn} ${copied ? styles.copied : ''}`}
+          onClick={handleCopySession}
+          aria-live="polite"
+          aria-label={copied ? 'Session code copied' : 'Copy session code'}
         >
-          Copy
+          {copied ? 'Copied!' : 'Copy Code'}
         </button>
       </div>
 
@@ -448,9 +484,7 @@ export function Lobby({
       )}
 
       {isHost && canStart && (
-        <button className={styles.startBtn} onClick={handleStart}>
-          Start Game
-        </button>
+        <p className={styles.waitingText}>Open the Host panel (bottom-right) to start the game.</p>
       )}
 
       {!isHost && canStart && (
