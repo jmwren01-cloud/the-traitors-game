@@ -3,6 +3,8 @@ import * as game from '../game/manager.js';
 import type { C2SEvent, S2CEvent, ChatMessage, GameState, Role } from '../game/types.js';
 import {
   broadcastToSession,
+  broadcastToSessionPerRecipient,
+  sanitizePlayersFor,
   sendError,
   generateSessionToken,
   broadcastRecruitmentEvents,
@@ -73,6 +75,10 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
     broadcastToSession(sessionId, event, games, playerConnections);
   }
 
+  function broadcastPerRecipient(sessionId: string, buildEvent: (recipientId: string) => S2CEvent): void {
+    broadcastToSessionPerRecipient(sessionId, buildEvent, games, playerConnections);
+  }
+
   ws.on('message', (data: string) => {
     try {
       const event: C2SEvent = JSON.parse(data);
@@ -99,10 +105,10 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
           }
         };
         ws.send(JSON.stringify(response));
-        broadcast(gameState.sessionId, {
+        broadcastPerRecipient(gameState.sessionId, (recipientId) => ({
           type: 'S2C_PLAYER_JOINED',
-          payload: { players: gameState.players }
-        });
+          payload: { players: sanitizePlayersFor(gameState.players, recipientId) }
+        }));
         return;
       }
 
@@ -129,17 +135,17 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
             sessionId: event.payload.sessionId,
             playerId: playerId,
             playerName: event.payload.playerName,
-            players: updatedGame.players,
+            players: sanitizePlayersFor(updatedGame.players, playerId),
             sessionToken,
             settings: updatedGame.settings
           }
         };
         ws.send(JSON.stringify(joinResponse));
 
-        broadcast(event.payload.sessionId, {
+        broadcastPerRecipient(event.payload.sessionId, (recipientId) => ({
           type: 'S2C_PLAYER_JOINED',
-          payload: { players: updatedGame.players }
-        });
+          payload: { players: sanitizePlayersFor(updatedGame.players, recipientId) }
+        }));
         return;
       }
 
@@ -210,7 +216,7 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
           sessionId: currentSessionId,
           playerId: currentPlayerId,
           playerName: player.name,
-          players: updatedGame.players,
+          players: sanitizePlayersFor(updatedGame.players, currentPlayerId),
           phase: updatedGame.phase,
           currentRound: updatedGame.currentRound,
           messages: updatedGame.messages,
@@ -256,10 +262,10 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
 
         ws.send(JSON.stringify({ type: 'S2C_RECONNECTED', payload: reconnectPayload } satisfies S2CEvent));
 
-        broadcast(currentSessionId, {
+        broadcastPerRecipient(currentSessionId, (recipientId) => ({
           type: 'S2C_PLAYER_RECONNECTED',
-          payload: { playerId: currentPlayerId, players: updatedGame.players }
-        });
+          payload: { playerId: currentPlayerId!, players: sanitizePlayersFor(updatedGame.players, recipientId) }
+        }));
 
         console.log(`Player ${player.name} reconnected to game ${currentSessionId}`);
         return;
@@ -988,10 +994,10 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
           event.payload.avatar
         );
         setGame(updatedGame);
-        broadcast(currentSessionId, {
+        broadcastPerRecipient(currentSessionId, (recipientId) => ({
           type: 'S2C_AVATAR_UPDATED',
-          payload: { players: updatedGame.players }
-        });
+          payload: { players: sanitizePlayersFor(updatedGame.players, recipientId) }
+        }));
         return;
       }
 
@@ -1107,10 +1113,10 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
 
         setGame(updatedGame);
 
-        broadcast(currentSessionId, {
+        broadcastPerRecipient(currentSessionId, (recipientId) => ({
           type: 'S2C_PLAYER_DISCONNECTED',
-          payload: { playerId: currentPlayerId, players: updatedGame.players }
-        });
+          payload: { playerId: currentPlayerId!, players: sanitizePlayersFor(updatedGame.players, recipientId) }
+        }));
       }
     }
   });

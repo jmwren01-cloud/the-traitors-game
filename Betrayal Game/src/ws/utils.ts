@@ -1,7 +1,16 @@
 import { WebSocket } from 'ws';
 import crypto from 'crypto';
-import type { S2CEvent, GameState } from '../game/types.js';
+import type { S2CEvent, GameState, Player } from '../game/types.js';
 import type { MurderResult } from '../game/manager.js';
+
+export function sanitizePlayersFor(players: Player[], recipientId: string | undefined): Player[] {
+  return players.map((p) => {
+    if (p.id === recipientId || p.shieldRevealed) {
+      return p;
+    }
+    return { ...p, hasShield: false };
+  });
+}
 
 export function broadcastToSession(
   sessionId: string,
@@ -16,6 +25,23 @@ export function broadcastToSession(
     const connection = playerConnections.get(player.id);
     if (connection && connection.readyState === WebSocket.OPEN) {
       connection.send(JSON.stringify(event));
+    }
+  });
+}
+
+export function broadcastToSessionPerRecipient(
+  sessionId: string,
+  buildEvent: (recipientId: string) => S2CEvent,
+  games: Map<string, GameState>,
+  playerConnections: Map<string, WebSocket>
+): void {
+  const gameState = games.get(sessionId);
+  if (!gameState) return;
+
+  gameState.players.forEach((player) => {
+    const connection = playerConnections.get(player.id);
+    if (connection && connection.readyState === WebSocket.OPEN) {
+      connection.send(JSON.stringify(buildEvent(player.id)));
     }
   });
 }
