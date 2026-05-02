@@ -25,12 +25,24 @@ function App() {
     playerStats, leaderboard, globalStats,
   } = useWebSocket();
   const { setEnabled } = useSoundContext();
-  const [soundOn, setSoundOn] = useState(true);
+  // Initialise from the persisted `betrayal_muted` localStorage key so the
+  // user's mute choice survives a refresh. The sound system handles the
+  // same key internally; we mirror it here only for the toggle's icon state.
+  const [soundOn, setSoundOn] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('betrayal_muted') !== '1';
+    } catch {
+      return true;
+    }
+  });
+
+  // Sync the synth's enabled flag with the React state on mount and on toggle.
+  useEffect(() => {
+    setEnabled(soundOn);
+  }, [soundOn, setEnabled]);
 
   const toggleSound = () => {
-    const newValue = !soundOn;
-    setSoundOn(newValue);
-    setEnabled(newValue);
+    setSoundOn((prev) => !prev);
   };
 
   const soundToggle = (

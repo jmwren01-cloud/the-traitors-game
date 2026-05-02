@@ -49,6 +49,29 @@ export function Voting({ players, myPlayerId, phase, votes: _votes, banishedPlay
   const banishSoundPlayedRef = useRef(false);
   const tieSoundPlayedRef = useRef(false);
   const prevRevealedRef = useRef<Set<string>>(new Set());
+  // Vote-progress audio bookkeeping. justVotedRef suppresses the "another
+  // player voted" soft-drum cue on the increment caused by my own vote so
+  // it doesn't double up with the lowChime.
+  const prevVoteReceivedRef = useRef(0);
+  const justVotedRef = useRef(false);
+  const allVotesInPlayedRef = useRef(false);
+  // Track every pending audio setTimeout so we can cancel them on unmount
+  // or phase change — prevents riser/banishment cues firing post-unmount.
+  const audioTimeoutsRef = useRef<Set<number>>(new Set());
+  const scheduleAudio = (cb: () => void, delay: number) => {
+    const id = window.setTimeout(() => {
+      audioTimeoutsRef.current.delete(id);
+      cb();
+    }, delay);
+    audioTimeoutsRef.current.add(id);
+  };
+  useEffect(() => {
+    const timeouts = audioTimeoutsRef.current;
+    return () => {
+      for (const id of timeouts) window.clearTimeout(id);
+      timeouts.clear();
+    };
+  }, []);
   const { play } = useSoundContext();
 
   // Detect newly revealed shields and show a toast
@@ -75,25 +98,65 @@ export function Voting({ players, myPlayerId, phase, votes: _votes, banishedPlay
       setReasonText('');
       banishSoundPlayedRef.current = false;
       tieSoundPlayedRef.current = false;
+      prevVoteReceivedRef.current = 0;
+      justVotedRef.current = false;
+      allVotesInPlayedRef.current = false;
     }
     prevPhaseRef.current = phase;
   }, [phase]);
 
+  // Vote-reveal sequence: each non-final reveal is a soft drum, the final
+  // reveal is a hard drum followed by a 1s riser.
   useEffect(() => {
     if (phase === 'VOTE_REVEAL' && revealIndex !== undefined && revealIndex !== prevRevealIndexRef.current) {
       if (revealIndex > 0) {
-        play('voteReveal');
+        const total = serverTotalVotes ?? 0;
+        if (total > 0 && revealIndex >= total) {
+          play('hardDrum');
+          scheduleAudio(() => play('riserLong'), 100);
+        } else {
+          play('softDrum');
+        }
       }
       prevRevealIndexRef.current = revealIndex;
     }
-  }, [phase, revealIndex, play]);
+  }, [phase, revealIndex, serverTotalVotes, play]);
 
   useEffect(() => {
     if (phase === 'BANISH_REVEAL' && banishedPlayer && !banishSoundPlayedRef.current) {
       banishSoundPlayedRef.current = true;
-      play('banishment');
+      // Spec: banishment plays a stab. Layer with the legacy banishment
+      // cue so the existing dread-chord still lands underneath.
+      play('stab');
+      scheduleAudio(() => play('banishment'), 120);
     }
   }, [phase, banishedPlayer, play]);
+
+  // Per-vote progress feedback. Plays a soft drum each time another player
+  // submits a vote and a long riser the moment the count tops out. Skipped
+  // on the increment caused by my own vote (lowChime already covers that).
+  useEffect(() => {
+    if (phase !== 'VOTING' && phase !== 'REVOTE') return;
+    if (!voteCount) return;
+    const cur = voteCount.received;
+    const prev = prevVoteReceivedRef.current;
+    if (cur > prev) {
+      if (justVotedRef.current) {
+        justVotedRef.current = false;
+      } else {
+        play('softDrum');
+      }
+      if (
+        !allVotesInPlayedRef.current &&
+        voteCount.needed > 0 &&
+        cur >= voteCount.needed
+      ) {
+        allVotesInPlayedRef.current = true;
+        scheduleAudio(() => play('riserLong'), 200);
+      }
+    }
+    prevVoteReceivedRef.current = cur;
+  }, [phase, voteCount?.received, voteCount?.needed, play]);
 
   useEffect(() => {
     if (phase === 'TIE_DETECTED' && !tieSoundPlayedRef.current) {
@@ -111,7 +174,10 @@ export function Voting({ players, myPlayerId, phase, votes: _votes, banishedPlay
 
   const handleVote = () => {
     if (selectedTarget) {
-      play('voteSubmit');
+      // Spec: own vote is a low chime. Flag the next vote-progress
+      // increment so it does not also fire the soft drum.
+      justVotedRef.current = true;
+      play('lowChime');
       vibrate('medium');
       if (phase === 'REVOTE') {
         onSend({ type: 'C2S_SUBMIT_REVOTE', payload: { targetId: selectedTarget } });

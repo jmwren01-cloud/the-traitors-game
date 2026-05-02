@@ -47,17 +47,67 @@ export function NightPhase({
   const nightSoundPlayedRef = useRef(false);
   const morningSoundPlayedRef = useRef(false);
   const prevPhaseRef = useRef(phase);
+  // Murder-vote progress audio: traitors hear a hard drum each time a
+  // fellow traitor submits, then a long riser when the last one is in.
+  const prevMurderReceivedRef = useRef(0);
+  const justSubmittedMurderRef = useRef(false);
+  const allMurderVotesInPlayedRef = useRef(false);
+  // Cancel any pending audio cues on unmount/phase change so a riser
+  // cannot fire after the phase has already advanced.
+  const audioTimeoutsRef = useRef<Set<number>>(new Set());
+  const scheduleAudio = (cb: () => void, delay: number) => {
+    const id = window.setTimeout(() => {
+      audioTimeoutsRef.current.delete(id);
+      cb();
+    }, delay);
+    audioTimeoutsRef.current.add(id);
+  };
+  useEffect(() => {
+    const timeouts = audioTimeoutsRef.current;
+    return () => {
+      for (const id of timeouts) window.clearTimeout(id);
+      timeouts.clear();
+    };
+  }, []);
 
   useEffect(() => {
     if (phase !== prevPhaseRef.current) {
       if (phase === 'NIGHT') {
         nightSoundPlayedRef.current = false;
+        prevMurderReceivedRef.current = 0;
+        justSubmittedMurderRef.current = false;
+        allMurderVotesInPlayedRef.current = false;
       } else if (phase === 'MORNING') {
         morningSoundPlayedRef.current = false;
       }
       prevPhaseRef.current = phase;
     }
   }, [phase]);
+
+  // Murder-vote progress feedback (traitors only — Faithful are asleep).
+  useEffect(() => {
+    if (phase !== 'NIGHT') return;
+    if (myRole !== 'TRAITOR') return;
+    if (!murderVoteProgress) return;
+    const cur = murderVoteProgress.received;
+    const prev = prevMurderReceivedRef.current;
+    if (cur > prev) {
+      if (justSubmittedMurderRef.current) {
+        justSubmittedMurderRef.current = false;
+      } else {
+        play('hardDrum');
+      }
+      if (
+        !allMurderVotesInPlayedRef.current &&
+        murderVoteProgress.needed > 0 &&
+        cur >= murderVoteProgress.needed
+      ) {
+        allMurderVotesInPlayedRef.current = true;
+        scheduleAudio(() => play('riserLong'), 200);
+      }
+    }
+    prevMurderReceivedRef.current = cur;
+  }, [phase, myRole, murderVoteProgress?.received, murderVoteProgress?.needed, play]);
 
   useEffect(() => {
     if (phase === 'NIGHT' && !nightSoundPlayedRef.current) {
@@ -71,7 +121,7 @@ export function NightPhase({
       morningSoundPlayedRef.current = true;
       play('morningStart');
       if (murderedPlayer) {
-        setTimeout(() => play('murder'), 500);
+        scheduleAudio(() => play('murder'), 500);
       }
     }
   }, [phase, murderedPlayer, play]);
@@ -92,6 +142,10 @@ export function NightPhase({
   const handleSubmitMurder = () => {
     if (selectedTarget) {
       vibrate('heavy');
+      // Suppress the next murder-progress drum so my own submission does
+      // not double-fire alongside the host-side ack.
+      justSubmittedMurderRef.current = true;
+      play('hardDrum');
       onSend({ type: 'C2S_SUBMIT_MURDER', payload: { targetId: selectedTarget } });
       setHasVoted(true);
     }
