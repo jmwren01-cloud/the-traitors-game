@@ -15,7 +15,7 @@ interface GameEndProps {
   players: Player[];
   myRole?: string;
   history?: RoundRecord[];
-  // Wave 2 Prompt 1+2: identity & stats
+
   myPlayerId?: string;
   playerStats?: PlayerStatsPayload | null;
   leaderboard?: { metric: string; entries: LeaderboardEntryPayload[] } | null;
@@ -24,7 +24,7 @@ interface GameEndProps {
 }
 
 /**
- * Wave 2 Prompt 3 — Cinematic 5-stage post-game summary.
+ * Cinematic 5-stage post-game summary.
  *
  * Stage 0 (0–1.5s): black fade-in + "Game Over"
  * Stage 1 (1.5–4s): winner banner reveal (drum-roll feel)
@@ -167,7 +167,8 @@ export function GameEnd({
   // Once the cinematic ends (stage 4), fetch this player's stats so we can show them.
   useEffect(() => {
     if (stage >= 4 && onSend) {
-      onSend({ type: 'C2S_GET_PLAYER_STATS', payload: { deviceToken: getOrCreateDeviceToken() } });
+      void getOrCreateDeviceToken();
+      onSend({ type: 'C2S_GET_PLAYER_STATS', payload: {} });
     }
   }, [stage, onSend]);
 

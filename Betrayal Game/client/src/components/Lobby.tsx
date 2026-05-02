@@ -12,7 +12,7 @@ interface LobbyProps {
   myPlayerId?: string;
   settings?: GameSettings;
   onSend: (event: C2SEvent) => void;
-  // Wave 2 Prompt 1: identity handshake from useWebSocket
+
   identity: IdentityState | null;
   identifyError: string | null;
   identify: (deviceToken: string, playerName: string) => void;
@@ -26,7 +26,7 @@ export function Lobby({
   const [joinSessionId, setJoinSessionId] = useState('');
   const [mode, setMode] = useState<'menu' | 'create' | 'join'>('menu');
   const [showSettings, setShowSettings] = useState(false);
-  // Wave 2 Prompt 1+4: identity flow state and profile drawer
+
   const [pendingAction, setPendingAction] = useState<null | { type: 'create' } | { type: 'join'; sessionId: string }>(null);
   const [showProfileDrawer, setShowProfileDrawer] = useState(false);
   const lastIdentifiedActionRef = useRef<string | null>(null);

@@ -36,10 +36,10 @@ export function useWebSocket() {
   const [gameState, setGameState] = useState<GameState | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [reconnecting, setReconnecting] = useState(false);
-  // Wave 2 Prompt 1: persistent identity handshake state
+
   const [identity, setIdentity] = useState<IdentityState | null>(null);
   const [identifyError, setIdentifyError] = useState<string | null>(null);
-  // Wave 2 Prompt 2: stats / leaderboard / global stats from the server
+
   const [playerStats, setPlayerStats] = useState<PlayerStatsPayload | null>(null);
   const [leaderboard, setLeaderboard] = useState<{ metric: string; entries: LeaderboardEntryPayload[] } | null>(null);
   const [globalStats, setGlobalStats] = useState<GlobalStatsPayload | null>(null);
@@ -55,7 +55,7 @@ export function useWebSocket() {
       setConnected(true);
       setError(null);
 
-      // Wave 2 Prompt 1: auto-identify on connect when we have stored credentials.
+
       // This guarantees the server has a deviceToken bound to this socket BEFORE the
       // user clicks Create/Join, so stats always record (and fixes any race where the
       // user clicks too fast after a page reload).
@@ -127,7 +127,7 @@ export function useWebSocket() {
       return;
     }
 
-    // Wave 2 Prompt 1: identity handshake responses
+
     if (msg.type === 'S2C_IDENTITY_CONFIRMED') {
       const p = msg.payload as unknown as IdentityState;
       setIdentity(p);
@@ -140,7 +140,7 @@ export function useWebSocket() {
       return;
     }
 
-    // Wave 2 Prompt 2: stats / leaderboard / global stats responses.
+
     // Also dispatched as window CustomEvents so detached components (ProfileDrawer)
     // mounted in any subtree can react without prop-drilling.
     if (msg.type === 'S2C_PLAYER_STATS') {

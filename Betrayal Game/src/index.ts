@@ -139,7 +139,7 @@ httpServer.listen(PORT, '0.0.0.0', () => {
   console.log(`🔌 WebSocket available at ws://0.0.0.0:${PORT}`);
 });
 
-// Wave 2 Prompt 1+2: profile & stats helpers wired into ws context.
+
 const upsertPlayerProfile = (deviceToken: string, playerName: string) =>
   dbUpsertPlayerProfile(db, deviceToken, playerName);
 

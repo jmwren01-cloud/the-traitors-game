@@ -201,6 +201,8 @@ function App() {
           revealedVotes={gameState?.revealedVotes}
           totalVotes={gameState?.totalVotes}
           currentReveal={gameState?.currentReveal}
+          shieldBlockedBanishment={gameState?.shieldBlockedBanishment}
+          shieldBlockedBanishmentName={gameState?.shieldBlockedBanishmentName}
           onSend={send}
         />
         {chatBox}

@@ -1,4 +1,4 @@
-// Wave 2 Prompt 2 — Build a GameRecord + per-player records from final game state.
+
 
 import crypto from 'crypto';
 import type { GameState, Player, RoundRecord } from './types.js';

@@ -26,12 +26,14 @@ interface VotingProps {
     voterName: string;
     targetName: string;
   };
+  shieldBlockedBanishment?: boolean;
+  shieldBlockedBanishmentName?: string;
   onSend: (event: C2SEvent) => void;
 }
 
 const REASON_MAX_LENGTH = 120;
 
-export function Voting({ players, myPlayerId, phase, votes: _votes, banishedPlayer, currentRound, voteCount, tiedPlayerIds, tiedPlayerNames, randomlySelectedPlayer, revealIndex, currentTally, revealedVotes, totalVotes: serverTotalVotes, currentReveal, onSend }: VotingProps) {
+export function Voting({ players, myPlayerId, phase, votes: _votes, banishedPlayer, currentRound, voteCount, tiedPlayerIds, tiedPlayerNames, randomlySelectedPlayer, revealIndex, currentTally, revealedVotes, totalVotes: serverTotalVotes, currentReveal, shieldBlockedBanishment, shieldBlockedBanishmentName, onSend }: VotingProps) {
   void _votes;
   const [selectedTarget, setSelectedTarget] = useState<string | null>(null);
   const [reasonText, setReasonText] = useState('');
@@ -471,6 +473,30 @@ export function Voting({ players, myPlayerId, phase, votes: _votes, banishedPlay
           <p className={styles.failMessage}>An innocent has been banished by fate...</p>
         )}
 
+      </div>
+    );
+  }
+
+  // Shield blocked the banishment — no one was banished this round.
+  if ((phase === 'BANISH_REVEAL' || phase === 'CHECK_WIN') && !banishedPlayer && shieldBlockedBanishment) {
+    return (
+      <div className={styles.container}>
+        <h1 className={styles.title}>Shield Revealed!</h1>
+        <div className={styles.tieBanner}>
+          🛡️ {shieldBlockedBanishmentName ?? 'The shielded player'} consumed their shield to block the banishment.
+        </div>
+        <p className={styles.banishMessage}>No one is banished this round.</p>
+        {isHost && phase === 'BANISH_REVEAL' && (
+          <button
+            className={styles.voteBtn}
+            onClick={() => onSend({ type: 'C2S_CHECK_WIN', payload: {} })}
+          >
+            Continue
+          </button>
+        )}
+        {!isHost && (
+          <p className={styles.waiting}>Waiting for host to continue...</p>
+        )}
       </div>
     );
   }

@@ -433,7 +433,13 @@ export function gameStateReducer(state: GameState | null, msg: Msg): GameState |
 
     case 'S2C_CONTINUE_GAME': {
       const payload = msg.payload as { phase: string; currentRound: number };
-      return state ? {
+      if (!state) return null;
+      // Preserve the shield-blocked banner when the server transitions us
+      // into BANISH_REVEAL after a successful shield reveal; otherwise clear
+      // it (every other CONTINUE means a fresh round / phase).
+      const keepShieldBlock =
+        state.shieldBlockedBanishment && payload.phase === 'BANISH_REVEAL';
+      return {
         ...state,
         phase: payload.phase as GameState['phase'],
         currentRound: payload.currentRound,
@@ -441,7 +447,10 @@ export function gameStateReducer(state: GameState | null, msg: Msg): GameState |
         murderedPlayer: undefined,
         murderBlocked: undefined,
         votes: undefined,
-      } : null;
+        ...(keepShieldBlock
+          ? {}
+          : { shieldBlockedBanishment: false, shieldBlockedBanishmentName: undefined }),
+      };
     }
 
     case 'S2C_CHALLENGE_STARTED': {
@@ -533,13 +542,20 @@ export function gameStateReducer(state: GameState | null, msg: Msg): GameState |
     }
 
     case 'S2C_SHIELD_REVEALED': {
-      const payload = msg.payload as { playerId: string; playerName: string };
+      const payload = msg.payload as { playerId: string; playerName: string; banishmentBlocked?: boolean };
       if (!state) return null;
       return {
         ...state,
+        // When the shield blocks a banishment the server also consumes hasShield;
+        // we mirror that on the client so the UI doesn't keep offering "Reveal Shield".
         players: state.players.map((p) =>
-          p.id === payload.playerId ? { ...p, shieldRevealed: true } : p
+          p.id === payload.playerId
+            ? { ...p, shieldRevealed: true, hasShield: payload.banishmentBlocked ? false : p.hasShield }
+            : p
         ),
+        ...(payload.banishmentBlocked
+          ? { shieldBlockedBanishment: true, shieldBlockedBanishmentName: payload.playerName }
+          : {}),
       };
     }
 

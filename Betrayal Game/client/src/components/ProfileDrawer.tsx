@@ -17,7 +17,7 @@ interface ProfileDrawerProps {
 }
 
 /**
- * Wave 2 Prompt 4 — Profile Drawer & Hall of Fame.
+ * Profile Drawer & Hall of Fame.
  *
  * Slide-in drawer with three tabs: My Stats, Hall of Fame, Global.
  * Listens to S2C_PLAYER_STATS / S2C_LEADERBOARD / S2C_GLOBAL_STATS via window events
@@ -51,7 +51,10 @@ export function ProfileDrawer({ onClose, onSend, initialStats, initialLeaderboar
 
   // Initial fetches on mount.
   useEffect(() => {
-    onSend({ type: 'C2S_GET_PLAYER_STATS', payload: { deviceToken } });
+    void deviceToken;
+    // Server uses the deviceToken bound to this socket via C2S_IDENTIFY —
+    // no token is sent in the request to prevent cross-player enumeration.
+    onSend({ type: 'C2S_GET_PLAYER_STATS', payload: {} });
     onSend({ type: 'C2S_GET_LEADERBOARD', payload: { metric: 'winRate' } });
     onSend({ type: 'C2S_GET_GLOBAL_STATS', payload: {} });
     // Intentionally only on mount.
@@ -208,7 +211,7 @@ function HallOfFamePanel({
       ) : (
         <ol className={styles.leaderboard}>
           {leaderboard.entries.map((entry, i) => (
-            <li key={entry.deviceToken} className={styles.lbItem}>
+            <li key={entry.rankId} className={styles.lbItem}>
               <span className={styles.lbRank}>{rankEmoji(i)}</span>
               <span className={styles.lbName}>{entry.playerName}</span>
               <span className={styles.lbValue}>{formatValue(leaderboard.metric, entry.value)}</span>

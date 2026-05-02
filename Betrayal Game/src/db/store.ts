@@ -170,7 +170,7 @@ export function loadAllTokens(db: Database.Database): Map<string, SessionTokenRo
   return map;
 }
 
-// ============= Player Profiles (Wave 2 Prompt 1) =============
+// ============= Player Profiles  =============
 
 export function upsertPlayerProfile(
   db: Database.Database,
@@ -203,7 +203,7 @@ export function getPlayerProfileByName(db: Database.Database, playerName: string
   return row ?? null;
 }
 
-// ============= Game Records & Stats (Wave 2 Prompt 2) =============
+// ============= Game Records & Stats  =============
 
 export interface PlayerGameRecord {
   id: string;
@@ -262,7 +262,7 @@ export interface GameSummary {
 }
 
 export interface LeaderboardEntry {
-  deviceToken: string;
+  rankId: string;
   playerName: string;
   value: number;
   gamesPlayed: number;
@@ -405,9 +405,13 @@ export function getLeaderboard(
 ): LeaderboardEntry[] {
   const minGames = 3;
 
+  // SECURITY: never expose the persistent device_token outside the server.
+  // We use ROW_NUMBER as the opaque list key (stable for one query, not a
+  // persistent identifier).
   if (metric === 'gamesPlayed') {
     const rows = db.prepare(
-      `SELECT p.device_token as deviceToken, COALESCE(pp.player_name, p.player_name) as playerName,
+      `SELECT CAST(ROW_NUMBER() OVER (ORDER BY COUNT(*) DESC) AS TEXT) as rankId,
+              COALESCE(pp.player_name, p.player_name) as playerName,
               COUNT(*) as value, COUNT(*) as gamesPlayed
        FROM player_game_records p
        LEFT JOIN player_profiles pp ON pp.device_token = p.device_token
@@ -421,7 +425,8 @@ export function getLeaderboard(
 
   if (metric === 'traitorWins') {
     const rows = db.prepare(
-      `SELECT p.device_token as deviceToken, COALESCE(pp.player_name, MAX(p.player_name)) as playerName,
+      `SELECT CAST(ROW_NUMBER() OVER (ORDER BY SUM(CASE WHEN p.role = 'TRAITOR' AND p.outcome = 'WON' THEN 1 ELSE 0 END) DESC) AS TEXT) as rankId,
+              COALESCE(pp.player_name, MAX(p.player_name)) as playerName,
               SUM(CASE WHEN p.role = 'TRAITOR' AND p.outcome = 'WON' THEN 1 ELSE 0 END) as value,
               COUNT(*) as gamesPlayed
        FROM player_game_records p
@@ -436,7 +441,8 @@ export function getLeaderboard(
 
   // winRate
   const rows = db.prepare(
-    `SELECT p.device_token as deviceToken, COALESCE(pp.player_name, MAX(p.player_name)) as playerName,
+    `SELECT CAST(ROW_NUMBER() OVER (ORDER BY CAST(SUM(CASE WHEN p.outcome = 'WON' THEN 1 ELSE 0 END) AS REAL) / COUNT(*) DESC, COUNT(*) DESC) AS TEXT) as rankId,
+            COALESCE(pp.player_name, MAX(p.player_name)) as playerName,
             CAST(SUM(CASE WHEN p.outcome = 'WON' THEN 1 ELSE 0 END) AS REAL) / COUNT(*) as value,
             COUNT(*) as gamesPlayed
      FROM player_game_records p

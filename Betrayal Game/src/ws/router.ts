@@ -62,7 +62,7 @@ export interface WsContext {
   removeGame: (sessionId: string) => void;
   setToken: (token: string, data: { playerId: string; sessionId: string }) => void;
   removeToken: (token: string) => void;
-  // Wave 2 Prompt 1+2: persistent player profiles & stats
+
   upsertPlayerProfile: (deviceToken: string, playerName: string) => { isReturning: boolean };
   writeGameRecordIfNeeded: (state: GameState) => void;
   getPlayerStatsBundle: (deviceToken: string) => import('../game/types.js').PlayerStatsPayload;
@@ -86,7 +86,7 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
   } = ctx;
   let currentPlayerId: string | undefined;
   let currentSessionId: string | undefined;
-  // Wave 2 Prompt 1: device-fingerprint identity for this connection (set on C2S_IDENTIFY)
+
   let currentDeviceToken: string | undefined;
 
   function broadcast(sessionId: string, event: S2CEvent): void {
@@ -101,7 +101,7 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
     try {
       const event: C2SEvent = JSON.parse(data);
 
-      // Wave 2 Prompt 1 — Persistent identity handshake
+
       if (event.type === 'C2S_IDENTIFY') {
         const { deviceToken, playerName } = event.payload;
         if (typeof deviceToken !== 'string' || !DEVICE_TOKEN_REGEX.test(deviceToken)) {
@@ -128,14 +128,17 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
         return;
       }
 
-      // Wave 2 Prompt 2 — Stats / leaderboard queries
+      // Stats / leaderboard queries.
+      // SECURITY: a player can only query stats for THEIR OWN device token —
+      // the one bound to this socket via C2S_IDENTIFY. Earlier this handler
+      // accepted an arbitrary token from the payload, which let any client
+      // enumerate any other player's stats just by guessing tokens.
       if (event.type === 'C2S_GET_PLAYER_STATS') {
-        const dt = event.payload.deviceToken;
-        if (typeof dt !== 'string' || !DEVICE_TOKEN_REGEX.test(dt)) {
-          sendError(ws, 'Invalid device token');
+        if (!currentDeviceToken) {
+          sendError(ws, 'Identify first via C2S_IDENTIFY before requesting stats');
           return;
         }
-        const bundle = getPlayerStatsBundle(dt);
+        const bundle = getPlayerStatsBundle(currentDeviceToken);
         ws.send(JSON.stringify({
           type: 'S2C_PLAYER_STATS',
           payload: bundle
@@ -688,7 +691,7 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
         setGame(updatedGame);
 
         if (updatedGame.phase === 'GAME_END' && updatedGame.winner) {
-          // Wave 2 Prompt 2: persist game outcome for stats/leaderboards
+
           writeGameRecordIfNeeded(updatedGame);
 
           const aliveTraitors = updatedGame.players.filter((p) => p.isAlive && p.role === 'TRAITOR').length;
@@ -892,7 +895,7 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
         setGame(updatedGame);
 
         if (updatedGame.phase === 'GAME_END' && updatedGame.winner) {
-          // Wave 2 Prompt 2: persist game outcome for stats/leaderboards
+
           writeGameRecordIfNeeded(updatedGame);
 
           const aliveTraitors = updatedGame.players.filter((p) => p.isAlive && p.role === 'TRAITOR').length;
@@ -923,7 +926,9 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
               challengeType: challenge.type,
               startTime: challenge.startTime,
               eligibleCount,
-              ...(challenge.targetTime !== undefined ? { targetTime: challenge.targetTime } : {}),
+              // NOTE: targetTime is intentionally NOT broadcast at challenge
+              // start. TIME_ESTIMATE is a blind-guess game — the secret number
+              // only appears in S2C_CHALLENGE_RESULT (as correctAnswer).
               ...(challenge.shownPlayerIds !== undefined ? { shownPlayerIds: challenge.shownPlayerIds } : {}),
               ...(challenge.scrambledWord !== undefined ? { scrambledWord: challenge.scrambledWord } : {}),
               ...(timer ? { endTime: timer.endTime, duration: timer.duration } : {}),
@@ -988,15 +993,29 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
         setGame(result.game);
 
         const needed = countEligibleAnswerers(result.game);
-        const received = result.game.challenge?.answers.size ?? 0;
+        // Count only ELIGIBLE answers — ineligible players (e.g. last
+        // round's challenge winner serving cooldown) may still submit, but
+        // those submissions must not count toward the early-resolve quota
+        // or `received` could exceed `needed` and end the round before all
+        // eligible players have answered.
+        const eligibleAnswerCount = (() => {
+          const ch = result.game.challenge;
+          if (!ch) return 0;
+          let n = 0;
+          ch.answers.forEach((_data, pId) => {
+            const p = result.game.players.find((pp) => pp.id === pId);
+            if (p && p.isAlive && p.lastChallengeWinRound !== result.game.currentRound - 1) n++;
+          });
+          return n;
+        })();
 
         broadcast(currentSessionId, {
           type: 'S2C_CHALLENGE_ANSWER_RECEIVED',
-          payload: { playerId: currentPlayerId, received, needed }
+          payload: { playerId: currentPlayerId, received: eligibleAnswerCount, needed }
         });
 
-        // Resolve early if we have a winner OR all eligible players have answered
-        const allAnswered = received >= needed && needed > 0;
+        // Resolve early if we have a winner OR every eligible player has answered.
+        const allAnswered = eligibleAnswerCount >= needed && needed > 0;
         if ((result.isWinner || allAnswered) && result.game.challenge) {
           clearChallengeTimer(currentSessionId);
           const resolution = game.resolveChallenge(result.game);
@@ -1041,14 +1060,33 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
       }
 
       if (event.type === 'C2S_REVEAL_SHIELD') {
-        const updatedGame = game.revealShield(gameState, currentPlayerId);
-        setGame(updatedGame);
+        // Phase guards live inside revealShield() — it throws if not in
+        // VOTE_REVEAL, not the top vote-getter, or not actually shielded.
+        let result;
+        try {
+          result = game.revealShield(gameState, currentPlayerId);
+        } catch (err) {
+          sendError(ws, (err as Error).message);
+          return;
+        }
+        setGame(result.game);
 
-        const player = updatedGame.players.find((p) => p.id === currentPlayerId);
-        if (player) {
+        broadcast(currentSessionId, {
+          type: 'S2C_SHIELD_REVEALED',
+          payload: {
+            playerId: currentPlayerId,
+            playerName: result.blockedTargetName ?? '',
+            banishmentBlocked: result.banishmentBlocked,
+          }
+        });
+
+        // The shield consumed the banishment — surface that to all clients
+        // so the Voting screen flips to the "no one was banished" view and
+        // the host's Continue button routes to CHECK_WIN.
+        if (result.banishmentBlocked) {
           broadcast(currentSessionId, {
-            type: 'S2C_SHIELD_REVEALED',
-            payload: { playerId: currentPlayerId, playerName: player.name }
+            type: 'S2C_CONTINUE_GAME',
+            payload: { phase: result.game.phase, currentRound: result.game.currentRound }
           });
         }
         return;

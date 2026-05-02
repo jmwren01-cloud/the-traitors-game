@@ -22,7 +22,7 @@
   text-shadow: 0 0 20px rgba(255, 255, 255, 0.3);
 }
 
-/* Wave 2 Prompt 3 — cinematic stage entry animation */
+
 .stageEnter {
   animation: stageEnter 0.7s cubic-bezier(0.2, 0.8, 0.2, 1) both;
 }

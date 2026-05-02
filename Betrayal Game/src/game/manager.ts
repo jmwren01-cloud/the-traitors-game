@@ -982,15 +982,44 @@ function generatePlayerId(): string {
 
 // ============= CHALLENGE SYSTEM =============
 
-function shuffleWord(word: string): string {
+// Mulberry32 PRNG — seeded so the scramble is reproducible across reconnects
+// and survives state replay/snapshot rehydration. The seed is derived from
+// the game's session id + challenge start time so every game still gets a
+// fresh scramble, but a single challenge is stable.
+function mulberry32(seed: number): () => number {
+  let s = seed >>> 0;
+  return () => {
+    s = (s + 0x6D2B79F5) >>> 0;
+    let t = s;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function seedFromString(s: string): number {
+  let h = 2166136261 >>> 0;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619) >>> 0;
+  }
+  return h >>> 0;
+}
+
+function shuffleWord(word: string, seed: number): string {
   const arr = word.split('');
+  const rand = mulberry32(seed);
   for (let i = arr.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
+    const j = Math.floor(rand() * (i + 1));
     [arr[i], arr[j]] = [arr[j]!, arr[i]!];
   }
   const shuffled = arr.join('');
-  // Make sure it's actually different
-  return shuffled === word ? shuffleWord(word) : shuffled;
+  // If by chance we got the same string back, derive a new seed deterministically
+  // (still no Math.random) until we get a different arrangement.
+  if (shuffled === word) {
+    return shuffleWord(word, (seed * 2654435761) >>> 0 || 1);
+  }
+  return shuffled;
 }
 
 function levenshteinDistance(a: string, b: string): number {
@@ -1046,11 +1075,15 @@ export function createChallenge(game: GameState): { game: GameState; challenge: 
       challenge.hiddenPlayerId = hiddenPlayer.id;
       break;
 
-    case 'WORD_SCRAMBLE':
+    case 'WORD_SCRAMBLE': {
       const word = WORD_BANK[Math.floor(Math.random() * WORD_BANK.length)]!;
       challenge.correctWord = word;
-      challenge.scrambledWord = shuffleWord(word);
+      // Deterministic scramble: same word + same start time always produces the
+      // same arrangement, so a reconnecting client sees the identical puzzle.
+      const seed = seedFromString(`${game.sessionId}:${startTime}:${word}`);
+      challenge.scrambledWord = shuffleWord(word, seed);
       break;
+    }
   }
 
   return {
@@ -1169,19 +1202,28 @@ export function resolveChallenge(game: GameState): ChallengeResolution {
   let winnerName = game.challenge.winnerName;
   let correctAnswer: string | number | undefined;
 
-  // For TIME_ESTIMATE, calculate winner now
+  // For TIME_ESTIMATE, calculate winner now.
+  // Scoring rule: each player submits a numeric guess; the closest guess to
+  // targetTime wins. Ties are broken by EARLIEST server-side submission
+  // timestamp (first to submit the equal-distance answer wins).
   if (game.challenge.type === 'TIME_ESTIMATE' && !winnerId) {
-    const targetTime = game.challenge.targetTime! * 1000; // Convert to ms
+    const target = game.challenge.targetTime!;
     let closestDiff = Infinity;
-    
+    let earliestTs = Infinity;
+
     game.challenge.answers.forEach((data, pId) => {
       const player = game.players.find((p: Player) => p.id === pId);
       if (!player || player.lastChallengeWinRound === game.currentRound - 1) return;
-      
-      const elapsed = data.timestamp - game.challenge!.startTime;
-      const diff = Math.abs(elapsed - targetTime);
-      if (diff < closestDiff) {
+
+      const guess = typeof data.answer === 'number'
+        ? data.answer
+        : parseFloat(String(data.answer));
+      if (!Number.isFinite(guess)) return;
+
+      const diff = Math.abs(guess - target);
+      if (diff < closestDiff || (diff === closestDiff && data.timestamp < earliestTs)) {
         closestDiff = diff;
+        earliestTs = data.timestamp;
         winnerId = pId;
         winnerName = player.name;
       }
@@ -1243,13 +1285,88 @@ export function continueToRoundtable(game: GameState): GameState {
 
 // ============= SHIELD REVEAL =============
 
-export function revealShield(game: GameState, playerId: string): GameState {
+export interface RevealShieldResult {
+  game: GameState;
+  banishmentBlocked: boolean;
+  blockedTargetId?: string;
+  blockedTargetName?: string;
+}
+
+/**
+ * Reveal a shield to block an in-flight banishment.
+ *
+ * Rules:
+ *  - Only valid during VOTE_REVEAL (the window between the votes being shown
+ *    and the host confirming the banishment).
+ *  - Only the current top vote-getter may invoke it.
+ *  - Player must actually hold a shield (no bluffing — bluff revealing has
+ *    no effect on the game state and would lie to other players).
+ *  - On success the shield is CONSUMED, the banishment is cancelled, and the
+ *    game advances to BANISH_REVEAL with banishedPlayerId=undefined and
+ *    shieldBlockedBanishment=true so the host's next "Continue" routes to
+ *    the win check without anyone dying.
+ */
+export function revealShield(game: GameState, playerId: string): RevealShieldResult {
   const player = game.players.find((p: Player) => p.id === playerId);
   if (!player || !player.isAlive) {
     throw new Error('Player not found or not alive');
   }
+  if (game.phase !== 'VOTE_REVEAL') {
+    throw new Error('Shield can only be revealed during the vote reveal');
+  }
+  if (!player.hasShield) {
+    throw new Error('You do not hold a shield');
+  }
 
-  // Can reveal (or bluff!) regardless of actually having a shield
+  // Compute current top candidate from the revealed votes.
+  const counts = new Map<string, number>();
+  for (const v of game.revealedVotes) {
+    counts.set(v.targetId, (counts.get(v.targetId) ?? 0) + 1);
+  }
+  let topCount = 0;
+  const topCandidates: string[] = [];
+  counts.forEach((n, id) => {
+    if (n > topCount) { topCount = n; topCandidates.length = 0; topCandidates.push(id); }
+    else if (n === topCount && topCount > 0) { topCandidates.push(id); }
+  });
+  // Shield can only be revealed when there is a SINGLE clear top candidate
+  // about to be banished. If the vote is tied the round flows to TIE_DETECTED
+  // / REVOTE / TIEBREAKER_REVEAL — burning the shield in that window would
+  // bypass the tiebreaker logic entirely.
+  if (topCandidates.length !== 1 || topCandidates[0] !== playerId) {
+    throw new Error('Shield can only be revealed when you are the single top vote-getter');
+  }
+
+  // Consume the shield, mark it revealed for the toast, cancel the banishment,
+  // and skip directly to BANISH_REVEAL with no banished player so the host's
+  // "Continue" naturally proceeds to CHECK_WIN.
+  const updatedPlayers = game.players.map((p: Player) =>
+    p.id === playerId ? { ...p, hasShield: false, shieldRevealed: true } : p
+  );
+
+  return {
+    game: {
+      ...game,
+      players: updatedPlayers,
+      phase: 'BANISH_REVEAL',
+      banishedPlayerId: undefined,
+      shieldBlockedBanishment: true,
+      votes: [],
+      revealedVotes: [],
+      lastRoundVotes: [...game.revealedVotes],
+    },
+    banishmentBlocked: true,
+    blockedTargetId: playerId,
+    blockedTargetName: player.name,
+  };
+}
+
+/** @deprecated kept for any callers not yet migrated; new logic lives in revealShield(). */
+export function revealShieldLegacy(game: GameState, playerId: string): GameState {
+  const player = game.players.find((p: Player) => p.id === playerId);
+  if (!player || !player.isAlive) {
+    throw new Error('Player not found or not alive');
+  }
   const updatedPlayers = game.players.map((p: Player) =>
     p.id === playerId ? { ...p, shieldRevealed: true } : p
   );

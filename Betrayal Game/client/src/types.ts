@@ -164,6 +164,8 @@ export interface GameState {
   justRecruited?: boolean;
   recruitedPlayer?: { id: string; name: string };
   nightRecruitmentSubmittedBy?: string;
+  shieldBlockedBanishment?: boolean;
+  shieldBlockedBanishmentName?: string;
 }
 
 export type C2SEvent =
@@ -195,11 +197,11 @@ export type C2SEvent =
   | { type: 'C2S_SET_AVATAR'; payload: { color?: string; avatar?: string } }
   | { type: 'C2S_SUBMIT_RECRUITMENT'; payload: { targetId: string } }
   | { type: 'C2S_IDENTIFY'; payload: { deviceToken: string; playerName: string } }
-  | { type: 'C2S_GET_PLAYER_STATS'; payload: { deviceToken: string } }
+  | { type: 'C2S_GET_PLAYER_STATS'; payload: Record<string, never> }
   | { type: 'C2S_GET_LEADERBOARD'; payload: { metric: 'winRate' | 'gamesPlayed' | 'traitorWins' } }
   | { type: 'C2S_GET_GLOBAL_STATS'; payload: Record<string, never> };
 
-// ============= Wave 2 Prompt 2: Stats payload shapes (mirrors server) =============
+// ============= Stats payload shapes (mirrors server) =============
 
 export interface PlayerStatsPayload {
   gamesPlayed: number;
@@ -231,7 +233,7 @@ export interface GameSummaryPayload {
 }
 
 export interface LeaderboardEntryPayload {
-  deviceToken: string;
+  rankId: string;
   playerName: string;
   value: number;
   gamesPlayed: number;

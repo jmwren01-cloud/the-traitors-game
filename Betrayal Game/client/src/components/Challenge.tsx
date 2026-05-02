@@ -59,13 +59,17 @@ export function Challenge({
     }
   }, [challenge?.type, challenge?.startTime, showingPlayers]);
 
-  const handleTimeEstimateTap = () => {
+  const handleTimeEstimateSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
     if (hasAnswered || !challenge) return;
-    const elapsed = Date.now() - challenge.startTime;
-    setTapTime(elapsed);
+    const guess = parseFloat(inputValue);
+    if (!Number.isFinite(guess)) return;
+    setTapTime(guess);
     setHasAnswered(true);
     vibrate('medium');
-    onSend({ type: 'C2S_SUBMIT_CHALLENGE_ANSWER', payload: { answer: elapsed } });
+    // Send the numeric guess; the server scores closest-to-targetTime with
+    // earliest server-side submission as the tie-breaker.
+    onSend({ type: 'C2S_SUBMIT_CHALLENGE_ANSWER', payload: { answer: guess } });
   };
 
   const handleWordSubmit = (e: React.FormEvent) => {
@@ -153,26 +157,46 @@ export function Challenge({
     );
   }
 
-  // TIME_ESTIMATE
+  // TIME_ESTIMATE — players type a numeric guess (seconds). The server
+  // hides targetTime from the payload until the result phase, so each
+  // player guesses blind. Closest-to-target wins, ties broken by earliest
+  // server-side submission.
   if (challenge.type === 'TIME_ESTIMATE') {
     return (
       <div className={styles.container}>
         {timerBar}
-        <h2 className={styles.title}>Time Estimate Challenge</h2>
+        <h2 className={styles.title}>Number Estimate</h2>
         <p className={styles.instructions}>
-          Tap when you think <strong>{challenge.targetTime} seconds</strong> have passed!
+          Type your best guess for the secret number. Closest wins!
         </p>
         {answerCountBadge}
 
         {!hasAnswered && isAlive ? (
-          <button className={styles.tapButton} onClick={handleTimeEstimateTap}>
-            TAP NOW!
-          </button>
+          <form onSubmit={handleTimeEstimateSubmit} className={styles.inputForm}>
+            <input
+              type="number"
+              inputMode="decimal"
+              step="any"
+              value={inputValue}
+              onChange={(e) => setInputValue(e.target.value)}
+              placeholder="Your guess..."
+              className={styles.textInput}
+              autoFocus
+              autoComplete="off"
+            />
+            <button
+              type="submit"
+              className={styles.submitBtn}
+              disabled={!Number.isFinite(parseFloat(inputValue))}
+            >
+              Submit
+            </button>
+          </form>
         ) : (
           <div className={styles.waitingSection}>
             {tapTime !== null && (
               <p className={styles.tapResult}>
-                You tapped at {(tapTime / 1000).toFixed(2)}s
+                Your guess: {tapTime}
               </p>
             )}
             <p className={styles.waitingText}>Waiting for others...</p>
@@ -248,28 +272,23 @@ export function Challenge({
 
             {!hasAnswered && isAlive ? (
               <div className={styles.playerGrid}>
-                {shownPlayers
-                  .filter((p) => p.id !== challenge.hiddenPlayerId)
-                  .map((p) => (
-                    <button
-                      key={p.id}
-                      className={styles.playerButton}
-                      onClick={() => handleMissingPlayerSubmit(p.name)}
-                      disabled={hasAnswered}
-                    >
-                      <div className={styles.avatar}>{p.name[0]?.toUpperCase()}</div>
-                      <span className={styles.playerName}>{p.name}</span>
-                    </button>
-                  ))}
-                <form onSubmit={(e) => { e.preventDefault(); handleMissingPlayerSubmit(inputValue); }} className={styles.guessForm}>
-                  <input
-                    type="text"
-                    value={inputValue}
-                    onChange={(e) => setInputValue(e.target.value)}
-                    placeholder="Type name..."
-                    className={styles.guessInput}
-                  />
-                </form>
+                {/*
+                  Show a button for EVERY player who was originally on screen,
+                  including the one the server is now hiding. Without the
+                  hidden player in the list there is no correct button to
+                  press, which made the challenge unwinnable.
+                */}
+                {shownPlayers.map((p) => (
+                  <button
+                    key={p.id}
+                    className={styles.playerButton}
+                    onClick={() => handleMissingPlayerSubmit(p.name)}
+                    disabled={hasAnswered}
+                  >
+                    <div className={styles.avatar}>{p.name[0]?.toUpperCase()}</div>
+                    <span className={styles.playerName}>{p.name}</span>
+                  </button>
+                ))}
               </div>
             ) : (
               <div className={styles.waitingSection}>
