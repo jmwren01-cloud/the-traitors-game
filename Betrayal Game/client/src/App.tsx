@@ -9,6 +9,7 @@ import { ChatBox } from './components/ChatBox';
 import { Timer } from './components/Timer';
 import { ConnectionStatus } from './components/ConnectionStatus';
 import { Challenge } from './components/Challenge';
+import { Spectator } from './components/Spectator';
 import { useSoundContext } from './contexts/SoundContext';
 import './App.css';
 
@@ -81,6 +82,35 @@ function App() {
           winner={gameState?.winner}
           players={gameState?.players || []}
           myRole={gameState?.myRole}
+        />
+        {chatBox}
+      </>
+    );
+  }
+
+  // Dead player spectator mode — shown for all active game phases except GAME_END
+  const spectatorPhases = ['ROUNDTABLE','VOTING','VOTE_REVEAL','TIE_DETECTED','REVOTE','TIEBREAKER_REVEAL','BANISH_REVEAL','CHECK_WIN','NIGHT','MORNING','CHALLENGE','CHALLENGE_RESULT'];
+  if (!isAlive && spectatorPhases.includes(phase)) {
+    return (
+      <>
+        <ConnectionStatus connected={connected} reconnecting={reconnecting} />
+        {soundToggle}
+        {timer}
+        <Spectator
+          players={gameState?.players || []}
+          myPlayerId={gameState?.myPlayerId}
+          phase={phase}
+          currentRound={gameState?.currentRound}
+          banishedPlayer={gameState?.banishedPlayer}
+          murderedPlayer={gameState?.murderedPlayer}
+          murderBlocked={gameState?.murderBlocked}
+          voteCount={gameState?.voteCount}
+          revealedVotes={gameState?.revealedVotes}
+          currentTally={gameState?.currentTally}
+          totalVotes={gameState?.totalVotes}
+          currentReveal={gameState?.currentReveal}
+          tiedPlayerNames={gameState?.tiedPlayerNames}
+          randomlySelectedPlayer={gameState?.randomlySelectedPlayer}
         />
         {chatBox}
       </>

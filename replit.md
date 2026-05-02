@@ -123,8 +123,21 @@ Start workflow: `cd "Betrayal Game" && npm run dev`
 - Fixed voting state not resetting between rounds: S2C_VOTING_STARTED, S2C_ROUNDTABLE_STARTED, and S2C_REVOTE_STARTED handlers now reset all reveal state (revealIndex, revealOrder, revealedVotes, currentTally, totalVotes, currentReveal)
 - Added safeguard in Voting.tsx: revealComplete now requires actual revealedVotes to prevent stale state from previous rounds
 
+## Spectator Mode (Completed 2026-05-02)
+- Dead players automatically enter spectator (ghost) mode instead of seeing the normal game screens
+- Ghost banner with floating 👻 icon and "You are a Ghost / Watch the game unfold from beyond..." subtitle
+- Phase card shows what's currently happening (discussion, voting, night, morning, etc.)
+- Vote reveal: spectators watch the live tally and each reveal step in real time
+- Morning: murdered player or shield-block announcement shown
+- Banish reveal: banished player name + role shown (this is public information)
+- Night phase: dark moody mode with "The Traitors are meeting in secret..." — no murder voting UI
+- Player list: alive players shown normally, eliminated players shown with strikethrough and role icon (revealed after death)
+- Traitor identities hidden throughout — dead players never see `traitorIds` for living players
+- Chat: dead players keep general chat (read + write); traitor chat access already revoked by `isAlive` check
+- Key files: Spectator.tsx, Spectator.module.css, App.tsx (spectator routing block)
+
 ## Remaining Tasks
-- Spectator mode for dead players (requested)
+- (none currently)
 
 ## Sound Effects (Completed 2026-01-16)
 - Web Audio API oscillator-based sound generation (no external audio files)
