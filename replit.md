@@ -7,7 +7,12 @@ A web-based multiplayer social deduction game inspired by the TV show "The Trait
 ```
 Betrayal Game/
 ├── src/                    # Backend (Node.js + Express + WebSocket)
-│   ├── index.ts           # WebSocket server and event handlers
+│   ├── index.ts           # Entry point: HTTP server, static files, WSS setup (~75 lines)
+│   ├── ws/
+│   │   ├── context.ts     # Shared Maps (games, playerConnections, sessionTokens, etc.)
+│   │   ├── utils.ts       # broadcastToSession, sendError, recruitment broadcast helpers
+│   │   ├── voteReveal.ts  # startVoteRevealSequence with interval-based reveal logic
+│   │   └── router.ts      # handleConnection: all C2S event handlers + close handler
 │   └── game/
 │       ├── types.ts       # TypeScript types (GameState, Player, etc.)
 │       └── manager.ts     # Game logic (voting, murder, win conditions)
