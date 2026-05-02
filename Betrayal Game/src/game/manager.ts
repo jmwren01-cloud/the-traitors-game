@@ -799,7 +799,28 @@ export function resolveMurder(game: GameState): MurderResult {
     }
   }
 
-  // Refresh target after possible role flip (e.g. murder target = recruit target is an edge case)
+  // If the murder target was recruited this same night, recruitment takes precedence:
+  // the newly converted traitor survives and no murder occurs.
+  if (recruitedPlayerId && recruitedPlayerId === targetId) {
+    return {
+      game: {
+        ...game,
+        players: playersWithRecruitment,
+        lastMurderedPlayerId: undefined,
+        lastMurderBlocked: false,
+        lastShieldedPlayerId: undefined,
+        lastRecruitedPlayerId: recruitedPlayerId,
+        pendingRecruitmentTargetId: undefined,
+        murderVotes: [],
+        phase: 'MORNING'
+      },
+      blocked: false,
+      recruitedPlayerId,
+      recruitedPlayerName,
+    };
+  }
+
+  // Refresh target after possible role flip
   const finalTarget = playersWithRecruitment.find((p: Player) => p.id === targetId)!;
 
   // Check if target has a shield

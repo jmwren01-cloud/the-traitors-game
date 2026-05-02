@@ -572,7 +572,7 @@ export function gameStateReducer(state: GameState | null, msg: Msg): GameState |
         myRole: 'TRAITOR' as Role,
         traitorIds: payload.traitorIds,
         players: state.players.map((p) =>
-          p.id === state.myPlayerId ? { ...p, role: 'TRAITOR' as Role } : p
+          p.id === state.myPlayerId ? { ...p, role: 'TRAITOR' as Role, recruitmentUsed: true } : p
         ),
         justRecruited: true,
       };
@@ -585,7 +585,7 @@ export function gameStateReducer(state: GameState | null, msg: Msg): GameState |
         ...state,
         traitorIds: payload.updatedTraitorIds,
         players: state.players.map((p) =>
-          p.id === payload.newTraitorId ? { ...p, role: 'TRAITOR' as Role } : p
+          p.id === payload.newTraitorId ? { ...p, role: 'TRAITOR' as Role, recruitmentUsed: true } : p
         ),
       };
     }
