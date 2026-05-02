@@ -1,0 +1,83 @@
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1500;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  animation: pic-fade-in 0.2s ease-out;
+  cursor: pointer;
+}
+
+@keyframes pic-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.card {
+  position: relative;
+  width: 100%;
+  max-width: 380px;
+  background: linear-gradient(180deg, #15152d 0%, #0e0e1f 100%);
+  border: 2px solid #f0c040;
+  border-radius: 14px;
+  padding: 22px 24px 28px;
+  text-align: center;
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.7);
+  animation: pic-slide-up 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  overflow: hidden;
+}
+
+@keyframes pic-slide-up {
+  from { transform: translateY(24px); opacity: 0; }
+  to   { transform: translateY(0); opacity: 1; }
+}
+
+.title {
+  margin: 0 0 10px;
+  font-size: 1.35rem;
+  font-weight: 700;
+  color: #f0c040;
+  letter-spacing: 0.05em;
+}
+
+.body {
+  margin: 0 0 14px;
+  font-size: 0.98rem;
+  line-height: 1.5;
+  color: #ddd;
+}
+
+.tap {
+  display: block;
+  font-size: 0.78rem;
+  color: #888;
+  font-style: italic;
+  letter-spacing: 0.05em;
+}
+
+.progressBar {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 3px;
+  width: 100%;
+  background: linear-gradient(90deg, #f0c040, #d4a017);
+  transform-origin: left;
+  animation: pic-drain 3s linear forwards;
+}
+
+@keyframes pic-drain {
+  from { transform: scaleX(1); }
+  to   { transform: scaleX(0); }
+}
+
+@media (max-width: 480px) {
+  .card {
+    padding: 18px 18px 24px;
+  }
+  .title { font-size: 1.2rem; }
+  .body { font-size: 0.92rem; }
+}

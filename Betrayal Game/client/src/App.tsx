@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import type { GamePhase } from './types';
 import { useWebSocket } from './hooks/useWebSocket';
 import { Lobby } from './components/Lobby';
 import { RoleReveal } from './components/RoleReveal';
@@ -11,6 +12,7 @@ import { ConnectionStatus } from './components/ConnectionStatus';
 import { Challenge } from './components/Challenge';
 import { Spectator } from './components/Spectator';
 import { HostPanel } from './components/HostPanel';
+import { PhaseIntroCard } from './components/PhaseIntroCard';
 import { HUD } from './components/HUD';
 import hudStyles from './components/HUD.module.css';
 import { useSoundContext } from './contexts/SoundContext';
@@ -64,6 +66,31 @@ function App() {
   const isChatDisabled = phase === 'ROLE_REVEAL';
   const myPlayer = gameState?.players?.find((p) => p.id === gameState?.myPlayerId);
   const isAlive = myPlayer?.isAlive ?? true;
+
+  // First-occurrence-per-session phase intro cards. Tracked in a ref so the
+  // card never re-fires on re-renders or when the same phase recurs later
+  // in the game. We also gate firing on observing an actual phase TRANSITION
+  // (not the initial render) so that a reconnect mid-VOTING/NIGHT does not
+  // pop a tutorial card the player has already lived through.
+  const seenPhaseIntrosRef = useRef<Set<string>>(new Set());
+  const prevPhaseRef = useRef<GamePhase | null>(null);
+  const [introCardPhase, setIntroCardPhase] = useState<GamePhase | null>(null);
+  useEffect(() => {
+    if (!gameState) return;
+    const prev = prevPhaseRef.current;
+    prevPhaseRef.current = phase;
+    // Skip the very first observation (initial mount or first gameState arrival)
+    // and any non-transition re-renders so reconnects do not re-trigger cards.
+    if (prev === null || prev === phase) return;
+    const introPhases: GamePhase[] = ['VOTING', 'NIGHT', 'REVOTE', 'CHALLENGE', 'MORNING'];
+    if (introPhases.includes(phase) && !seenPhaseIntrosRef.current.has(phase)) {
+      seenPhaseIntrosRef.current.add(phase);
+      setIntroCardPhase(phase);
+    }
+  }, [phase, gameState]);
+  const phaseIntroCard = introCardPhase ? (
+    <PhaseIntroCard phase={introCardPhase} onDismiss={() => setIntroCardPhase(null)} />
+  ) : null;
 
   const minPlayers = gameState?.settings?.minPlayers ?? 5;
   const canStartGame = phase === 'LOBBY' && (gameState?.players?.length ?? 0) >= minPlayers;
@@ -154,6 +181,7 @@ function App() {
         {soundToggle}
         {hud}
         {hostPanel}
+        {phaseIntroCard}
         {timer}
         <Spectator
           players={gameState?.players || []}
@@ -185,6 +213,7 @@ function App() {
         {soundToggle}
         {hud}
         {hostPanel}
+        {phaseIntroCard}
         {timer}
         <NightPhase
           players={gameState?.players || []}
@@ -215,6 +244,7 @@ function App() {
         {soundToggle}
         {hud}
         {hostPanel}
+        {phaseIntroCard}
         {timer}
         <Voting
           players={gameState?.players || []}
@@ -268,6 +298,7 @@ function App() {
         {soundToggle}
         {hud}
         {hostPanel}
+        {phaseIntroCard}
         <Challenge
           challenge={gameState?.challenge}
           players={gameState?.players || []}

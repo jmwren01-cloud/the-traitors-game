@@ -4,7 +4,26 @@ import { PLAYER_COLORS, PLAYER_AVATARS, getColorHex, getAvatarEmoji } from '../a
 import { getOrCreateDeviceToken, getSavedPlayerName, savePlayerName, isValidPlayerName } from '../utils/identity';
 import type { IdentityState } from '../hooks/useWebSocket';
 import { ProfileDrawer } from './ProfileDrawer';
+import { HowToPlayModal } from './HowToPlayModal';
 import styles from './Lobby.module.css';
+
+const RULES_SEEN_KEY = 'betrayal_rules_seen';
+
+function hasSeenRules(): boolean {
+  try {
+    return localStorage.getItem(RULES_SEEN_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function markRulesSeen(): void {
+  try {
+    localStorage.setItem(RULES_SEEN_KEY, '1');
+  } catch {
+    // localStorage unavailable — nothing to do.
+  }
+}
 
 interface LobbyProps {
   sessionId?: string;
@@ -29,6 +48,16 @@ export function Lobby({
 
   const [pendingAction, setPendingAction] = useState<null | { type: 'create' } | { type: 'join'; sessionId: string }>(null);
   const [showProfileDrawer, setShowProfileDrawer] = useState(false);
+  const [showRules, setShowRules] = useState(false);
+  const [rulesSeen, setRulesSeen] = useState<boolean>(() => hasSeenRules());
+
+  const openRules = () => {
+    setShowRules(true);
+    if (!rulesSeen) {
+      markRulesSeen();
+      setRulesSeen(true);
+    }
+  };
   const [copied, setCopied] = useState(false);
   const lastIdentifiedActionRef = useRef<string | null>(null);
   const copiedTimeoutRef = useRef<number | null>(null);
@@ -161,6 +190,15 @@ export function Lobby({
             <button className={styles.secondaryBtn} onClick={() => setMode('join')}>
               Join Game
             </button>
+            {!rulesSeen ? (
+              <button className={styles.primaryBtn} onClick={openRules}>
+                How to Play
+              </button>
+            ) : (
+              <button className={styles.tertiaryBtn} onClick={openRules}>
+                How to Play
+              </button>
+            )}
             <button
               className={styles.tertiaryBtn}
               onClick={() => setShowProfileDrawer(true)}
@@ -233,6 +271,8 @@ export function Lobby({
             onSend={onSend}
           />
         )}
+
+        {showRules && <HowToPlayModal onClose={() => setShowRules(false)} />}
       </div>
     );
   }
@@ -490,6 +530,16 @@ export function Lobby({
       {!isHost && canStart && (
         <p className={styles.waitingText}>Waiting for host to start...</p>
       )}
+
+      <button
+        type="button"
+        className={styles.howToPlayLink}
+        onClick={openRules}
+      >
+        How to Play
+      </button>
+
+      {showRules && <HowToPlayModal onClose={() => setShowRules(false)} />}
     </div>
   );
 }

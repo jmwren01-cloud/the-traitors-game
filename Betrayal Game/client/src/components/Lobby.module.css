@@ -689,3 +689,25 @@
     min-height: 48px;
   }
 }
+
+.howToPlayLink {
+  display: inline-block;
+  margin: 16px auto 4px;
+  padding: 10px 18px;
+  background: transparent;
+  border: 1px solid rgba(240, 192, 64, 0.4);
+  border-radius: 8px;
+  color: #f0c040;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  min-height: 44px;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.howToPlayLink:hover {
+  background: rgba(240, 192, 64, 0.08);
+  border-color: rgba(240, 192, 64, 0.7);
+}

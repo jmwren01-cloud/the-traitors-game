@@ -16,6 +16,8 @@ interface RoleRevealProps {
 export function RoleReveal({ myRole, traitorIds, players, myPlayerId, phase }: RoleRevealProps) {
   const [revealed, setRevealed] = useState(false);
   const [showTraitors, setShowTraitors] = useState(false);
+  const [readyEnabled, setReadyEnabled] = useState(false);
+  const [acknowledged, setAcknowledged] = useState(false);
   const isHost = players.find((p) => p.id === myPlayerId)?.isHost;
   const { play } = useSoundContext();
   const soundPlayedRef = useRef(false);
@@ -26,6 +28,14 @@ export function RoleReveal({ myRole, traitorIds, players, myPlayerId, phase }: R
       return () => clearTimeout(timer);
     }
   }, [phase, myRole]);
+
+  // Enable the "I'm ready" button after the 8-second CSS countdown bar drains.
+  // A single setTimeout is used (not a setInterval counter) per the spec.
+  useEffect(() => {
+    if (!revealed) return;
+    const t = window.setTimeout(() => setReadyEnabled(true), 8000);
+    return () => window.clearTimeout(t);
+  }, [revealed]);
 
   useEffect(() => {
     if (revealed && myRole && !soundPlayedRef.current) {
@@ -91,8 +101,52 @@ export function RoleReveal({ myRole, traitorIds, players, myPlayerId, phase }: R
         </div>
       )}
 
-      {revealed && !isHost && (
-        <p className={styles.waiting}>Waiting for host to continue...</p>
+      {revealed && !acknowledged && (
+        <div className={`${styles.briefing} ${myRole === 'TRAITOR' ? styles.briefingTraitor : styles.briefingFaithful}`}>
+          {myRole === 'TRAITOR' ? (
+            <>
+              <h3 className={styles.briefingTitle}>Your charge as a Traitor</h3>
+              <p className={styles.briefingBody}>
+                You answer to no one. Blend in. Sound shocked at the murders. Vote convincingly to
+                banish the Faithful — or each other when it suits you. Each night you and your
+                fellow Traitors choose one Faithful to silence.
+              </p>
+              <p className={styles.briefingTip}>If you survive long enough, you win.</p>
+            </>
+          ) : (
+            <>
+              <h3 className={styles.briefingTitle}>Your charge as a Faithful</h3>
+              <p className={styles.briefingBody}>
+                You are loyal to the castle. Watch your fellow players carefully. Use the
+                roundtable to share suspicions and vote together to banish the Traitors before
+                they pick you off one by one.
+              </p>
+              <p className={styles.briefingTip}>Trust is earned. Deception is everywhere.</p>
+            </>
+          )}
+
+          <div className={styles.countdownTrack} aria-hidden>
+            <span className={styles.countdownBar} />
+          </div>
+
+          <button
+            type="button"
+            className={`${styles.readyBtn} ${readyEnabled ? styles.readyBtnEnabled : ''}`}
+            onClick={() => setAcknowledged(true)}
+            disabled={!readyEnabled}
+            aria-disabled={!readyEnabled}
+          >
+            I'm Ready
+          </button>
+        </div>
+      )}
+
+      {revealed && acknowledged && !isHost && (
+        <p className={styles.waiting}>✓ Ready — waiting for host to continue...</p>
+      )}
+
+      {revealed && acknowledged && isHost && (
+        <p className={styles.waiting}>✓ Ready — open the Host panel to continue.</p>
       )}
     </div>
   );
