@@ -508,7 +508,7 @@ export function isGameEmpty(game: GameState): boolean {
 
 // ============= WIN CONDITION =============
 
-function buildRoundRecord(game: GameState, murderedName: string | undefined, murderBlocked: boolean, shieldedName: string | undefined): RoundRecord {
+function buildRoundRecord(game: GameState): RoundRecord {
   const votes: VoteEntry[] = (game.lastRoundVotes ?? []).map((v) => {
     const voter = game.players.find((p: Player) => p.id === v.voterId);
     const target = game.players.find((p: Player) => p.id === v.targetId);
@@ -523,15 +523,19 @@ function buildRoundRecord(game: GameState, murderedName: string | undefined, mur
   });
 
   const banishedPlayer = game.players.find((p: Player) => p.id === game.banishedPlayerId);
+  const murderedPlayer = game.players.find((p: Player) => p.id === game.lastMurderedPlayerId);
+  const shieldedPlayer = game.players.find((p: Player) => p.id === game.lastShieldedPlayerId);
 
   return {
     round: game.currentRound,
     votes,
     banishedName: banishedPlayer?.name,
     banishedRole: banishedPlayer?.role,
-    murderedName,
-    murderBlocked,
-    shieldedName,
+    murderedName: murderedPlayer?.name,
+    murderedRole: murderedPlayer?.role,
+    murderBlocked: game.lastMurderBlocked ?? false,
+    shieldedName: shieldedPlayer?.name,
+    shieldedRole: shieldedPlayer?.role,
   };
 }
 
@@ -545,7 +549,7 @@ export function checkWinCondition(game: GameState): GameState {
 
   // Traitors win if they equal or outnumber faithful — game ended after banishment, no murder
   if (aliveTraitors >= aliveFaithful) {
-    const record = buildRoundRecord(game, undefined, false, undefined);
+    const record = buildRoundRecord(game);
     return {
       ...game,
       history: [...game.history, record],
@@ -557,7 +561,7 @@ export function checkWinCondition(game: GameState): GameState {
 
   // Faithful win if all traitors eliminated
   if (aliveTraitors === 0) {
-    const record = buildRoundRecord(game, undefined, false, undefined);
+    const record = buildRoundRecord(game);
     return {
       ...game,
       history: [...game.history, record],
@@ -751,14 +755,7 @@ export function continueToDayPhase(game: GameState): GameState {
   }
 
   // Build round record for this completed round (banishment + murder/block)
-  const murderedPlayer = game.players.find((p: Player) => p.id === game.lastMurderedPlayerId);
-  const shieldedPlayer = game.players.find((p: Player) => p.id === game.lastShieldedPlayerId);
-  const record = buildRoundRecord(
-    game,
-    murderedPlayer?.name,
-    game.lastMurderBlocked ?? false,
-    shieldedPlayer?.name
-  );
+  const record = buildRoundRecord(game);
   const newHistory = [...game.history, record];
 
   const aliveTraitors = game.players.filter((p: Player) => p.isAlive && p.role === 'TRAITOR').length;

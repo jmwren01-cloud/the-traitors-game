@@ -147,6 +147,7 @@ export function useWebSocket() {
           randomlySelectedPlayerRole?: Role;
           totalVotes?: number;
           settings: GameSettings;
+          history: RoundRecord[];
         };
         myPlayerIdRef.current = payload.playerId;
         setReconnecting(false);
@@ -205,7 +206,7 @@ export function useWebSocket() {
             : undefined,
           currentReveal,
           settings: payload.settings,
-          history: (payload as unknown as { history: RoundRecord[] }).history ?? [],
+          history: payload.history ?? [],
         });
         break;
       }

@@ -83,14 +83,16 @@ function RoundCard({ record, index }: { record: RoundRecord; index: number }) {
           <div className={styles.shieldOutcome}>
             <span className={styles.outcomeIcon}>🛡️</span>
             <span className={styles.outcomeText}>
-              Murder attempt blocked &mdash; <strong>{record.shieldedName}</strong> used their shield
+              Murder attempt blocked &mdash; <strong>{record.shieldedName}</strong>
+              {record.shieldedRole && <> <RolePill role={record.shieldedRole} /></>} used their shield
             </span>
           </div>
         ) : record.murderedName ? (
           <div className={styles.murderOutcome}>
             <span className={styles.outcomeIcon}>🔪</span>
             <span className={styles.outcomeText}>
-              <strong>{record.murderedName}</strong> was murdered in the night
+              <strong>{record.murderedName}</strong>
+              {record.murderedRole && <> <RolePill role={record.murderedRole} /></>} was murdered in the night
             </span>
           </div>
         ) : (

@@ -110,8 +110,10 @@ export interface RoundRecord {
   banishedName?: string;
   banishedRole?: Role;
   murderedName?: string;
+  murderedRole?: Role;
   murderBlocked?: boolean;
   shieldedName?: string;
+  shieldedRole?: Role;
 }
 
 export interface GameState {
