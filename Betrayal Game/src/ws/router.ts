@@ -4,11 +4,11 @@ import type { C2SEvent, S2CEvent, ChatMessage, GameState, Role } from '../game/t
 import {
   broadcastToSession,
   broadcastToSessionPerRecipient,
-  sanitizePlayersFor,
   sendError,
   generateSessionToken,
   broadcastRecruitmentEvents,
-  broadcastMorningEventWithRecruitment
+  broadcastMorningEventWithRecruitment,
+  scrubPlayersForRecipient
 } from './utils.js';
 import { startVoteRevealSequence } from './voteReveal.js';
 
@@ -39,17 +39,36 @@ function countEligibleAnswerers(state: GameState): number {
 function broadcastChallengeResult(
   sessionId: string,
   resolution: { winnerId?: string; winnerName?: string; correctAnswer?: string | number; shieldAwarded: boolean },
-  broadcast: (sessionId: string, event: S2CEvent) => void
+  games: Map<string, GameState>,
+  playerConnections: Map<string, WebSocket>
 ): void {
-  broadcast(sessionId, {
-    type: 'S2C_CHALLENGE_RESULT',
-    payload: {
-      phase: 'CHALLENGE_RESULT',
-      shieldAwarded: resolution.shieldAwarded,
-      ...(resolution.winnerId !== undefined ? { winnerId: resolution.winnerId } : {}),
-      ...(resolution.winnerName !== undefined ? { winnerName: resolution.winnerName } : {}),
-      ...(resolution.correctAnswer !== undefined ? { correctAnswer: resolution.correctAnswer } : {}),
-    }
+  const gameState = games.get(sessionId);
+  if (!gameState) return;
+
+  // Per-recipient delivery: only the winner is told whether a shield
+  // was awarded (or whether they already had one). Everyone else just
+  // sees who won, with no shield-related information leaked.
+  gameState.players.forEach((player) => {
+    const connection = playerConnections.get(player.id);
+    if (!connection || connection.readyState !== WebSocket.OPEN) return;
+
+    const isWinner =
+      resolution.winnerId !== undefined && player.id === resolution.winnerId;
+
+    const payload: {
+      phase: 'CHALLENGE_RESULT';
+      winnerId?: string;
+      winnerName?: string;
+      correctAnswer?: string | number;
+      shieldAwarded?: boolean;
+    } = { phase: 'CHALLENGE_RESULT' };
+
+    if (resolution.winnerId !== undefined) payload.winnerId = resolution.winnerId;
+    if (resolution.winnerName !== undefined) payload.winnerName = resolution.winnerName;
+    if (resolution.correctAnswer !== undefined) payload.correctAnswer = resolution.correctAnswer;
+    if (isWinner) payload.shieldAwarded = resolution.shieldAwarded;
+
+    connection.send(JSON.stringify({ type: 'S2C_CHALLENGE_RESULT', payload }));
   });
 }
 
@@ -192,7 +211,7 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
         ws.send(JSON.stringify(response));
         broadcastPerRecipient(gameState.sessionId, (recipientId) => ({
           type: 'S2C_PLAYER_JOINED',
-          payload: { players: sanitizePlayersFor(gameState.players, recipientId) }
+          payload: { players: scrubPlayersForRecipient(gameState.players, recipientId) }
         }));
         return;
       }
@@ -220,7 +239,7 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
             sessionId: event.payload.sessionId,
             playerId: playerId,
             playerName: event.payload.playerName,
-            players: sanitizePlayersFor(updatedGame.players, playerId),
+            players: scrubPlayersForRecipient(updatedGame.players, playerId),
             sessionToken,
             settings: updatedGame.settings
           }
@@ -229,7 +248,7 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
 
         broadcastPerRecipient(event.payload.sessionId, (recipientId) => ({
           type: 'S2C_PLAYER_JOINED',
-          payload: { players: sanitizePlayersFor(updatedGame.players, recipientId) }
+          payload: { players: scrubPlayersForRecipient(updatedGame.players, recipientId) }
         }));
         return;
       }
@@ -301,7 +320,7 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
           sessionId: currentSessionId,
           playerId: currentPlayerId,
           playerName: player.name,
-          players: sanitizePlayersFor(updatedGame.players, currentPlayerId),
+          players: scrubPlayersForRecipient(updatedGame.players, currentPlayerId),
           phase: updatedGame.phase,
           currentRound: updatedGame.currentRound,
           messages: updatedGame.messages,
@@ -349,7 +368,7 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
 
         broadcastPerRecipient(currentSessionId, (recipientId) => ({
           type: 'S2C_PLAYER_RECONNECTED',
-          payload: { playerId: currentPlayerId!, players: sanitizePlayersFor(updatedGame.players, recipientId) }
+          payload: { playerId: currentPlayerId!, players: scrubPlayersForRecipient(updatedGame.players, recipientId) }
         }));
 
         console.log(`Player ${player.name} reconnected to game ${currentSessionId}`);
@@ -969,7 +988,7 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
             try {
               const resolution = game.resolveChallenge(currentGame);
               setGame(resolution.game);
-              broadcastChallengeResult(sessionId, resolution, broadcast);
+              broadcastChallengeResult(sessionId, resolution, games, playerConnections);
             } catch (e) {
               console.error('Challenge auto-resolve error:', e);
             }
@@ -1020,7 +1039,7 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
           clearChallengeTimer(currentSessionId);
           const resolution = game.resolveChallenge(result.game);
           setGame(resolution.game);
-          broadcastChallengeResult(currentSessionId, resolution, broadcast);
+          broadcastChallengeResult(currentSessionId, resolution, games, playerConnections);
         }
         return;
       }
@@ -1031,7 +1050,7 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
             clearChallengeTimer(currentSessionId);
             const resolution = game.resolveChallenge(gameState);
             setGame(resolution.game);
-            broadcastChallengeResult(currentSessionId, resolution, broadcast);
+            broadcastChallengeResult(currentSessionId, resolution, games, playerConnections);
             return;
           }
           sendError(ws, 'Not in challenge result phase');
@@ -1171,7 +1190,7 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
         setGame(updatedGame);
         broadcastPerRecipient(currentSessionId, (recipientId) => ({
           type: 'S2C_AVATAR_UPDATED',
-          payload: { players: sanitizePlayersFor(updatedGame.players, recipientId) }
+          payload: { players: scrubPlayersForRecipient(updatedGame.players, recipientId) }
         }));
         return;
       }
@@ -1290,7 +1309,7 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
 
         broadcastPerRecipient(currentSessionId, (recipientId) => ({
           type: 'S2C_PLAYER_DISCONNECTED',
-          payload: { playerId: currentPlayerId!, players: sanitizePlayersFor(updatedGame.players, recipientId) }
+          payload: { playerId: currentPlayerId!, players: scrubPlayersForRecipient(updatedGame.players, recipientId) }
         }));
       }
     }

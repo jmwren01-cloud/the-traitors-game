@@ -128,7 +128,9 @@ export function Challenge({
               <span className={styles.winnerName}>{challenge.winnerName}</span>
             </div>
             <p className={styles.resultText}>
-              {challenge.shieldAwarded
+              {challenge.shieldAwarded === undefined
+                ? 'won the challenge!'
+                : challenge.shieldAwarded
                 ? 'earned a Shield!'
                 : 'won but already has a Shield!'}
             </p>

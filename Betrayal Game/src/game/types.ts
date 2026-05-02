@@ -382,7 +382,7 @@ export type S2CEvent =
       winnerId?: string;
       winnerName?: string;
       correctAnswer?: string | number;
-      shieldAwarded: boolean;
+      shieldAwarded?: boolean;
     } }
   | { type: 'S2C_SHIELD_REVEALED'; payload: { playerId: string; playerName: string; banishmentBlocked?: boolean } }
   | { type: 'S2C_AVATAR_UPDATED'; payload: { players: Player[] } }

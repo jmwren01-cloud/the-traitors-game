@@ -3,14 +3,29 @@ import crypto from 'crypto';
 import type { S2CEvent, GameState, Player } from '../game/types.js';
 import type { MurderResult } from '../game/manager.js';
 
-export function sanitizePlayersFor(players: Player[], recipientId: string | undefined): Player[] {
+/**
+ * Returns a copy of the players list scrubbed for the given recipient:
+ * `hasShield` is preserved only for the recipient themselves and for
+ * players whose shield has been publicly revealed. For everyone else
+ * `hasShield` is forced to `false` so the field cannot leak via the
+ * raw WebSocket payload.
+ *
+ * `recipientId` may be `undefined` (e.g. broadcasting before a
+ * connection has a known player id); in that case no player is
+ * treated as "self" and only revealed shields remain visible.
+ */
+export function scrubPlayersForRecipient(
+  players: Player[],
+  recipientId: string | undefined
+): Player[] {
   return players.map((p) => {
     // Strip server-only fields from every broadcast (deviceToken must never leave the server)
-    const { deviceToken: _dt, ...safe } = p;
-    if (p.id === recipientId || p.shieldRevealed) {
-      return safe as Player;
-    }
-    return { ...safe, hasShield: false } as Player;
+    const { deviceToken: _dt, ...rest } = p;
+    const safe = rest as Player;
+    if (!safe.hasShield) return safe;
+    if (recipientId !== undefined && safe.id === recipientId) return safe;
+    if (safe.shieldRevealed) return safe;
+    return { ...safe, hasShield: false };
   });
 }
 
@@ -23,11 +38,26 @@ export function broadcastToSession(
   const gameState = games.get(sessionId);
   if (!gameState) return;
 
+  const payload = (event as { payload?: unknown }).payload;
+  const hasPlayersArray =
+    payload !== null &&
+    typeof payload === 'object' &&
+    Array.isArray((payload as { players?: unknown }).players);
+
   gameState.players.forEach((player) => {
     const connection = playerConnections.get(player.id);
-    if (connection && connection.readyState === WebSocket.OPEN) {
-      connection.send(JSON.stringify(event));
+    if (!connection || connection.readyState !== WebSocket.OPEN) return;
+
+    let toSend: S2CEvent = event;
+    if (hasPlayersArray) {
+      const originalPlayers = (payload as { players: Player[] }).players;
+      const scrubbed = scrubPlayersForRecipient(originalPlayers, player.id);
+      toSend = {
+        ...event,
+        payload: { ...(payload as object), players: scrubbed },
+      } as S2CEvent;
     }
+    connection.send(JSON.stringify(toSend));
   });
 }
 

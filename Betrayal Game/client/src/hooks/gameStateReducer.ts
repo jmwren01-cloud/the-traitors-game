@@ -517,11 +517,18 @@ export function gameStateReducer(state: GameState | null, msg: Msg): GameState |
         winnerId?: string;
         winnerName?: string;
         correctAnswer?: string | number;
-        shieldAwarded: boolean;
+        shieldAwarded?: boolean;
       };
       if (!state) return null;
       let updatedPlayers = state.players;
-      if (payload.winnerId && payload.shieldAwarded) {
+      // Only update local hasShield when *we* are the winner. The server
+      // only sends `shieldAwarded` to the winner, but guard on identity
+      // as well so we never reflect another player's shield in our state.
+      if (
+        payload.winnerId &&
+        payload.shieldAwarded === true &&
+        payload.winnerId === state.myPlayerId
+      ) {
         updatedPlayers = state.players.map((p) =>
           p.id === payload.winnerId ? { ...p, hasShield: true } : p
         );
