@@ -41,7 +41,6 @@ export function NightPhase({
   const [selectedTarget, setSelectedTarget] = useState<string | null>(null);
   const [hasVoted, setHasVoted] = useState(false);
   const [selectedRecruitTarget, setSelectedRecruitTarget] = useState<string | null>(null);
-  const [hasSubmittedRecruitment, setHasSubmittedRecruitment] = useState(false);
   const { play } = useSoundContext();
   const nightSoundPlayedRef = useRef(false);
   const morningSoundPlayedRef = useRef(false);
@@ -88,13 +87,9 @@ export function NightPhase({
     ? players.filter((p) => traitorIds.includes(p.id) && p.id !== myPlayerId && p.isAlive)
     : [];
 
-  // Recruitment targets exclude whoever this traitor is currently voting to murder
-  const recruitablePlayers = aliveFaithful.filter((p) => p.id !== selectedTarget);
-
   const handleSubmitMurder = () => {
     if (selectedTarget) {
       vibrate('heavy');
-      if (selectedRecruitTarget === selectedTarget) setSelectedRecruitTarget(null);
       onSend({ type: 'C2S_SUBMIT_MURDER', payload: { targetId: selectedTarget } });
       setHasVoted(true);
     }
@@ -104,7 +99,6 @@ export function NightPhase({
     if (selectedRecruitTarget) {
       vibrate('medium');
       onSend({ type: 'C2S_SUBMIT_RECRUITMENT', payload: { targetId: selectedRecruitTarget } });
-      setHasSubmittedRecruitment(true);
     }
   };
 
@@ -182,12 +176,12 @@ export function NightPhase({
                 <h2 className={styles.sectionTitle}>🤝 Recruit a Faithful</h2>
                 <p className={styles.recruitSubtitle}>One-time ability — Convert a Faithful player to your side</p>
 
-                {hasSubmittedRecruitment ? (
+                {myPlayerRecruitmentUsed ? (
                   <p className={styles.waiting}>Recruitment submitted. They will join you after this night...</p>
                 ) : (
                   <>
                     <div className={styles.targetGrid}>
-                      {recruitablePlayers.map((player) => {
+                      {aliveFaithful.map((player) => {
                         const colorHex = getColorHex(player.color);
                         const avatarEmoji = getAvatarEmoji(player.avatar);
                         return (

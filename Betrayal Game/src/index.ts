@@ -112,8 +112,9 @@ function broadcastRecruitmentEvents(
     }));
   }
 
+  // All traitors (including the newly recruited player) receive the full picture.
   updatedGame.players.forEach((p) => {
-    if (p.role === 'TRAITOR' && p.id !== result.recruitedPlayerId) {
+    if (p.role === 'TRAITOR') {
       const socket = playerConnections.get(p.id);
       if (socket && socket.readyState === WebSocket.OPEN) {
         socket.send(JSON.stringify({
@@ -126,6 +127,32 @@ function broadcastRecruitmentEvents(
         }));
       }
     }
+  });
+}
+
+// Broadcasts a morning event (S2C_MORNING_STARTED or S2C_MURDER_RESOLVED) with
+// role-scoped recruitment info: traitors see full identity, faithful see only a boolean.
+function broadcastMorningEventWithRecruitment(
+  eventType: 'S2C_MURDER_RESOLVED' | 'S2C_MORNING_STARTED',
+  basePayload: Record<string, unknown>,
+  recruitedPlayerId: string | undefined,
+  recruitedPlayerName: string | undefined,
+  updatedGame: GameState
+) {
+  updatedGame.players.forEach((p) => {
+    const socket = playerConnections.get(p.id);
+    if (!socket || socket.readyState !== WebSocket.OPEN) return;
+
+    const recruitPayload = recruitedPlayerId
+      ? (p.role === 'TRAITOR'
+          ? { recruitedPlayerId, recruitedPlayerName }
+          : { recruitmentOccurred: true })
+      : {};
+
+    socket.send(JSON.stringify({
+      type: eventType,
+      payload: { ...basePayload, ...recruitPayload }
+    }));
   });
 }
 
@@ -882,29 +909,30 @@ wss.on('connection', (ws: WebSocket) => {
             broadcastRecruitmentEvents(currentSessionId, result, result.game);
 
             if (result.blocked) {
-              // Murder was blocked by shield
-              broadcastToSession(currentSessionId, {
-                type: 'S2C_MORNING_STARTED',
-                payload: {
+              broadcastMorningEventWithRecruitment(
+                'S2C_MORNING_STARTED',
+                {
                   phase: 'MORNING',
                   murderBlocked: true,
                   shieldedPlayerId: result.shieldedPlayerId,
                   shieldedPlayerName: result.shieldedPlayerName,
-                  recruitedPlayerId: result.recruitedPlayerId,
-                  recruitedPlayerName: result.recruitedPlayerName,
-                }
-              });
+                },
+                result.recruitedPlayerId,
+                result.recruitedPlayerName,
+                result.game
+              );
             } else if (result.murderedPlayerId) {
-              broadcastToSession(currentSessionId, {
-                type: 'S2C_MURDER_RESOLVED',
-                payload: {
+              broadcastMorningEventWithRecruitment(
+                'S2C_MURDER_RESOLVED',
+                {
                   murderedPlayerId: result.murderedPlayerId,
                   murderedPlayerName: result.murderedPlayerName!,
                   phase: 'MORNING',
-                  recruitedPlayerId: result.recruitedPlayerId,
-                  recruitedPlayerName: result.recruitedPlayerName,
-                }
-              });
+                },
+                result.recruitedPlayerId,
+                result.recruitedPlayerName,
+                result.game
+              );
             }
           } catch (err) {
             console.error('Error auto-resolving murder:', err);
@@ -920,29 +948,30 @@ wss.on('connection', (ws: WebSocket) => {
         broadcastRecruitmentEvents(currentSessionId, result, result.game);
 
         if (result.blocked) {
-          // Murder was blocked by shield
-          broadcastToSession(currentSessionId, {
-            type: 'S2C_MORNING_STARTED',
-            payload: {
+          broadcastMorningEventWithRecruitment(
+            'S2C_MORNING_STARTED',
+            {
               phase: 'MORNING',
               murderBlocked: true,
               shieldedPlayerId: result.shieldedPlayerId,
               shieldedPlayerName: result.shieldedPlayerName,
-              recruitedPlayerId: result.recruitedPlayerId,
-              recruitedPlayerName: result.recruitedPlayerName,
-            }
-          });
+            },
+            result.recruitedPlayerId,
+            result.recruitedPlayerName,
+            result.game
+          );
         } else if (result.murderedPlayerId) {
-          broadcastToSession(currentSessionId, {
-            type: 'S2C_MURDER_RESOLVED',
-            payload: {
+          broadcastMorningEventWithRecruitment(
+            'S2C_MURDER_RESOLVED',
+            {
               murderedPlayerId: result.murderedPlayerId,
               murderedPlayerName: result.murderedPlayerName!,
               phase: 'MORNING',
-              recruitedPlayerId: result.recruitedPlayerId,
-              recruitedPlayerName: result.recruitedPlayerName,
-            }
-          });
+            },
+            result.recruitedPlayerId,
+            result.recruitedPlayerName,
+            result.game
+          );
         }
         return;
       }
@@ -955,25 +984,25 @@ wss.on('connection', (ws: WebSocket) => {
         const recruitedPlayer = updatedGame.players.find((p) => p.id === updatedGame.lastRecruitedPlayerId);
         
         if (murderedPlayer) {
-          broadcastToSession(currentSessionId, {
-            type: 'S2C_MORNING_STARTED',
-            payload: {
+          broadcastMorningEventWithRecruitment(
+            'S2C_MORNING_STARTED',
+            {
               phase: 'MORNING',
               lastMurderedPlayerId: murderedPlayer.id,
               lastMurderedPlayerName: murderedPlayer.name,
-              recruitedPlayerId: recruitedPlayer?.id,
-              recruitedPlayerName: recruitedPlayer?.name,
-            }
-          });
+            },
+            recruitedPlayer?.id,
+            recruitedPlayer?.name,
+            updatedGame
+          );
         } else {
-          broadcastToSession(currentSessionId, {
-            type: 'S2C_MORNING_STARTED',
-            payload: {
-              phase: 'MORNING',
-              recruitedPlayerId: recruitedPlayer?.id,
-              recruitedPlayerName: recruitedPlayer?.name,
-            }
-          });
+          broadcastMorningEventWithRecruitment(
+            'S2C_MORNING_STARTED',
+            { phase: 'MORNING' },
+            recruitedPlayer?.id,
+            recruitedPlayer?.name,
+            updatedGame
+          );
         }
         return;
       }

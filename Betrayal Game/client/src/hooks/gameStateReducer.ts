@@ -377,7 +377,14 @@ export function gameStateReducer(state: GameState | null, msg: Msg): GameState |
     }
 
     case 'S2C_MURDER_RESOLVED': {
-      const payload = msg.payload as { murderedPlayerId: string; murderedPlayerName: string; phase: string; recruitedPlayerId?: string; recruitedPlayerName?: string };
+      const payload = msg.payload as {
+        murderedPlayerId: string;
+        murderedPlayerName: string;
+        phase: string;
+        recruitedPlayerId?: string;
+        recruitedPlayerName?: string;
+        recruitmentOccurred?: boolean;
+      };
       if (!state) return null;
       return {
         ...state,
@@ -388,6 +395,8 @@ export function gameStateReducer(state: GameState | null, msg: Msg): GameState |
         ),
         recruitedPlayer: payload.recruitedPlayerId && payload.recruitedPlayerName
           ? { id: payload.recruitedPlayerId, name: payload.recruitedPlayerName }
+          : payload.recruitmentOccurred
+          ? { id: '__occurred__', name: '' }
           : undefined,
       };
     }
@@ -402,6 +411,7 @@ export function gameStateReducer(state: GameState | null, msg: Msg): GameState |
         shieldedPlayerName?: string;
         recruitedPlayerId?: string;
         recruitedPlayerName?: string;
+        recruitmentOccurred?: boolean;
       };
       return state ? {
         ...state,
@@ -414,6 +424,8 @@ export function gameStateReducer(state: GameState | null, msg: Msg): GameState |
           : undefined,
         recruitedPlayer: payload.recruitedPlayerId && payload.recruitedPlayerName
           ? { id: payload.recruitedPlayerId, name: payload.recruitedPlayerName }
+          : payload.recruitmentOccurred
+          ? { id: '__occurred__', name: '' }
           : undefined,
       } : null;
     }

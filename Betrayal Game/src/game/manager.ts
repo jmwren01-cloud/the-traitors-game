@@ -783,9 +783,9 @@ export function resolveMurder(game: GameState): MurderResult {
   let recruitedPlayerId: string | undefined;
   let recruitedPlayerName: string | undefined;
 
-  // Recruitment and murder are independent selections; if the same target is chosen
-  // for both, murder takes priority and the recruitment is silently cancelled.
-  if (game.pendingRecruitmentTargetId && game.pendingRecruitmentTargetId !== targetId) {
+  // Recruitment and murder resolve independently. Both can target the same player;
+  // if so, the player is converted first (becomes a Traitor) then immediately killed.
+  if (game.pendingRecruitmentTargetId) {
     const recruitTarget = game.players.find(
       (p: Player) =>
         p.id === game.pendingRecruitmentTargetId && p.isAlive && p.role === 'FAITHFUL'

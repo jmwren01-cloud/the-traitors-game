@@ -305,6 +305,7 @@ export type S2CEvent =
       phase: GamePhase;
       recruitedPlayerId?: string;
       recruitedPlayerName?: string;
+      recruitmentOccurred?: boolean;
     } }
   | { type: 'S2C_MORNING_STARTED'; payload: { 
       phase: GamePhase;
@@ -315,6 +316,7 @@ export type S2CEvent =
       shieldedPlayerName?: string;
       recruitedPlayerId?: string;
       recruitedPlayerName?: string;
+      recruitmentOccurred?: boolean;
     } }
   | { type: 'S2C_RECRUITMENT_SUBMITTED'; payload: { recruiterId: string; recruiterName: string } }
   | { type: 'S2C_YOU_WERE_RECRUITED'; payload: { traitorIds: string[] } }
