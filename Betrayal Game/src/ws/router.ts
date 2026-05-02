@@ -15,12 +15,16 @@ export interface WsContext {
   playerConnections: Map<string, WebSocket>;
   sessionTokens: Map<string, { playerId: string; sessionId: string }>;
   disconnectedPlayers: Map<string, { playerId: string; sessionId: string; disconnectedAt: number }>;
+  setGame: (state: GameState) => void;
+  removeGame: (sessionId: string) => void;
+  setToken: (token: string, data: { playerId: string; sessionId: string }) => void;
+  removeToken: (token: string) => void;
 }
 
 type ReconnectPayload = Extract<S2CEvent, { type: 'S2C_RECONNECTED' }>['payload'];
 
 export function handleConnection(ws: WebSocket, ctx: WsContext): void {
-  const { games, playerConnections, sessionTokens, disconnectedPlayers } = ctx;
+  const { games, playerConnections, sessionTokens, disconnectedPlayers, setGame, removeGame, setToken, removeToken } = ctx;
   let currentPlayerId: string | undefined;
   let currentSessionId: string | undefined;
 
@@ -401,7 +405,7 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
           const revealedGame = game.revealVotes(lockedGame);
           setGame(revealedGame);
 
-          startVoteRevealSequence(currentSessionId, games, playerConnections);
+          startVoteRevealSequence(currentSessionId, games, playerConnections, setGame);
         }
         return;
       }
@@ -438,7 +442,7 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
         const revealedGame = game.revealVotes(lockedGame);
         setGame(revealedGame);
 
-        startVoteRevealSequence(currentSessionId, games, playerConnections);
+        startVoteRevealSequence(currentSessionId, games, playerConnections, setGame);
         return;
       }
 
