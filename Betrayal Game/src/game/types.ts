@@ -274,6 +274,9 @@ export type S2CEvent =
   | { type: 'S2C_VOTE_REVEAL_COMPLETE'; payload: { 
       allVotes: Vote[];
       finalTally: VoteTally[];
+      totalVotes?: number;
+      revealIndex?: number;
+      phase?: GamePhase;
     } }
   | { type: 'S2C_VOTE_COUNT_UPDATE'; payload: { received: number; needed: number } }
   | { type: 'S2C_TIE_DETECTED'; payload: { tiedPlayerIds: string[]; tiedPlayerNames: string[]; phase: GamePhase } }

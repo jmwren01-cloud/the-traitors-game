@@ -1054,5 +1054,3 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
   });
 }
 
-// Unused export kept only to satisfy the import in the unused context.ts stub.
-export type { Role };

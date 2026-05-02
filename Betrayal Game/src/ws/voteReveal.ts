@@ -63,6 +63,9 @@ export function startVoteRevealSequence(
         payload: {
           allVotes: votes,
           finalTally,
+          totalVotes: votes.length,
+          revealIndex: votes.length,
+          phase: 'VOTE_REVEAL',
         }
       }, games, playerConnections);
       return;
