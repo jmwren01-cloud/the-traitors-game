@@ -93,6 +93,42 @@ function cleanupExpiredDisconnections() {
 // Run cleanup every 15 seconds
 setInterval(cleanupExpiredDisconnections, 15000);
 
+function broadcastRecruitmentEvents(
+  sessionId: string,
+  result: game.MurderResult,
+  updatedGame: GameState
+) {
+  if (!result.recruitedPlayerId || !result.recruitedPlayerName) return;
+
+  const newTraitorIds = updatedGame.players
+    .filter((p) => p.isAlive && p.role === 'TRAITOR')
+    .map((p) => p.id);
+
+  const recruitedSocket = playerConnections.get(result.recruitedPlayerId);
+  if (recruitedSocket && recruitedSocket.readyState === WebSocket.OPEN) {
+    recruitedSocket.send(JSON.stringify({
+      type: 'S2C_YOU_WERE_RECRUITED',
+      payload: { traitorIds: newTraitorIds }
+    }));
+  }
+
+  updatedGame.players.forEach((p) => {
+    if (p.role === 'TRAITOR' && p.id !== result.recruitedPlayerId) {
+      const socket = playerConnections.get(p.id);
+      if (socket && socket.readyState === WebSocket.OPEN) {
+        socket.send(JSON.stringify({
+          type: 'S2C_PLAYER_RECRUITED',
+          payload: {
+            newTraitorId: result.recruitedPlayerId!,
+            newTraitorName: result.recruitedPlayerName!,
+            updatedTraitorIds: newTraitorIds
+          }
+        }));
+      }
+    }
+  });
+}
+
 function startVoteRevealSequence(sessionId: string) {
   if (activeRevealSequences.has(sessionId)) {
     return;
@@ -843,6 +879,8 @@ wss.on('connection', (ws: WebSocket) => {
             const result = game.resolveMurder(updatedGame);
             games.set(currentSessionId, result.game);
             
+            broadcastRecruitmentEvents(currentSessionId, result, result.game);
+
             if (result.blocked) {
               // Murder was blocked by shield
               broadcastToSession(currentSessionId, {
@@ -851,7 +889,9 @@ wss.on('connection', (ws: WebSocket) => {
                   phase: 'MORNING',
                   murderBlocked: true,
                   shieldedPlayerId: result.shieldedPlayerId,
-                  shieldedPlayerName: result.shieldedPlayerName
+                  shieldedPlayerName: result.shieldedPlayerName,
+                  recruitedPlayerId: result.recruitedPlayerId,
+                  recruitedPlayerName: result.recruitedPlayerName,
                 }
               });
             } else if (result.murderedPlayerId) {
@@ -874,7 +914,9 @@ wss.on('connection', (ws: WebSocket) => {
       if (event.type === 'C2S_RESOLVE_MURDER') {
         const result = game.resolveMurder(gameState);
         games.set(currentSessionId, result.game);
-        
+
+        broadcastRecruitmentEvents(currentSessionId, result, result.game);
+
         if (result.blocked) {
           // Murder was blocked by shield
           broadcastToSession(currentSessionId, {
@@ -883,7 +925,9 @@ wss.on('connection', (ws: WebSocket) => {
               phase: 'MORNING',
               murderBlocked: true,
               shieldedPlayerId: result.shieldedPlayerId,
-              shieldedPlayerName: result.shieldedPlayerName
+              shieldedPlayerName: result.shieldedPlayerName,
+              recruitedPlayerId: result.recruitedPlayerId,
+              recruitedPlayerName: result.recruitedPlayerName,
             }
           });
         } else if (result.murderedPlayerId) {
@@ -904,6 +948,7 @@ wss.on('connection', (ws: WebSocket) => {
         games.set(currentSessionId, updatedGame);
         
         const murderedPlayer = updatedGame.players.find((p) => p.id === updatedGame.lastMurderedPlayerId);
+        const recruitedPlayer = updatedGame.players.find((p) => p.id === updatedGame.lastRecruitedPlayerId);
         
         if (murderedPlayer) {
           broadcastToSession(currentSessionId, {
@@ -911,14 +956,18 @@ wss.on('connection', (ws: WebSocket) => {
             payload: {
               phase: 'MORNING',
               lastMurderedPlayerId: murderedPlayer.id,
-              lastMurderedPlayerName: murderedPlayer.name
+              lastMurderedPlayerName: murderedPlayer.name,
+              recruitedPlayerId: recruitedPlayer?.id,
+              recruitedPlayerName: recruitedPlayer?.name,
             }
           });
         } else {
           broadcastToSession(currentSessionId, {
             type: 'S2C_MORNING_STARTED',
             payload: {
-              phase: 'MORNING'
+              phase: 'MORNING',
+              recruitedPlayerId: recruitedPlayer?.id,
+              recruitedPlayerName: recruitedPlayer?.name,
             }
           });
         }
@@ -1072,6 +1121,26 @@ wss.on('connection', (ws: WebSocket) => {
             payload: { playerId: currentPlayerId, playerName: player.name }
           });
         }
+        return;
+      }
+
+      if (event.type === 'C2S_SUBMIT_RECRUITMENT') {
+        const updatedGame = game.submitRecruitment(gameState, currentPlayerId, event.payload.targetId);
+        games.set(currentSessionId, updatedGame);
+
+        const recruiter = updatedGame.players.find((p) => p.id === currentPlayerId);
+
+        updatedGame.players.forEach((p) => {
+          if (p.role === 'TRAITOR' && p.isAlive) {
+            const connection = playerConnections.get(p.id);
+            if (connection && connection.readyState === WebSocket.OPEN && recruiter) {
+              connection.send(JSON.stringify({
+                type: 'S2C_RECRUITMENT_SUBMITTED',
+                payload: { recruiterId: currentPlayerId, recruiterName: recruiter.name }
+              }));
+            }
+          }
+        });
         return;
       }
 

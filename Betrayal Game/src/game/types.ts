@@ -74,6 +74,7 @@ export interface Player {
   lastChallengeWinRound?: number;
   color?: string;
   avatar?: string;
+  recruitmentUsed?: boolean;
 }
 
 export interface Vote {
@@ -132,6 +133,7 @@ export interface RoundRecord {
   murderBlocked?: boolean;
   shieldedName?: string;
   shieldedRole?: Role;
+  recruitedName?: string;
 }
 
 export interface GameState {
@@ -165,6 +167,8 @@ export interface GameState {
   lastManualVotes: Record<string, string>;
   settings: GameSettings;
   challenge?: ChallengeState;
+  pendingRecruitmentTargetId?: string;
+  lastRecruitedPlayerId?: string;
 }
 
 // Client-to-Server Events
@@ -194,7 +198,8 @@ export type C2SEvent =
   | { type: 'C2S_SUBMIT_CHALLENGE_ANSWER'; payload: { answer: string | number } }
   | { type: 'C2S_CONTINUE_TO_ROUNDTABLE'; payload: Record<string, never> }
   | { type: 'C2S_REVEAL_SHIELD'; payload: Record<string, never> }
-  | { type: 'C2S_SET_AVATAR'; payload: { color?: string; avatar?: string } };
+  | { type: 'C2S_SET_AVATAR'; payload: { color?: string; avatar?: string } }
+  | { type: 'C2S_SUBMIT_RECRUITMENT'; payload: { targetId: string } };
 
 // Server-to-Client Events
 export type S2CEvent =
@@ -306,7 +311,12 @@ export type S2CEvent =
       murderBlocked?: boolean;
       shieldedPlayerId?: string;
       shieldedPlayerName?: string;
+      recruitedPlayerId?: string;
+      recruitedPlayerName?: string;
     } }
+  | { type: 'S2C_RECRUITMENT_SUBMITTED'; payload: { recruiterId: string; recruiterName: string } }
+  | { type: 'S2C_YOU_WERE_RECRUITED'; payload: { traitorIds: string[] } }
+  | { type: 'S2C_PLAYER_RECRUITED'; payload: { newTraitorId: string; newTraitorName: string; updatedTraitorIds: string[] } }
   | { type: 'S2C_CHALLENGE_STARTED'; payload: { 
       phase: GamePhase;
       challengeType: ChallengeType;

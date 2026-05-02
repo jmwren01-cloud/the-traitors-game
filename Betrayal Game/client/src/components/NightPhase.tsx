@@ -16,6 +16,9 @@ interface NightPhaseProps {
   murderedPlayer?: { id: string; name: string };
   murderBlocked?: { shieldedPlayerId: string; shieldedPlayerName: string };
   traitorIds?: string[];
+  myPlayerRecruitmentUsed?: boolean;
+  justRecruited?: boolean;
+  recruitedPlayer?: { id: string; name: string };
   onSend: (event: C2SEvent) => void;
 }
 
@@ -30,10 +33,15 @@ export function NightPhase({
   murderedPlayer,
   murderBlocked,
   traitorIds,
+  myPlayerRecruitmentUsed,
+  justRecruited,
+  recruitedPlayer,
   onSend,
 }: NightPhaseProps) {
   const [selectedTarget, setSelectedTarget] = useState<string | null>(null);
   const [hasVoted, setHasVoted] = useState(false);
+  const [selectedRecruitTarget, setSelectedRecruitTarget] = useState<string | null>(null);
+  const [hasSubmittedRecruitment, setHasSubmittedRecruitment] = useState(false);
   const { play } = useSoundContext();
   const nightSoundPlayedRef = useRef(false);
   const morningSoundPlayedRef = useRef(false);
@@ -85,6 +93,14 @@ export function NightPhase({
       vibrate('heavy');
       onSend({ type: 'C2S_SUBMIT_MURDER', payload: { targetId: selectedTarget } });
       setHasVoted(true);
+    }
+  };
+
+  const handleSubmitRecruitment = () => {
+    if (selectedRecruitTarget) {
+      vibrate('medium');
+      onSend({ type: 'C2S_SUBMIT_RECRUITMENT', payload: { targetId: selectedRecruitTarget } });
+      setHasSubmittedRecruitment(true);
     }
   };
 
@@ -156,6 +172,52 @@ export function NightPhase({
             )}
 
             {hasVoted && <p className={styles.waiting}>Waiting for other traitors... Murder will auto-resolve when all votes are in.</p>}
+
+            {!myPlayerRecruitmentUsed && (
+              <div className={styles.recruitSection}>
+                <h2 className={styles.sectionTitle}>🤝 Recruit a Faithful</h2>
+                <p className={styles.recruitSubtitle}>One-time ability — Convert a Faithful player to your side</p>
+
+                {hasSubmittedRecruitment ? (
+                  <p className={styles.waiting}>Recruitment submitted. They will join you after this night...</p>
+                ) : (
+                  <>
+                    <div className={styles.targetGrid}>
+                      {aliveFaithful.map((player) => {
+                        const colorHex = getColorHex(player.color);
+                        const avatarEmoji = getAvatarEmoji(player.avatar);
+                        return (
+                          <div
+                            key={player.id}
+                            className={`${styles.targetCard} ${styles.recruitTarget} ${selectedRecruitTarget === player.id ? styles.recruitSelected : ''}`}
+                            style={{ borderColor: selectedRecruitTarget === player.id ? colorHex : undefined }}
+                            onClick={() => setSelectedRecruitTarget(player.id)}
+                          >
+                            <div className={styles.avatar} style={{ background: colorHex, color: '#000' }}>
+                              {avatarEmoji}
+                            </div>
+                            <span className={styles.name}>{player.name}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <button
+                      className={styles.recruitBtn}
+                      onClick={handleSubmitRecruitment}
+                      disabled={!selectedRecruitTarget}
+                    >
+                      Recruit Player
+                    </button>
+                  </>
+                )}
+              </div>
+            )}
+
+            {myPlayerRecruitmentUsed && (
+              <div className={styles.recruitUsed}>
+                <span>🤝 Recruitment ability already used</span>
+              </div>
+            )}
           </div>
         </div>
       );
@@ -183,6 +245,26 @@ export function NightPhase({
   }
 
   if (phase === 'MORNING') {
+    if (justRecruited) {
+      return (
+        <div className={styles.container}>
+          <div className={`${styles.morningOverlay} ${styles.recruitedOverlay}`}>
+            <div className={styles.recruitedBanner}>
+              <div className={styles.recruitedIcon}>🔴</div>
+              <h1 className={styles.recruitedTitle}>You Have Been Recruited!</h1>
+              <p className={styles.recruitedMessage}>
+                A Traitor approached you in the night...<br />
+                You are now one of the <strong>Traitors</strong>.<br />
+                Help eliminate the Faithful without being discovered.
+              </p>
+              <p className={styles.recruitedHint}>Your role has changed. Work with your fellow Traitors!</p>
+            </div>
+            {!isHost && <p className={styles.waiting}>Waiting for host to continue...</p>}
+          </div>
+        </div>
+      );
+    }
+
     const murderedPlayerObj = murderedPlayer ? players.find((p) => p.id === murderedPlayer.id) : undefined;
     return (
       <div className={styles.container}>
@@ -210,6 +292,25 @@ export function NightPhase({
           ) : (
             <div className={styles.noDeathMessage}>
               <p>No one was murdered last night.</p>
+            </div>
+          )}
+
+          {recruitedPlayer && (
+            <div className={styles.recruitReveal}>
+              <div className={styles.recruitRevealIcon}>🤝</div>
+              {isTraitor ? (
+                <>
+                  <h3 className={styles.recruitRevealTitle}>{recruitedPlayer.name} has joined your ranks!</h3>
+                  <p className={styles.recruitRevealMessage}>They are now a Traitor.</p>
+                </>
+              ) : (
+                <>
+                  <h3 className={styles.recruitRevealTitle}>A player was recruited...</h3>
+                  <p className={styles.recruitRevealMessage}>
+                    <strong>{recruitedPlayer.name}</strong> has joined the Traitors.
+                  </p>
+                </>
+              )}
             </div>
           )}
 

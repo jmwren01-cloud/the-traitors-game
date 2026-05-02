@@ -362,6 +362,8 @@ export function gameStateReducer(state: GameState | null, msg: Msg): GameState |
         aliveTraitorCount: payload.aliveTraitorCount,
         murderVoteProgress: undefined,
         murderVoterIds: [],
+        justRecruited: undefined,
+        recruitedPlayer: undefined,
       } : null;
     }
 
@@ -395,6 +397,8 @@ export function gameStateReducer(state: GameState | null, msg: Msg): GameState |
         murderBlocked?: boolean;
         shieldedPlayerId?: string;
         shieldedPlayerName?: string;
+        recruitedPlayerId?: string;
+        recruitedPlayerName?: string;
       };
       return state ? {
         ...state,
@@ -404,6 +408,9 @@ export function gameStateReducer(state: GameState | null, msg: Msg): GameState |
           : undefined,
         murderBlocked: payload.murderBlocked
           ? { shieldedPlayerId: payload.shieldedPlayerId!, shieldedPlayerName: payload.shieldedPlayerName! }
+          : undefined,
+        recruitedPlayer: payload.recruitedPlayerId && payload.recruitedPlayerName
+          ? { id: payload.recruitedPlayerId, name: payload.recruitedPlayerName }
           : undefined,
       } : null;
     }
@@ -541,6 +548,43 @@ export function gameStateReducer(state: GameState | null, msg: Msg): GameState |
           phase: payload.phase as TimerState['phase'],
         },
       } : null;
+    }
+
+    case 'S2C_RECRUITMENT_SUBMITTED': {
+      const payload = msg.payload as { recruiterId: string; recruiterName: string };
+      if (!state) return null;
+      return {
+        ...state,
+        players: state.players.map((p) =>
+          p.id === payload.recruiterId ? { ...p, recruitmentUsed: true } : p
+        ),
+      };
+    }
+
+    case 'S2C_YOU_WERE_RECRUITED': {
+      const payload = msg.payload as { traitorIds: string[] };
+      if (!state) return null;
+      return {
+        ...state,
+        myRole: 'TRAITOR' as Role,
+        traitorIds: payload.traitorIds,
+        players: state.players.map((p) =>
+          p.id === state.myPlayerId ? { ...p, role: 'TRAITOR' as Role } : p
+        ),
+        justRecruited: true,
+      };
+    }
+
+    case 'S2C_PLAYER_RECRUITED': {
+      const payload = msg.payload as { newTraitorId: string; newTraitorName: string; updatedTraitorIds: string[] };
+      if (!state) return null;
+      return {
+        ...state,
+        traitorIds: payload.updatedTraitorIds,
+        players: state.players.map((p) =>
+          p.id === payload.newTraitorId ? { ...p, role: 'TRAITOR' as Role } : p
+        ),
+      };
     }
 
     default:

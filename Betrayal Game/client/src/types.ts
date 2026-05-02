@@ -58,6 +58,7 @@ export interface Player {
   shieldRevealed?: boolean;
   color?: string;
   avatar?: string;
+  recruitmentUsed?: boolean;
 }
 
 export interface Vote {
@@ -116,6 +117,7 @@ export interface RoundRecord {
   murderBlocked?: boolean;
   shieldedName?: string;
   shieldedRole?: Role;
+  recruitedName?: string;
 }
 
 export interface GameState {
@@ -156,6 +158,8 @@ export interface GameState {
   challenge?: ChallengeState;
   history?: RoundRecord[];
   murderVoterIds?: string[];
+  justRecruited?: boolean;
+  recruitedPlayer?: { id: string; name: string };
 }
 
 export type C2SEvent =
@@ -184,4 +188,5 @@ export type C2SEvent =
   | { type: 'C2S_SUBMIT_CHALLENGE_ANSWER'; payload: { answer: string | number } }
   | { type: 'C2S_CONTINUE_TO_ROUNDTABLE'; payload: Record<string, never> }
   | { type: 'C2S_REVEAL_SHIELD'; payload: Record<string, never> }
-  | { type: 'C2S_SET_AVATAR'; payload: { color?: string; avatar?: string } };
+  | { type: 'C2S_SET_AVATAR'; payload: { color?: string; avatar?: string } }
+  | { type: 'C2S_SUBMIT_RECRUITMENT'; payload: { targetId: string } };

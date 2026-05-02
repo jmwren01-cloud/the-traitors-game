@@ -157,6 +157,9 @@ function App() {
           murderedPlayer={gameState?.murderedPlayer}
           murderBlocked={gameState?.murderBlocked}
           traitorIds={gameState?.traitorIds}
+          myPlayerRecruitmentUsed={myPlayer?.recruitmentUsed}
+          justRecruited={gameState?.justRecruited}
+          recruitedPlayer={gameState?.recruitedPlayer}
           onSend={send}
         />
         {chatBox}

@@ -482,6 +482,148 @@
   margin-top: 15px;
 }
 
+.recruitSection {
+  margin-top: 2rem;
+  padding: 1.25rem;
+  background: rgba(255, 215, 0, 0.07);
+  border: 1px solid rgba(255, 215, 0, 0.25);
+  border-radius: 12px;
+  width: 100%;
+  max-width: 500px;
+}
+
+.recruitSubtitle {
+  font-size: 0.85rem;
+  color: #aaa;
+  margin-bottom: 1rem;
+  text-align: center;
+}
+
+.recruitTarget {
+  border-color: rgba(255, 215, 0, 0.2) !important;
+}
+
+.recruitTarget:hover {
+  border-color: rgba(255, 215, 0, 0.6) !important;
+  background: rgba(255, 215, 0, 0.05);
+}
+
+.recruitSelected {
+  border-color: gold !important;
+  background: rgba(255, 215, 0, 0.1) !important;
+  box-shadow: 0 0 12px rgba(255, 215, 0, 0.3);
+}
+
+.recruitBtn {
+  margin-top: 1rem;
+  padding: 0.75rem 2rem;
+  background: linear-gradient(135deg, #b8860b, #ffd700);
+  color: #000;
+  border: none;
+  border-radius: 8px;
+  font-size: 1rem;
+  font-weight: 700;
+  cursor: pointer;
+  width: 100%;
+  max-width: 300px;
+}
+
+.recruitBtn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.recruitUsed {
+  margin-top: 1.5rem;
+  padding: 0.6rem 1.2rem;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 8px;
+  color: #777;
+  font-size: 0.85rem;
+  font-style: italic;
+}
+
+.recruitedOverlay {
+  background: linear-gradient(135deg, #1a0000 0%, #3d0000 100%) !important;
+}
+
+.recruitedBanner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+  padding: 2rem;
+  background: rgba(139, 0, 0, 0.2);
+  border: 2px solid rgba(139, 0, 0, 0.6);
+  border-radius: 16px;
+  max-width: 480px;
+  text-align: center;
+  animation: recruitedPulse 2s ease-in-out infinite;
+}
+
+@keyframes recruitedPulse {
+  0%, 100% { box-shadow: 0 0 20px rgba(139, 0, 0, 0.3); }
+  50% { box-shadow: 0 0 40px rgba(139, 0, 0, 0.7); }
+}
+
+.recruitedIcon {
+  font-size: 4rem;
+  animation: spin 4s linear infinite;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.recruitedTitle {
+  font-size: 2rem;
+  color: #ff4444;
+  text-shadow: 0 0 20px rgba(255, 68, 68, 0.5);
+  margin: 0;
+}
+
+.recruitedMessage {
+  color: #eee;
+  line-height: 1.7;
+  font-size: 1rem;
+  margin: 0;
+}
+
+.recruitedHint {
+  color: #ff9999;
+  font-style: italic;
+  font-size: 0.9rem;
+  margin: 0;
+}
+
+.recruitReveal {
+  margin-top: 1.5rem;
+  padding: 1rem 1.5rem;
+  background: rgba(255, 215, 0, 0.08);
+  border: 1px solid rgba(255, 215, 0, 0.3);
+  border-radius: 12px;
+  text-align: center;
+  max-width: 420px;
+}
+
+.recruitRevealIcon {
+  font-size: 2rem;
+  margin-bottom: 0.5rem;
+}
+
+.recruitRevealTitle {
+  color: #ffd700;
+  margin: 0 0 0.3rem 0;
+  font-size: 1.1rem;
+}
+
+.recruitRevealMessage {
+  color: #ccc;
+  margin: 0;
+  font-size: 0.95rem;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .traitorAvatar,
   .targetCard.selected,
@@ -489,7 +631,9 @@
   .sleepingIcon,
   .waiting,
   .deathReveal,
-  .shieldIcon {
+  .shieldIcon,
+  .recruitedBanner,
+  .recruitedIcon {
     animation: none;
   }
 }

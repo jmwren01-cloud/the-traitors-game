@@ -566,6 +566,8 @@ function buildRoundRecord(game: GameState): RoundRecord {
   const murderedPlayer = game.players.find((p: Player) => p.id === game.lastMurderedPlayerId);
   const shieldedPlayer = game.players.find((p: Player) => p.id === game.lastShieldedPlayerId);
 
+  const recruitedPlayer = game.players.find((p: Player) => p.id === game.lastRecruitedPlayerId);
+
   return {
     round: game.currentRound,
     votes,
@@ -576,6 +578,7 @@ function buildRoundRecord(game: GameState): RoundRecord {
     murderBlocked: game.lastMurderBlocked ?? false,
     shieldedName: shieldedPlayer?.name,
     shieldedRole: shieldedPlayer?.role,
+    recruitedName: recruitedPlayer?.name,
   };
 }
 
@@ -594,6 +597,7 @@ export function checkWinCondition(game: GameState): GameState {
       ...game,
       history: [...game.history, record],
       lastRoundVotes: undefined,
+      lastRecruitedPlayerId: undefined,
       phase: 'GAME_END',
       winner: 'TRAITORS'
     };
@@ -606,6 +610,7 @@ export function checkWinCondition(game: GameState): GameState {
       ...game,
       history: [...game.history, record],
       lastRoundVotes: undefined,
+      lastRecruitedPlayerId: undefined,
       phase: 'GAME_END',
       winner: 'FAITHFUL'
     };
@@ -640,7 +645,43 @@ export function startNight(game: GameState): GameState {
   return {
     ...game,
     phase: 'NIGHT',
-    murderVotes: []
+    murderVotes: [],
+    pendingRecruitmentTargetId: undefined,
+    lastRecruitedPlayerId: undefined,
+  };
+}
+
+export function submitRecruitment(game: GameState, recruiterId: string, targetId: string): GameState {
+  if (game.phase !== 'NIGHT') {
+    throw new Error('Can only recruit during the night phase');
+  }
+
+  const recruiter = game.players.find((p: Player) => p.id === recruiterId);
+  if (!recruiter || !recruiter.isAlive || recruiter.role !== 'TRAITOR') {
+    throw new Error('Only alive traitors can recruit');
+  }
+
+  if (recruiter.recruitmentUsed) {
+    throw new Error('You have already used your recruitment ability');
+  }
+
+  if (game.pendingRecruitmentTargetId) {
+    throw new Error('A recruitment is already pending this night');
+  }
+
+  const target = game.players.find((p: Player) => p.id === targetId);
+  if (!target || !target.isAlive || target.role !== 'FAITHFUL') {
+    throw new Error('Target must be an alive Faithful player');
+  }
+
+  const updatedPlayers = game.players.map((p: Player) =>
+    p.id === recruiterId ? { ...p, recruitmentUsed: true } : p
+  );
+
+  return {
+    ...game,
+    players: updatedPlayers,
+    pendingRecruitmentTargetId: targetId,
   };
 }
 
@@ -683,6 +724,8 @@ export interface MurderResult {
   shieldedPlayerName?: string;
   murderedPlayerId?: string;
   murderedPlayerName?: string;
+  recruitedPlayerId?: string;
+  recruitedPlayerName?: string;
 }
 
 /**
@@ -734,10 +777,32 @@ export function resolveMurder(game: GameState): MurderResult {
     throw new Error('Target player not found');
   }
 
+  // Resolve pending recruitment: flip role before murder so the new traitor is
+  // never eligible to be murdered (murder already targets a FAITHFUL player).
+  let playersWithRecruitment = game.players;
+  let recruitedPlayerId: string | undefined;
+  let recruitedPlayerName: string | undefined;
+
+  if (game.pendingRecruitmentTargetId) {
+    const recruitTarget = game.players.find(
+      (p: Player) =>
+        p.id === game.pendingRecruitmentTargetId && p.isAlive && p.role === 'FAITHFUL'
+    );
+    if (recruitTarget) {
+      recruitedPlayerId = recruitTarget.id;
+      recruitedPlayerName = recruitTarget.name;
+      playersWithRecruitment = game.players.map((p: Player) =>
+        p.id === recruitedPlayerId ? { ...p, role: 'TRAITOR' as Role } : p
+      );
+    }
+  }
+
+  // Refresh target after possible role flip (e.g. murder target = recruit target is an edge case)
+  const finalTarget = playersWithRecruitment.find((p: Player) => p.id === targetId)!;
+
   // Check if target has a shield
-  if (targetPlayer.hasShield) {
-    // Murder blocked! Consume the shield
-    const updatedPlayers = game.players.map((p: Player) =>
+  if (finalTarget.hasShield) {
+    const updatedPlayers = playersWithRecruitment.map((p: Player) =>
       p.id === targetId ? { ...p, hasShield: false, shieldRevealed: false } : p
     );
 
@@ -748,17 +813,21 @@ export function resolveMurder(game: GameState): MurderResult {
         lastMurderedPlayerId: undefined,
         lastMurderBlocked: true,
         lastShieldedPlayerId: targetId,
+        lastRecruitedPlayerId: recruitedPlayerId,
+        pendingRecruitmentTargetId: undefined,
         murderVotes: [],
         phase: 'MORNING'
       },
       blocked: true,
       shieldedPlayerId: targetId,
-      shieldedPlayerName: targetPlayer.name
+      shieldedPlayerName: finalTarget.name,
+      recruitedPlayerId,
+      recruitedPlayerName,
     };
   }
 
   // No shield - murder happens
-  const updatedPlayers = game.players.map((p: Player) =>
+  const updatedPlayers = playersWithRecruitment.map((p: Player) =>
     p.id === targetId ? { ...p, isAlive: false } : p
   );
 
@@ -769,12 +838,16 @@ export function resolveMurder(game: GameState): MurderResult {
       lastMurderedPlayerId: targetId,
       lastMurderBlocked: false,
       lastShieldedPlayerId: undefined,
+      lastRecruitedPlayerId: recruitedPlayerId,
+      pendingRecruitmentTargetId: undefined,
       murderVotes: [],
       phase: 'MORNING'
     },
     blocked: false,
     murderedPlayerId: targetId,
-    murderedPlayerName: targetPlayer.name
+    murderedPlayerName: finalTarget.name,
+    recruitedPlayerId,
+    recruitedPlayerName,
   };
 }
 
@@ -834,6 +907,7 @@ export function continueToDayPhase(game: GameState): GameState {
       history: newHistory,
       lastRoundVotes: undefined,
       lastShieldedPlayerId: undefined,
+      lastRecruitedPlayerId: undefined,
       phase: 'CHALLENGE',
       currentRound: nextRound,
       lastMurderBlocked: false
@@ -846,6 +920,7 @@ export function continueToDayPhase(game: GameState): GameState {
     history: newHistory,
     lastRoundVotes: undefined,
     lastShieldedPlayerId: undefined,
+    lastRecruitedPlayerId: undefined,
     phase: 'ROUNDTABLE',
     currentRound: nextRound,
     lastMurderBlocked: false

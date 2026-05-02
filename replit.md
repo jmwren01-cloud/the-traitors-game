@@ -147,6 +147,17 @@ Start workflow: `cd "Betrayal Game" && npm run dev`
 - Chat: dead players keep general chat (read + write); traitor chat access already revoked by `isAlive` check
 - Key files: Spectator.tsx, Spectator.module.css, App.tsx (spectator routing block)
 
+## Traitor Recruitment Ability (Completed 2026-05-02)
+- Each Traitor gets a one-time ability to secretly recruit a Faithful player during the NIGHT phase
+- Recruitment panel appears in the traitor night UI below the murder voting section; shows alive Faithful players as targets
+- Server: `submitRecruitment()` validates eligibility and sets `pendingRecruitmentTargetId`; resolved inside `resolveMurder()` which flips the player's role to TRAITOR
+- Only one recruitment per game per traitor (`recruitmentUsed` flag on Player), only one recruitment per night (server enforces via `pendingRecruitmentTargetId`)
+- WebSocket events: `C2S_SUBMIT_RECRUITMENT` → `S2C_RECRUITMENT_SUBMITTED` (to all traitors), `S2C_YOU_WERE_RECRUITED` (to the convert), `S2C_PLAYER_RECRUITED` (to existing traitors)
+- Morning reveal: recruited player sees "You Have Been Recruited!" fullscreen overlay (dark red, pulsing); all others see a recruitment announcement with the player's name; traitors see "[name] has joined your ranks!"
+- `S2C_MORNING_STARTED` now carries `recruitedPlayerId/recruitedPlayerName` for public morning announcement
+- Game history: `RoundRecord.recruitedName` captured and shown in the post-game timeline with 🤝 icon
+- Key files: `src/game/manager.ts` (submitRecruitment, resolveMurder, buildRoundRecord), `src/index.ts` (broadcastRecruitmentEvents, C2S_SUBMIT_RECRUITMENT handler), `client/src/hooks/gameStateReducer.ts` (3 new cases), `client/src/components/NightPhase.tsx` + `NightPhase.module.css`, `client/src/components/GameEnd.tsx` + `GameEnd.module.css`
+
 ## Remaining Tasks
 - (none currently)
 

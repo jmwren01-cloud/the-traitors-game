@@ -103,6 +103,17 @@ function RoundCard({ record, index }: { record: RoundRecord; index: number }) {
           </div>
         )}
       </div>
+
+      {record.recruitedName && (
+        <div className={styles.outcomeRow}>
+          <div className={styles.recruitedOutcome}>
+            <span className={styles.outcomeIcon}>🤝</span>
+            <span className={styles.outcomeText}>
+              <strong>{record.recruitedName}</strong> was recruited and joined the Traitors
+            </span>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
