@@ -28,6 +28,7 @@ export function Challenge({
   const [tapTime, setTapTime] = useState<number | null>(null);
   const { play } = useSoundContext();
   const soundPlayedRef = useRef(false);
+  const resultSoundPlayedRef = useRef(false);
 
   useEffect(() => {
     setHasAnswered(false);
@@ -35,7 +36,23 @@ export function Challenge({
     setShowingPlayers(true);
     setTapTime(null);
     soundPlayedRef.current = false;
+    resultSoundPlayedRef.current = false;
   }, [challenge?.type, challenge?.startTime]);
+
+  // Result-phase sound cue. Plays exactly once per challenge — a triumphant
+  // chime if someone won and a low fizzle if no one did. Without this, the
+  // CHALLENGE_RESULT screen popped in silently.
+  useEffect(() => {
+    if (resultSoundPlayedRef.current) return;
+    if (phase !== 'CHALLENGE_RESULT' && !challenge?.completed) return;
+    if (!challenge) return;
+    resultSoundPlayedRef.current = true;
+    if (challenge.winnerName) {
+      play('faithfulWin');
+    } else {
+      play('lowChime');
+    }
+  }, [phase, challenge, play]);
 
   useEffect(() => {
     if (challenge && !soundPlayedRef.current && phase === 'CHALLENGE') {

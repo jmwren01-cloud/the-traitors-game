@@ -78,13 +78,15 @@ function actionPrompt(opts: PromptOpts): string {
       }
       return 'Tied vote — choose between the tied players.';
     case 'VOTE_REVEAL':
-    case 'TIE_DETECTED':
-    case 'TIEBREAKER_REVEAL':
       return 'Votes are being revealed…';
+    case 'TIE_DETECTED':
+      return 'The vote is tied. A revote is coming.';
+    case 'TIEBREAKER_REVEAL':
+      return 'A tiebreaker decides the banishment…';
     case 'BANISH_REVEAL':
       return banishedName
         ? `${banishedName} has been banished.`
-        : 'A decision has been made.';
+        : 'The banishment is being announced…';
     case 'CHECK_WIN':
       return 'Tallying the outcome…';
     case 'NIGHT':
