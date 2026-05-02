@@ -7,7 +7,8 @@ const activeRevealSequences = new Map<string, NodeJS.Timeout>();
 export function startVoteRevealSequence(
   sessionId: string,
   games: Map<string, GameState>,
-  playerConnections: Map<string, WebSocket>
+  playerConnections: Map<string, WebSocket>,
+  setGame: (state: GameState) => void
 ): void {
   if (activeRevealSequences.has(sessionId)) {
     return;
@@ -108,7 +109,7 @@ export function startVoteRevealSequence(
       revealedVotes: votes.slice(0, revealIndex + 1),
       currentTally: tallyArray
     };
-    games.set(sessionId, updatedGame);
+    setGame(updatedGame);
 
     revealIndex++;
   };

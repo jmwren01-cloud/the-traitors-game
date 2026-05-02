@@ -34,14 +34,14 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
 
       if (event.type === 'C2S_CREATE_GAME') {
         const gameState = game.createGame(event.payload.playerName);
-        games.set(gameState.sessionId, gameState);
+        setGame(gameState);
 
         currentPlayerId = gameState.hostId;
         currentSessionId = gameState.sessionId;
         playerConnections.set(currentPlayerId, ws);
 
         const sessionToken = generateSessionToken();
-        sessionTokens.set(sessionToken, { playerId: currentPlayerId, sessionId: currentSessionId });
+        setToken(sessionToken, { playerId: currentPlayerId, sessionId: currentSessionId });
 
         const response: S2CEvent = {
           type: 'S2C_GAME_CREATED',
@@ -69,14 +69,14 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
         }
 
         const { game: updatedGame, playerId } = game.addPlayer(gameState, event.payload.playerName);
-        games.set(event.payload.sessionId, updatedGame);
+        setGame(updatedGame);
 
         currentPlayerId = playerId;
         currentSessionId = event.payload.sessionId;
         playerConnections.set(playerId, ws);
 
         const sessionToken = generateSessionToken();
-        sessionTokens.set(sessionToken, { playerId, sessionId: event.payload.sessionId });
+        setToken(sessionToken, { playerId, sessionId: event.payload.sessionId });
 
         const joinResponse: S2CEvent = {
           type: 'S2C_GAME_JOINED',
@@ -108,14 +108,14 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
         const gameState = games.get(tokenData.sessionId);
         if (!gameState) {
           sendError(ws, 'Game no longer exists');
-          sessionTokens.delete(event.payload.sessionToken);
+          removeToken(event.payload.sessionToken);
           return;
         }
 
         const player = gameState.players.find((p) => p.id === tokenData.playerId);
         if (!player) {
           sendError(ws, 'Player not found in game');
-          sessionTokens.delete(event.payload.sessionToken);
+          removeToken(event.payload.sessionToken);
           return;
         }
 
@@ -131,7 +131,7 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
             p.id === currentPlayerId ? { ...p, isConnected: true } : p
           )
         };
-        games.set(currentSessionId, updatedGame);
+        setGame(updatedGame);
 
         const traitorIds = player.role === 'TRAITOR' ? game.getTraitorIds(updatedGame) : undefined;
 
@@ -238,7 +238,7 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
         }
 
         const updatedGame = game.updateSettings(gameState, event.payload.settings);
-        games.set(currentSessionId, updatedGame);
+        setGame(updatedGame);
 
         broadcast(currentSessionId, {
           type: 'S2C_SETTINGS_UPDATED',
@@ -254,7 +254,7 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
         }
 
         const updatedGame = { ...gameState, phase: 'ROLE_ASSIGN' as const };
-        games.set(currentSessionId, updatedGame);
+        setGame(updatedGame);
 
         broadcast(currentSessionId, {
           type: 'S2C_GAME_STARTED',
@@ -265,7 +265,7 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
 
       if (event.type === 'C2S_ASSIGN_ROLES') {
         const updatedGame = game.assignRoles(gameState);
-        games.set(currentSessionId, updatedGame);
+        setGame(updatedGame);
 
         broadcast(currentSessionId, {
           type: 'S2C_ROLES_ASSIGNED',
@@ -296,7 +296,7 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
 
       if (event.type === 'C2S_START_ROUNDTABLE') {
         const updatedGame = game.startRoundtable(gameState);
-        games.set(currentSessionId, updatedGame);
+        setGame(updatedGame);
 
         broadcast(currentSessionId, {
           type: 'S2C_ROUNDTABLE_STARTED',
@@ -306,7 +306,7 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
         const timer = game.createTimer('ROUNDTABLE', updatedGame.settings);
         if (timer) {
           const gameWithTimer = { ...updatedGame, timer };
-          games.set(currentSessionId, gameWithTimer);
+          setGame(gameWithTimer);
           broadcast(currentSessionId, {
             type: 'S2C_TIMER_UPDATE',
             payload: { endTime: timer.endTime, duration: timer.duration, phase: 'ROUNDTABLE' }
@@ -317,7 +317,7 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
 
       if (event.type === 'C2S_START_VOTING') {
         const updatedGame = game.startVoting(gameState);
-        games.set(currentSessionId, updatedGame);
+        setGame(updatedGame);
 
         broadcast(currentSessionId, {
           type: 'S2C_VOTING_STARTED',
@@ -327,7 +327,7 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
         const timer = game.createTimer('VOTING', updatedGame.settings);
         if (timer) {
           const gameWithTimer = { ...updatedGame, timer };
-          games.set(currentSessionId, gameWithTimer);
+          setGame(gameWithTimer);
           broadcast(currentSessionId, {
             type: 'S2C_TIMER_UPDATE',
             payload: { endTime: timer.endTime, duration: timer.duration, phase: 'VOTING' }
@@ -338,7 +338,7 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
 
       if (event.type === 'C2S_START_REVOTE') {
         const updatedGame = game.startRevote(gameState);
-        games.set(currentSessionId, updatedGame);
+        setGame(updatedGame);
 
         broadcast(currentSessionId, {
           type: 'S2C_REVOTE_STARTED',
@@ -348,7 +348,7 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
         const timer = game.createTimer('REVOTE', updatedGame.settings);
         if (timer) {
           const gameWithTimer = { ...updatedGame, timer };
-          games.set(currentSessionId, gameWithTimer);
+          setGame(gameWithTimer);
           broadcast(currentSessionId, {
             type: 'S2C_TIMER_UPDATE',
             payload: { endTime: timer.endTime, duration: timer.duration, phase: 'REVOTE' }
@@ -381,7 +381,7 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
           event.payload.targetId,
           reasonText
         );
-        games.set(currentSessionId, updatedGame);
+        setGame(updatedGame);
 
         broadcast(currentSessionId, {
           type: 'S2C_VOTE_SUBMITTED',
@@ -399,7 +399,7 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
         if (voteCount >= alivePlayerCount) {
           const lockedGame = { ...updatedGame, votingLocked: true };
           const revealedGame = game.revealVotes(lockedGame);
-          games.set(currentSessionId, revealedGame);
+          setGame(revealedGame);
 
           startVoteRevealSequence(currentSessionId, games, playerConnections);
         }
@@ -436,7 +436,7 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
 
         const lockedGame = { ...gameWithAutoVotes, votingLocked: true };
         const revealedGame = game.revealVotes(lockedGame);
-        games.set(currentSessionId, revealedGame);
+        setGame(revealedGame);
 
         startVoteRevealSequence(currentSessionId, games, playerConnections);
         return;
@@ -444,7 +444,7 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
 
       if (event.type === 'C2S_REVEAL_VOTES') {
         const updatedGame = game.revealVotes(gameState);
-        games.set(currentSessionId, updatedGame);
+        setGame(updatedGame);
 
         broadcast(currentSessionId, {
           type: 'S2C_VOTES_REVEALED',
@@ -455,7 +455,7 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
 
       if (event.type === 'C2S_BANISH_PLAYER') {
         const result = game.banishPlayer(gameState);
-        games.set(currentSessionId, result.game);
+        setGame(result.game);
 
         if (result.isTie && result.tiedPlayerIds) {
           const tiedPlayerNames = result.tiedPlayerIds.map((id) => {
@@ -523,7 +523,7 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
         }
 
         const updatedGame = game.submitVote(gameState, currentPlayerId, event.payload.targetId);
-        games.set(currentSessionId, updatedGame);
+        setGame(updatedGame);
 
         broadcast(currentSessionId, {
           type: 'S2C_VOTE_SUBMITTED',
@@ -540,7 +540,7 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
 
         if (voteCount >= alivePlayerCount) {
           const revealedGame = game.revealVotes(updatedGame);
-          games.set(currentSessionId, revealedGame);
+          setGame(revealedGame);
 
           broadcast(currentSessionId, {
             type: 'S2C_VOTES_REVEALED',
@@ -552,7 +552,7 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
 
       if (event.type === 'C2S_CHECK_WIN') {
         const updatedGame = game.checkWinCondition(gameState);
-        games.set(currentSessionId, updatedGame);
+        setGame(updatedGame);
 
         if (updatedGame.phase === 'GAME_END' && updatedGame.winner) {
           const aliveTraitors = updatedGame.players.filter((p) => p.isAlive && p.role === 'TRAITOR').length;
@@ -578,7 +578,7 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
             const timer = game.createTimer('ROUNDTABLE', updatedGame.settings);
             if (timer) {
               const gameWithTimer = { ...updatedGame, timer };
-              games.set(currentSessionId, gameWithTimer);
+              setGame(gameWithTimer);
               broadcast(currentSessionId, {
                 type: 'S2C_TIMER_UPDATE',
                 payload: { endTime: timer.endTime, duration: timer.duration, phase: 'ROUNDTABLE' }
@@ -591,7 +591,7 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
 
       if (event.type === 'C2S_START_NIGHT') {
         const updatedGame = game.startNight(gameState);
-        games.set(currentSessionId, updatedGame);
+        setGame(updatedGame);
 
         const aliveTraitorCount = game.getAliveTraitorCount(updatedGame);
 
@@ -607,7 +607,7 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
         const timer = game.createTimer('NIGHT', updatedGame.settings);
         if (timer) {
           const gameWithTimer = { ...updatedGame, timer };
-          games.set(currentSessionId, gameWithTimer);
+          setGame(gameWithTimer);
           broadcast(currentSessionId, {
             type: 'S2C_TIMER_UPDATE',
             payload: { endTime: timer.endTime, duration: timer.duration, phase: 'NIGHT' }
@@ -618,7 +618,7 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
 
       if (event.type === 'C2S_SUBMIT_MURDER') {
         const updatedGame = game.submitMurder(gameState, currentPlayerId, event.payload.targetId);
-        games.set(currentSessionId, updatedGame);
+        setGame(updatedGame);
 
         const progress = game.getMurderVoteProgress(updatedGame);
 
@@ -642,7 +642,7 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
         if (progress.received >= progress.needed && updatedGame.phase === 'NIGHT') {
           try {
             const result = game.resolveMurder(updatedGame);
-            games.set(currentSessionId, result.game);
+            setGame(result.game);
 
             broadcastRecruitmentEvents(result, result.game, playerConnections);
 
@@ -683,7 +683,7 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
 
       if (event.type === 'C2S_RESOLVE_MURDER') {
         const result = game.resolveMurder(gameState);
-        games.set(currentSessionId, result.game);
+        setGame(result.game);
 
         broadcastRecruitmentEvents(result, result.game, playerConnections);
 
@@ -720,7 +720,7 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
 
       if (event.type === 'C2S_START_MORNING') {
         const updatedGame = game.startMorning(gameState);
-        games.set(currentSessionId, updatedGame);
+        setGame(updatedGame);
 
         const murderedPlayer = updatedGame.players.find((p) => p.id === updatedGame.lastMurderedPlayerId);
         const recruitedPlayer = updatedGame.players.find((p) => p.id === updatedGame.lastRecruitedPlayerId);
@@ -753,7 +753,7 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
 
       if (event.type === 'C2S_CONTINUE_TO_DAY') {
         const updatedGame = game.continueToDayPhase(gameState);
-        games.set(currentSessionId, updatedGame);
+        setGame(updatedGame);
 
         if (updatedGame.phase === 'GAME_END' && updatedGame.winner) {
           const aliveTraitors = updatedGame.players.filter((p) => p.isAlive && p.role === 'TRAITOR').length;
@@ -771,7 +771,7 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
           });
         } else if (updatedGame.phase === 'CHALLENGE') {
           const challengeResult = game.createChallenge(updatedGame);
-          games.set(currentSessionId, challengeResult.game);
+          setGame(challengeResult.game);
 
           const challenge = challengeResult.challenge;
           broadcast(currentSessionId, {
@@ -817,7 +817,7 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
         }
 
         const result = game.submitChallengeAnswer(gameState, currentPlayerId, event.payload.answer);
-        games.set(currentSessionId, result.game);
+        setGame(result.game);
 
         broadcast(currentSessionId, {
           type: 'S2C_CHALLENGE_ANSWER_RECEIVED',
@@ -826,7 +826,7 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
 
         if (result.isWinner && result.game.challenge) {
           const resolution = game.resolveChallenge(result.game);
-          games.set(currentSessionId, resolution.game);
+          setGame(resolution.game);
 
           broadcast(currentSessionId, {
             type: 'S2C_CHALLENGE_RESULT',
@@ -846,7 +846,7 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
         if (gameState.phase !== 'CHALLENGE_RESULT') {
           if (gameState.phase === 'CHALLENGE' && gameState.challenge?.type === 'TIME_ESTIMATE') {
             const resolution = game.resolveChallenge(gameState);
-            games.set(currentSessionId, resolution.game);
+            setGame(resolution.game);
 
             broadcast(currentSessionId, {
               type: 'S2C_CHALLENGE_RESULT',
@@ -865,7 +865,7 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
         }
 
         const updatedGame = game.continueToRoundtable(gameState);
-        games.set(currentSessionId, updatedGame);
+        setGame(updatedGame);
 
         broadcast(currentSessionId, {
           type: 'S2C_ROUNDTABLE_STARTED',
@@ -875,7 +875,7 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
         const timer = game.createTimer('ROUNDTABLE', updatedGame.settings);
         if (timer) {
           const gameWithTimer = { ...updatedGame, timer };
-          games.set(currentSessionId, gameWithTimer);
+          setGame(gameWithTimer);
           broadcast(currentSessionId, {
             type: 'S2C_TIMER_UPDATE',
             payload: { endTime: timer.endTime, duration: timer.duration, phase: 'ROUNDTABLE' }
@@ -886,7 +886,7 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
 
       if (event.type === 'C2S_REVEAL_SHIELD') {
         const updatedGame = game.revealShield(gameState, currentPlayerId);
-        games.set(currentSessionId, updatedGame);
+        setGame(updatedGame);
 
         const player = updatedGame.players.find((p) => p.id === currentPlayerId);
         if (player) {
@@ -900,7 +900,7 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
 
       if (event.type === 'C2S_SUBMIT_RECRUITMENT') {
         const updatedGame = game.submitRecruitment(gameState, currentPlayerId, event.payload.targetId);
-        games.set(currentSessionId, updatedGame);
+        setGame(updatedGame);
 
         const recruiter = updatedGame.players.find((p) => p.id === currentPlayerId);
 
@@ -925,7 +925,7 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
           event.payload.color,
           event.payload.avatar
         );
-        games.set(currentSessionId, updatedGame);
+        setGame(updatedGame);
         broadcast(currentSessionId, {
           type: 'S2C_AVATAR_UPDATED',
           payload: { players: updatedGame.players }
@@ -974,7 +974,7 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
           ...gameState,
           messages: [...gameState.messages, chatMessage]
         };
-        games.set(currentSessionId, updatedGame);
+        setGame(updatedGame);
 
         if (requestedChannel === 'traitor') {
           gameState.players.forEach((p) => {
@@ -1029,7 +1029,7 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
         }
 
         if (game.isGameEmpty(updatedGame)) {
-          games.delete(currentSessionId);
+          removeGame(currentSessionId);
           console.log(`Game ${currentSessionId} deleted - all players disconnected`);
           return;
         }
@@ -1043,7 +1043,7 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
           }
         }
 
-        games.set(currentSessionId, updatedGame);
+        setGame(updatedGame);
 
         broadcast(currentSessionId, {
           type: 'S2C_PLAYER_DISCONNECTED',

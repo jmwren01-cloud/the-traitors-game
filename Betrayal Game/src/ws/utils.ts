@@ -34,14 +34,14 @@ export function generateSessionToken(): string {
 
 export function cleanupExpiredDisconnections(
   disconnectedPlayers: Map<string, { playerId: string; sessionId: string; disconnectedAt: number }>,
-  sessionTokens: Map<string, { playerId: string; sessionId: string }>,
+  removeToken: (token: string) => void,
   gracePeriodMs = 60000
 ): void {
   const now = Date.now();
   for (const [token, data] of disconnectedPlayers.entries()) {
     if (now - data.disconnectedAt > gracePeriodMs) {
       disconnectedPlayers.delete(token);
-      sessionTokens.delete(token);
+      removeToken(token);
       console.log(`Session token expired for player ${data.playerId}`);
     }
   }

@@ -1,0 +1,6 @@
+node_modules/
+.DS_Store
+*.log
+
+# SQLite persistence directory (game state DB)
+Betrayal Game/data/
