@@ -193,4 +193,54 @@ export type C2SEvent =
   | { type: 'C2S_CONTINUE_TO_ROUNDTABLE'; payload: Record<string, never> }
   | { type: 'C2S_REVEAL_SHIELD'; payload: Record<string, never> }
   | { type: 'C2S_SET_AVATAR'; payload: { color?: string; avatar?: string } }
-  | { type: 'C2S_SUBMIT_RECRUITMENT'; payload: { targetId: string } };
+  | { type: 'C2S_SUBMIT_RECRUITMENT'; payload: { targetId: string } }
+  | { type: 'C2S_IDENTIFY'; payload: { deviceToken: string; playerName: string } }
+  | { type: 'C2S_GET_PLAYER_STATS'; payload: { deviceToken: string } }
+  | { type: 'C2S_GET_LEADERBOARD'; payload: { metric: 'winRate' | 'gamesPlayed' | 'traitorWins' } }
+  | { type: 'C2S_GET_GLOBAL_STATS'; payload: Record<string, never> };
+
+// ============= Wave 2 Prompt 2: Stats payload shapes (mirrors server) =============
+
+export interface PlayerStatsPayload {
+  gamesPlayed: number;
+  winsAsTraitor: number;
+  lossesAsTraitor: number;
+  winsAsFaithful: number;
+  lossesAsFaithful: number;
+  totalSurvived: number;
+  totalBanished: number;
+  totalMurdered: number;
+  totalVotesCast: number;
+  totalVotesReceived: number;
+  winRate: number;
+  traitorWinRate: number;
+  faithfulWinRate: number;
+  averageRoundsPlayed: number;
+  recentGames: GameSummaryPayload[];
+}
+
+export interface GameSummaryPayload {
+  gameId: string;
+  sessionId: string;
+  endedAt: number;
+  winner: 'TRAITORS' | 'FAITHFUL';
+  role: 'TRAITOR' | 'FAITHFUL';
+  outcome: 'WON' | 'LOST';
+  playerCount: number;
+  totalRounds: number;
+}
+
+export interface LeaderboardEntryPayload {
+  deviceToken: string;
+  playerName: string;
+  value: number;
+  gamesPlayed: number;
+}
+
+export interface GlobalStatsPayload {
+  totalGamesPlayed: number;
+  totalPlayersEver: number;
+  faithfulWinRate: number;
+  traitorWinRate: number;
+  averageGameLength: number;
+}

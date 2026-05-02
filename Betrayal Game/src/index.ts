@@ -15,7 +15,15 @@ import {
   saveToken,
   deleteToken,
   loadAllTokens,
+  upsertPlayerProfile as dbUpsertPlayerProfile,
+  saveGameRecord,
+  getPlayerStats as dbGetPlayerStats,
+  getRecentGames,
+  getLeaderboard as dbGetLeaderboard,
+  getGlobalStats as dbGetGlobalStats,
 } from './db/store.js';
+import { buildGameRecord } from './game/recordWriter.js';
+import type { PlayerStatsPayload, LeaderboardEntryPayload, GlobalStatsPayload } from './game/types.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PORT = 5000;
@@ -131,6 +139,57 @@ httpServer.listen(PORT, '0.0.0.0', () => {
   console.log(`🔌 WebSocket available at ws://0.0.0.0:${PORT}`);
 });
 
+// Wave 2 Prompt 1+2: profile & stats helpers wired into ws context.
+const upsertPlayerProfile = (deviceToken: string, playerName: string) =>
+  dbUpsertPlayerProfile(db, deviceToken, playerName);
+
+const writeGameRecordIfNeeded = (state: GameState) => {
+  if (state.recordedAt) return;
+  if (!state.winner) return;
+  try {
+    const record = buildGameRecord(state);
+    if (!record) return;
+    saveGameRecord(db, record);
+    // Mark as recorded so we don't double-write if other end-game broadcasts re-trigger.
+    state.recordedAt = Date.now();
+    saveGame(db, state);
+    console.log(`📊 Recorded game ${record.id} (${record.playerRecords.length} player rows)`);
+  } catch (err) {
+    console.error('Failed to write game record:', err);
+  }
+};
+
+const getPlayerStatsBundle = (deviceToken: string): PlayerStatsPayload => {
+  const stats = dbGetPlayerStats(db, deviceToken);
+  const recent = getRecentGames(db, deviceToken, 10);
+  if (!stats) {
+    return {
+      gamesPlayed: 0,
+      winsAsTraitor: 0,
+      lossesAsTraitor: 0,
+      winsAsFaithful: 0,
+      lossesAsFaithful: 0,
+      totalSurvived: 0,
+      totalBanished: 0,
+      totalMurdered: 0,
+      totalVotesCast: 0,
+      totalVotesReceived: 0,
+      winRate: 0,
+      traitorWinRate: 0,
+      faithfulWinRate: 0,
+      averageRoundsPlayed: 0,
+      recentGames: recent,
+    };
+  }
+  return { ...stats, recentGames: recent };
+};
+
+const getLeaderboardEntries = (
+  metric: 'winRate' | 'gamesPlayed' | 'traitorWins'
+): LeaderboardEntryPayload[] => dbGetLeaderboard(db, metric);
+
+const getGlobalStats = (): GlobalStatsPayload => dbGetGlobalStats(db);
+
 wss.on('connection', (ws: WebSocket) => {
   handleConnection(ws, {
     games,
@@ -141,5 +200,10 @@ wss.on('connection', (ws: WebSocket) => {
     removeGame,
     setToken,
     removeToken,
+    upsertPlayerProfile,
+    writeGameRecordIfNeeded,
+    getPlayerStatsBundle,
+    getLeaderboardEntries,
+    getGlobalStats,
   });
 });

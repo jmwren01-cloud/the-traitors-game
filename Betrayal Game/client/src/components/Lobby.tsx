@@ -1,6 +1,9 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import type { Player, C2SEvent, GameSettings } from '../types';
 import { PLAYER_COLORS, PLAYER_AVATARS, getColorHex, getAvatarEmoji } from '../avatarConstants';
+import { getOrCreateDeviceToken, getSavedPlayerName, savePlayerName, isValidPlayerName } from '../utils/identity';
+import type { IdentityState } from '../hooks/useWebSocket';
+import { ProfileDrawer } from './ProfileDrawer';
 import styles from './Lobby.module.css';
 
 interface LobbyProps {
@@ -9,13 +12,49 @@ interface LobbyProps {
   myPlayerId?: string;
   settings?: GameSettings;
   onSend: (event: C2SEvent) => void;
+  // Wave 2 Prompt 1: identity handshake from useWebSocket
+  identity: IdentityState | null;
+  identifyError: string | null;
+  identify: (deviceToken: string, playerName: string) => void;
 }
 
-export function Lobby({ sessionId, players, myPlayerId, settings, onSend }: LobbyProps) {
-  const [playerName, setPlayerName] = useState('');
+export function Lobby({
+  sessionId, players, myPlayerId, settings, onSend,
+  identity, identifyError, identify,
+}: LobbyProps) {
+  const [playerName, setPlayerName] = useState(() => getSavedPlayerName() ?? '');
   const [joinSessionId, setJoinSessionId] = useState('');
   const [mode, setMode] = useState<'menu' | 'create' | 'join'>('menu');
   const [showSettings, setShowSettings] = useState(false);
+  // Wave 2 Prompt 1+4: identity flow state and profile drawer
+  const [pendingAction, setPendingAction] = useState<null | { type: 'create' } | { type: 'join'; sessionId: string }>(null);
+  const [showProfileDrawer, setShowProfileDrawer] = useState(false);
+  const lastIdentifiedActionRef = useRef<string | null>(null);
+
+  // When identity is confirmed, fire the pending create/join action.
+  useEffect(() => {
+    if (!identity || !pendingAction) return;
+    // Avoid duplicate dispatch if identity changes again later.
+    const sig = `${pendingAction.type}|${identity.deviceToken}|${identity.playerName}`;
+    if (lastIdentifiedActionRef.current === sig) return;
+    lastIdentifiedActionRef.current = sig;
+
+    savePlayerName(identity.playerName);
+    if (pendingAction.type === 'create') {
+      onSend({ type: 'C2S_CREATE_GAME', payload: { playerName: identity.playerName } });
+    } else {
+      onSend({
+        type: 'C2S_JOIN_GAME',
+        payload: { sessionId: pendingAction.sessionId, playerName: identity.playerName }
+      });
+    }
+    setPendingAction(null);
+  }, [identity, pendingAction, onSend]);
+
+  // Clear pending action if identity errors out.
+  useEffect(() => {
+    if (identifyError) setPendingAction(null);
+  }, [identifyError]);
 
   const isHost = players.find((p) => p.id === myPlayerId)?.isHost;
   const minPlayers = settings?.minPlayers || 5;
@@ -25,16 +64,22 @@ export function Lobby({ sessionId, players, myPlayerId, settings, onSend }: Lobb
   const takenColors = players.filter((p) => p.id !== myPlayerId).map((p) => p.color).filter(Boolean) as string[];
 
   const handleCreate = () => {
-    if (playerName.trim()) {
-      onSend({ type: 'C2S_CREATE_GAME', payload: { playerName: playerName.trim() } });
-    }
+    const name = playerName.trim();
+    if (!isValidPlayerName(name)) return;
+    setPendingAction({ type: 'create' });
+    identify(getOrCreateDeviceToken(), name);
   };
 
   const handleJoin = () => {
-    if (playerName.trim() && joinSessionId.trim()) {
-      onSend({ type: 'C2S_JOIN_GAME', payload: { sessionId: joinSessionId.trim(), playerName: playerName.trim() } });
-    }
+    const name = playerName.trim();
+    const sid = joinSessionId.trim();
+    if (!isValidPlayerName(name) || !sid) return;
+    setPendingAction({ type: 'join', sessionId: sid });
+    identify(getOrCreateDeviceToken(), name);
   };
+
+  const isIdentifying = pendingAction !== null;
+  const nameValid = isValidPlayerName(playerName.trim());
 
   const handleStart = () => {
     onSend({ type: 'C2S_START_GAME', payload: {} });
@@ -54,10 +99,15 @@ export function Lobby({ sessionId, players, myPlayerId, settings, onSend }: Lobb
   };
 
   if (!sessionId) {
+    const welcomeBack = identity?.isReturningPlayer && !pendingAction;
     return (
       <div className={styles.container}>
         <h1 className={styles.title}>The Traitors</h1>
         <p className={styles.subtitle}>A Game of Deception</p>
+
+        {welcomeBack && (
+          <p className={styles.welcomeBack}>👋 Welcome back, {identity!.playerName}!</p>
+        )}
 
         {mode === 'menu' && (
           <div className={styles.menu}>
@@ -67,6 +117,12 @@ export function Lobby({ sessionId, players, myPlayerId, settings, onSend }: Lobb
             <button className={styles.secondaryBtn} onClick={() => setMode('join')}>
               Join Game
             </button>
+            <button
+              className={styles.tertiaryBtn}
+              onClick={() => setShowProfileDrawer(true)}
+            >
+              My Profile & Stats
+            </button>
           </div>
         )}
 
@@ -74,16 +130,22 @@ export function Lobby({ sessionId, players, myPlayerId, settings, onSend }: Lobb
           <div className={styles.form}>
             <input
               type="text"
-              placeholder="Your name"
+              placeholder="Your name (2–20 letters/digits)"
               value={playerName}
               onChange={(e) => setPlayerName(e.target.value)}
               className={styles.input}
               maxLength={20}
+              autoFocus
             />
-            <button className={styles.primaryBtn} onClick={handleCreate} disabled={!playerName.trim()}>
-              Create Game
+            {identifyError && <p className={styles.errorText}>{identifyError}</p>}
+            <button
+              className={styles.primaryBtn}
+              onClick={handleCreate}
+              disabled={!nameValid || isIdentifying}
+            >
+              {isIdentifying ? 'Connecting…' : 'Create Game'}
             </button>
-            <button className={styles.backBtn} onClick={() => setMode('menu')}>
+            <button className={styles.backBtn} onClick={() => { setMode('menu'); setPendingAction(null); }}>
               Back
             </button>
           </div>
@@ -101,23 +163,31 @@ export function Lobby({ sessionId, players, myPlayerId, settings, onSend }: Lobb
             />
             <input
               type="text"
-              placeholder="Your name"
+              placeholder="Your name (2–20 letters/digits)"
               value={playerName}
               onChange={(e) => setPlayerName(e.target.value)}
               className={styles.input}
               maxLength={20}
             />
+            {identifyError && <p className={styles.errorText}>{identifyError}</p>}
             <button
               className={styles.primaryBtn}
               onClick={handleJoin}
-              disabled={!playerName.trim() || !joinSessionId.trim()}
+              disabled={!nameValid || !joinSessionId.trim() || isIdentifying}
             >
-              Join Game
+              {isIdentifying ? 'Connecting…' : 'Join Game'}
             </button>
-            <button className={styles.backBtn} onClick={() => setMode('menu')}>
+            <button className={styles.backBtn} onClick={() => { setMode('menu'); setPendingAction(null); }}>
               Back
             </button>
           </div>
+        )}
+
+        {showProfileDrawer && (
+          <ProfileDrawer
+            onClose={() => setShowProfileDrawer(false)}
+            onSend={onSend}
+          />
         )}
       </div>
     );

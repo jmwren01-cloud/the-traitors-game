@@ -1,16 +1,41 @@
-import { useEffect, useRef } from 'react';
-import type { Player, RoundRecord } from '../types';
+import { useEffect, useRef, useState } from 'react';
+import type {
+  Player, RoundRecord, C2SEvent,
+  PlayerStatsPayload, LeaderboardEntryPayload, GlobalStatsPayload
+} from '../types';
 import { getColorHex, getAvatarEmoji } from '../avatarConstants';
-import styles from './GameEnd.module.css';
+import { getOrCreateDeviceToken } from '../utils/identity';
 import { useSoundContext } from '../contexts/SoundContext';
 import { vibrate } from '../utils/haptics';
+import { ProfileDrawer } from './ProfileDrawer';
+import styles from './GameEnd.module.css';
 
 interface GameEndProps {
   winner?: 'TRAITORS' | 'FAITHFUL';
   players: Player[];
   myRole?: string;
   history?: RoundRecord[];
+  // Wave 2 Prompt 1+2: identity & stats
+  myPlayerId?: string;
+  playerStats?: PlayerStatsPayload | null;
+  leaderboard?: { metric: string; entries: LeaderboardEntryPayload[] } | null;
+  globalStats?: GlobalStatsPayload | null;
+  onSend?: (event: C2SEvent) => void;
 }
+
+/**
+ * Wave 2 Prompt 3 — Cinematic 5-stage post-game summary.
+ *
+ * Stage 0 (0–1.5s): black fade-in + "Game Over"
+ * Stage 1 (1.5–4s): winner banner reveal (drum-roll feel)
+ * Stage 2 (4–6s):   personal "You Won/Lost" verdict
+ * Stage 3 (6–9s):   roles revealed for both teams
+ * Stage 4 (9s+):    timeline + per-player stats + actions
+ *
+ * Host (or anyone) can press "Skip cinematic" to jump to stage 4 immediately.
+ */
+
+const STAGE_TIMINGS_MS = [0, 1500, 4000, 6000, 9000];
 
 function RolePill({ role }: { role: 'TRAITOR' | 'FAITHFUL' }) {
   return (
@@ -24,13 +49,9 @@ function RoundCard({ record, index }: { record: RoundRecord; index: number }) {
   const hasVotes = record.votes.length > 0;
 
   return (
-    <div
-      className={styles.roundCard}
-      style={{ animationDelay: `${0.1 + index * 0.12}s` }}
-    >
+    <div className={styles.roundCard} style={{ animationDelay: `${0.1 + index * 0.12}s` }}>
       <div className={styles.roundLabel}>Round {record.round}</div>
 
-      {/* Voting breakdown */}
       {hasVotes ? (
         <div className={styles.voteSection}>
           <div className={styles.voteSectionTitle}>Roundtable vote</div>
@@ -58,16 +79,13 @@ function RoundCard({ record, index }: { record: RoundRecord; index: number }) {
         <div className={styles.noVoteNote}>Discussion only — no banishment vote</div>
       )}
 
-      {/* Banishment */}
       <div className={styles.outcomeRow}>
         {record.banishedName ? (
           <div className={styles.banishOutcome}>
             <span className={styles.outcomeIcon}>🪄</span>
             <span className={styles.outcomeText}>
               <strong>{record.banishedName}</strong> was banished
-              {record.banishedRole && (
-                <> &mdash; <RolePill role={record.banishedRole} /></>
-              )}
+              {record.banishedRole && (<> &mdash; <RolePill role={record.banishedRole} /></>)}
             </span>
           </div>
         ) : (
@@ -78,14 +96,13 @@ function RoundCard({ record, index }: { record: RoundRecord; index: number }) {
         )}
       </div>
 
-      {/* Murder / Shield */}
       <div className={styles.outcomeRow}>
         {record.murderBlocked ? (
           <div className={styles.shieldOutcome}>
             <span className={styles.outcomeIcon}>🛡️</span>
             <span className={styles.outcomeText}>
               Murder attempt blocked &mdash; <strong>{record.shieldedName}</strong>
-              {record.shieldedRole && <> <RolePill role={record.shieldedRole} /></>} used their shield
+              {record.shieldedRole && (<> <RolePill role={record.shieldedRole} /></>)} used their shield
             </span>
           </div>
         ) : record.murderedName ? (
@@ -93,7 +110,7 @@ function RoundCard({ record, index }: { record: RoundRecord; index: number }) {
             <span className={styles.outcomeIcon}>🔪</span>
             <span className={styles.outcomeText}>
               <strong>{record.murderedName}</strong>
-              {record.murderedRole && <> <RolePill role={record.murderedRole} /></>} was murdered in the night
+              {record.murderedRole && (<> <RolePill role={record.murderedRole} /></>)} was murdered in the night
             </span>
           </div>
         ) : (
@@ -118,19 +135,43 @@ function RoundCard({ record, index }: { record: RoundRecord; index: number }) {
   );
 }
 
-export function GameEnd({ winner, players, myRole, history }: GameEndProps) {
+export function GameEnd({
+  winner, players, myRole, history,
+  myPlayerId: _myPlayerId, playerStats, leaderboard, globalStats, onSend,
+}: GameEndProps) {
   const traitors = players.filter((p) => p.role === 'TRAITOR');
   const faithful = players.filter((p) => p.role === 'FAITHFUL');
   const { play } = useSoundContext();
   const soundPlayedRef = useRef(false);
+  const [stage, setStage] = useState(0);
+  const [showProfileDrawer, setShowProfileDrawer] = useState(false);
 
+  // Drive cinematic stages on mount.
   useEffect(() => {
-    if (winner && !soundPlayedRef.current) {
+    const timers: ReturnType<typeof setTimeout>[] = [];
+    for (let i = 1; i < STAGE_TIMINGS_MS.length; i++) {
+      timers.push(setTimeout(() => setStage((s) => Math.max(s, i)), STAGE_TIMINGS_MS[i]));
+    }
+    return () => { timers.forEach(clearTimeout); };
+  }, []);
+
+  // Win sound at stage 1 (winner reveal).
+  useEffect(() => {
+    if (stage >= 1 && winner && !soundPlayedRef.current) {
       soundPlayedRef.current = true;
       play(winner === 'TRAITORS' ? 'traitorWin' : 'faithfulWin');
       vibrate('success');
     }
-  }, [winner, play]);
+  }, [stage, winner, play]);
+
+  // Once the cinematic ends (stage 4), fetch this player's stats so we can show them.
+  useEffect(() => {
+    if (stage >= 4 && onSend) {
+      onSend({ type: 'C2S_GET_PLAYER_STATS', payload: { deviceToken: getOrCreateDeviceToken() } });
+    }
+  }, [stage, onSend]);
+
+  const skip = () => setStage(4);
 
   const isWinner =
     (winner === 'TRAITORS' && myRole === 'TRAITOR') ||
@@ -138,64 +179,124 @@ export function GameEnd({ winner, players, myRole, history }: GameEndProps) {
 
   return (
     <div className={`${styles.container} ${winner === 'TRAITORS' ? styles.traitorWin : styles.faithfulWin}`}>
-      <h1 className={styles.title}>Game Over</h1>
+      {/* Cinematic skip control — visible until stage 4 */}
+      {stage < 4 && (
+        <button className={styles.skipBtn} onClick={skip} aria-label="Skip cinematic">
+          Skip ▸
+        </button>
+      )}
 
-      <div className={styles.winnerBanner}>
-        <h2>{winner === 'TRAITORS' ? 'The Traitors Win!' : 'The Faithful Win!'}</h2>
-        <p className={styles.winnerSubtitle}>
-          {winner === 'TRAITORS'
-            ? 'Deception prevails. The traitors have eliminated the faithful.'
-            : 'Justice prevails. The traitors have been exposed.'}
-        </p>
-      </div>
+      {/* Stage 0+ — title */}
+      <h1 key="title" className={`${styles.title} ${styles.stageEnter}`}>Game Over</h1>
 
-      <div className={isWinner ? styles.victoryMessage : styles.defeatMessage}>
-        <p>{isWinner ? 'Congratulations! You won!' : 'Better luck next time...'}</p>
-      </div>
-
-      <div className={styles.rolesReveal}>
-        <div className={styles.teamSection}>
-          <h3 className={styles.traitorHeader}>Traitors</h3>
-          <div className={styles.playerList}>
-            {traitors.map((p) => (
-              <div key={p.id} className={`${styles.playerCard} ${styles.traitorCard}`}>
-                <div className={styles.avatar} style={{ background: getColorHex(p.color), color: '#000' }}>{getAvatarEmoji(p.avatar)}</div>
-                <span>{p.name}</span>
-                {!p.isAlive && <span className={styles.eliminated}>Eliminated</span>}
-              </div>
-            ))}
-          </div>
+      {/* Stage 1+ — winner banner */}
+      {stage >= 1 && (
+        <div key="banner" className={`${styles.winnerBanner} ${styles.stageEnter}`}>
+          <h2>{winner === 'TRAITORS' ? 'The Traitors Win!' : 'The Faithful Win!'}</h2>
+          <p className={styles.winnerSubtitle}>
+            {winner === 'TRAITORS'
+              ? 'Deception prevails. The Traitors have outwitted the castle.'
+              : 'Justice prevails. The Traitors have been exposed.'}
+          </p>
         </div>
+      )}
 
-        <div className={styles.teamSection}>
-          <h3 className={styles.faithfulHeader}>Faithful</h3>
-          <div className={styles.playerList}>
-            {faithful.map((p) => (
-              <div key={p.id} className={`${styles.playerCard} ${styles.faithfulCard}`}>
-                <div className={styles.avatar} style={{ background: getColorHex(p.color), color: '#000' }}>{getAvatarEmoji(p.avatar)}</div>
-                <span>{p.name}</span>
-                {!p.isAlive && <span className={styles.eliminated}>Eliminated</span>}
-              </div>
-            ))}
-          </div>
+      {/* Stage 2+ — personal verdict */}
+      {stage >= 2 && (
+        <div key="verdict" className={`${isWinner ? styles.victoryMessage : styles.defeatMessage} ${styles.stageEnter}`}>
+          <p>{isWinner ? '🏆 Congratulations — you survived the deception.' : '💀 Better luck next time…'}</p>
         </div>
-      </div>
+      )}
 
-      {/* Round-by-round timeline */}
-      {history && history.length > 0 && (
-        <div className={styles.timeline}>
-          <h3 className={styles.timelineTitle}>How It Happened</h3>
-          <div className={styles.timelineList}>
-            {history.map((record, i) => (
-              <RoundCard key={record.round} record={record} index={i} />
-            ))}
+      {/* Stage 3+ — role reveal */}
+      {stage >= 3 && (
+        <div key="roles" className={`${styles.rolesReveal} ${styles.stageEnter}`}>
+          <div className={styles.teamSection}>
+            <h3 className={styles.traitorHeader}>Traitors</h3>
+            <div className={styles.playerList}>
+              {traitors.map((p) => (
+                <div key={p.id} className={`${styles.playerCard} ${styles.traitorCard}`}>
+                  <div className={styles.avatar} style={{ background: getColorHex(p.color), color: '#000' }}>{getAvatarEmoji(p.avatar)}</div>
+                  <span>{p.name}</span>
+                  {!p.isAlive && <span className={styles.eliminated}>Eliminated</span>}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className={styles.teamSection}>
+            <h3 className={styles.faithfulHeader}>Faithful</h3>
+            <div className={styles.playerList}>
+              {faithful.map((p) => (
+                <div key={p.id} className={`${styles.playerCard} ${styles.faithfulCard}`}>
+                  <div className={styles.avatar} style={{ background: getColorHex(p.color), color: '#000' }}>{getAvatarEmoji(p.avatar)}</div>
+                  <span>{p.name}</span>
+                  {!p.isAlive && <span className={styles.eliminated}>Eliminated</span>}
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       )}
 
-      <button className={styles.playAgainBtn} onClick={() => window.location.reload()}>
-        Play Again
-      </button>
+      {/* Stage 4+ — stats summary + timeline + actions */}
+      {stage >= 4 && (
+        <>
+          {playerStats && playerStats.gamesPlayed > 0 && (
+            <div className={`${styles.statsPanel} ${styles.stageEnter}`}>
+              <h3 className={styles.timelineTitle}>Your Lifetime Stats</h3>
+              <div className={styles.statsRow}>
+                <Stat label="Games" value={playerStats.gamesPlayed} />
+                <Stat label="Win Rate" value={`${(playerStats.winRate * 100).toFixed(0)}%`} />
+                <Stat label="Traitor W-L" value={`${playerStats.winsAsTraitor}–${playerStats.lossesAsTraitor}`} />
+                <Stat label="Faithful W-L" value={`${playerStats.winsAsFaithful}–${playerStats.lossesAsFaithful}`} />
+                <Stat label="Survived" value={playerStats.totalSurvived} />
+              </div>
+            </div>
+          )}
+
+          {history && history.length > 0 && (
+            <div className={`${styles.timeline} ${styles.stageEnter}`}>
+              <h3 className={styles.timelineTitle}>How It Happened</h3>
+              <div className={styles.timelineList}>
+                {history.map((record, i) => (
+                  <RoundCard key={record.round} record={record} index={i} />
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className={`${styles.actionRow} ${styles.stageEnter}`}>
+            {onSend && (
+              <button className={styles.statsBtn} onClick={() => setShowProfileDrawer(true)}>
+                View Profile & Hall of Fame
+              </button>
+            )}
+            <button className={styles.playAgainBtn} onClick={() => window.location.reload()}>
+              Play Again
+            </button>
+          </div>
+        </>
+      )}
+
+      {showProfileDrawer && onSend && (
+        <ProfileDrawer
+          onClose={() => setShowProfileDrawer(false)}
+          onSend={onSend}
+          initialStats={playerStats ?? null}
+          initialLeaderboard={leaderboard ?? null}
+          initialGlobal={globalStats ?? null}
+        />
+      )}
+    </div>
+  );
+}
+
+function Stat({ label, value }: { label: string; value: string | number }) {
+  return (
+    <div className={styles.statBlock}>
+      <div className={styles.statValue}>{value}</div>
+      <div className={styles.statLabel}>{label}</div>
     </div>
   );
 }

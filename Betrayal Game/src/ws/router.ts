@@ -62,14 +62,32 @@ export interface WsContext {
   removeGame: (sessionId: string) => void;
   setToken: (token: string, data: { playerId: string; sessionId: string }) => void;
   removeToken: (token: string) => void;
+  // Wave 2 Prompt 1+2: persistent player profiles & stats
+  upsertPlayerProfile: (deviceToken: string, playerName: string) => { isReturning: boolean };
+  writeGameRecordIfNeeded: (state: GameState) => void;
+  getPlayerStatsBundle: (deviceToken: string) => import('../game/types.js').PlayerStatsPayload;
+  getLeaderboardEntries: (
+    metric: 'winRate' | 'gamesPlayed' | 'traitorWins'
+  ) => import('../game/types.js').LeaderboardEntryPayload[];
+  getGlobalStats: () => import('../game/types.js').GlobalStatsPayload;
 }
+
+const PLAYER_NAME_REGEX = /^[A-Za-z0-9 ]{2,20}$/;
+const DEVICE_TOKEN_REGEX = /^[a-zA-Z0-9-]{8,128}$/;
 
 type ReconnectPayload = Extract<S2CEvent, { type: 'S2C_RECONNECTED' }>['payload'];
 
 export function handleConnection(ws: WebSocket, ctx: WsContext): void {
-  const { games, playerConnections, sessionTokens, disconnectedPlayers, setGame, removeGame, setToken, removeToken } = ctx;
+  const {
+    games, playerConnections, sessionTokens, disconnectedPlayers,
+    setGame, removeGame, setToken, removeToken,
+    upsertPlayerProfile, writeGameRecordIfNeeded,
+    getPlayerStatsBundle, getLeaderboardEntries, getGlobalStats,
+  } = ctx;
   let currentPlayerId: string | undefined;
   let currentSessionId: string | undefined;
+  // Wave 2 Prompt 1: device-fingerprint identity for this connection (set on C2S_IDENTIFY)
+  let currentDeviceToken: string | undefined;
 
   function broadcast(sessionId: string, event: S2CEvent): void {
     broadcastToSession(sessionId, event, games, playerConnections);
@@ -83,8 +101,72 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
     try {
       const event: C2SEvent = JSON.parse(data);
 
+      // Wave 2 Prompt 1 — Persistent identity handshake
+      if (event.type === 'C2S_IDENTIFY') {
+        const { deviceToken, playerName } = event.payload;
+        if (typeof deviceToken !== 'string' || !DEVICE_TOKEN_REGEX.test(deviceToken)) {
+          ws.send(JSON.stringify({
+            type: 'S2C_IDENTITY_ERROR',
+            payload: { message: 'Invalid device token' }
+          } satisfies S2CEvent));
+          return;
+        }
+        const trimmedName = (playerName ?? '').trim();
+        if (!PLAYER_NAME_REGEX.test(trimmedName)) {
+          ws.send(JSON.stringify({
+            type: 'S2C_IDENTITY_ERROR',
+            payload: { message: 'Player name must be 2–20 letters, numbers, or spaces.' }
+          } satisfies S2CEvent));
+          return;
+        }
+        const { isReturning } = upsertPlayerProfile(deviceToken, trimmedName);
+        currentDeviceToken = deviceToken;
+        ws.send(JSON.stringify({
+          type: 'S2C_IDENTITY_CONFIRMED',
+          payload: { deviceToken, playerName: trimmedName, isReturningPlayer: isReturning }
+        } satisfies S2CEvent));
+        return;
+      }
+
+      // Wave 2 Prompt 2 — Stats / leaderboard queries
+      if (event.type === 'C2S_GET_PLAYER_STATS') {
+        const dt = event.payload.deviceToken;
+        if (typeof dt !== 'string' || !DEVICE_TOKEN_REGEX.test(dt)) {
+          sendError(ws, 'Invalid device token');
+          return;
+        }
+        const bundle = getPlayerStatsBundle(dt);
+        ws.send(JSON.stringify({
+          type: 'S2C_PLAYER_STATS',
+          payload: bundle
+        } satisfies S2CEvent));
+        return;
+      }
+
+      if (event.type === 'C2S_GET_LEADERBOARD') {
+        const metric = event.payload.metric;
+        if (metric !== 'winRate' && metric !== 'gamesPlayed' && metric !== 'traitorWins') {
+          sendError(ws, 'Invalid leaderboard metric');
+          return;
+        }
+        const entries = getLeaderboardEntries(metric);
+        ws.send(JSON.stringify({
+          type: 'S2C_LEADERBOARD',
+          payload: { metric, entries }
+        } satisfies S2CEvent));
+        return;
+      }
+
+      if (event.type === 'C2S_GET_GLOBAL_STATS') {
+        ws.send(JSON.stringify({
+          type: 'S2C_GLOBAL_STATS',
+          payload: getGlobalStats()
+        } satisfies S2CEvent));
+        return;
+      }
+
       if (event.type === 'C2S_CREATE_GAME') {
-        const gameState = game.createGame(event.payload.playerName);
+        const gameState = game.createGame(event.payload.playerName, currentDeviceToken);
         setGame(gameState);
 
         currentPlayerId = gameState.hostId;
@@ -119,7 +201,7 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
           return;
         }
 
-        const { game: updatedGame, playerId } = game.addPlayer(gameState, event.payload.playerName);
+        const { game: updatedGame, playerId } = game.addPlayer(gameState, event.payload.playerName, currentDeviceToken);
         setGame(updatedGame);
 
         currentPlayerId = playerId;
@@ -606,6 +688,9 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
         setGame(updatedGame);
 
         if (updatedGame.phase === 'GAME_END' && updatedGame.winner) {
+          // Wave 2 Prompt 2: persist game outcome for stats/leaderboards
+          writeGameRecordIfNeeded(updatedGame);
+
           const aliveTraitors = updatedGame.players.filter((p) => p.isAlive && p.role === 'TRAITOR').length;
           const aliveFaithful = updatedGame.players.filter((p) => p.isAlive && p.role === 'FAITHFUL').length;
 
@@ -807,6 +892,9 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
         setGame(updatedGame);
 
         if (updatedGame.phase === 'GAME_END' && updatedGame.winner) {
+          // Wave 2 Prompt 2: persist game outcome for stats/leaderboards
+          writeGameRecordIfNeeded(updatedGame);
+
           const aliveTraitors = updatedGame.players.filter((p) => p.isAlive && p.role === 'TRAITOR').length;
           const aliveFaithful = updatedGame.players.filter((p) => p.isAlive && p.role === 'FAITHFUL').length;
 

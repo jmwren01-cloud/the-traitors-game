@@ -50,7 +50,7 @@ export function isTimerExpired(timer?: TimerState): boolean {
 
 // ============= GAME CREATION & PLAYER MANAGEMENT =============
 
-export function createGame(hostName: string): GameState {
+export function createGame(hostName: string, deviceToken?: string): GameState {
   const sessionId = generateSessionId();
   const hostId = generatePlayerId();
   
@@ -63,7 +63,8 @@ export function createGame(hostName: string): GameState {
     hasShield: false,
     shieldRevealed: false,
     color: pickAvailableColor([]),
-    avatar: pickRandomAvatar()
+    avatar: pickRandomAvatar(),
+    ...(deviceToken ? { deviceToken } : {})
   };
 
   return {
@@ -78,7 +79,8 @@ export function createGame(hostName: string): GameState {
     messages: [],
     lastManualVotes: {},
     history: [],
-    settings: { ...DEFAULT_SETTINGS }
+    settings: { ...DEFAULT_SETTINGS },
+    startedAt: Date.now()
   };
 }
 
@@ -127,7 +129,7 @@ export function updateSettings(game: GameState, partialSettings: Partial<GameSet
   };
 }
 
-export function addPlayer(game: GameState, playerName: string): { game: GameState; playerId: string } {
+export function addPlayer(game: GameState, playerName: string, deviceToken?: string): { game: GameState; playerId: string } {
   if (game.phase !== 'LOBBY') {
     throw new Error('Cannot join game in progress');
   }
@@ -153,7 +155,8 @@ export function addPlayer(game: GameState, playerName: string): { game: GameStat
     hasShield: false,
     shieldRevealed: false,
     color: pickAvailableColor(takenColors),
-    avatar: AVATAR_IDS.find((a) => !takenAvatars.includes(a)) ?? pickRandomAvatar()
+    avatar: AVATAR_IDS.find((a) => !takenAvatars.includes(a)) ?? pickRandomAvatar(),
+    ...(deviceToken ? { deviceToken } : {})
   };
 
   return {

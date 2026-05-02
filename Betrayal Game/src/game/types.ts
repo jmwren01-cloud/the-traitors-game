@@ -77,6 +77,12 @@ export interface Player {
   color?: string;
   avatar?: string;
   recruitmentUsed?: boolean;
+  /**
+   * Persistent device-fingerprint identity (Wave 2 Prompt 1).
+   * Server-only; never broadcast to other players. Used to link game records
+   * back to the persistent player profile for stats/leaderboards.
+   */
+  deviceToken?: string;
 }
 
 export interface Vote {
@@ -171,6 +177,10 @@ export interface GameState {
   challenge?: ChallengeState;
   pendingRecruitmentTargetId?: string;
   lastRecruitedPlayerId?: string;
+  /** Wave 2 Prompt 2: when the game was created (ms epoch). Used for stats records. */
+  startedAt?: number;
+  /** Wave 2 Prompt 2: set after writeGameRecord runs so we don't double-record. */
+  recordedAt?: number;
 }
 
 // Client-to-Server Events
@@ -201,7 +211,11 @@ export type C2SEvent =
   | { type: 'C2S_CONTINUE_TO_ROUNDTABLE'; payload: Record<string, never> }
   | { type: 'C2S_REVEAL_SHIELD'; payload: Record<string, never> }
   | { type: 'C2S_SET_AVATAR'; payload: { color?: string; avatar?: string } }
-  | { type: 'C2S_SUBMIT_RECRUITMENT'; payload: { targetId: string } };
+  | { type: 'C2S_SUBMIT_RECRUITMENT'; payload: { targetId: string } }
+  | { type: 'C2S_IDENTIFY'; payload: { deviceToken: string; playerName: string } }
+  | { type: 'C2S_GET_PLAYER_STATS'; payload: { deviceToken: string } }
+  | { type: 'C2S_GET_LEADERBOARD'; payload: { metric: 'winRate' | 'gamesPlayed' | 'traitorWins' } }
+  | { type: 'C2S_GET_GLOBAL_STATS'; payload: Record<string, never> };
 
 // Server-to-Client Events
 export type S2CEvent =
@@ -360,4 +374,56 @@ export type S2CEvent =
   | { type: 'S2C_AVATAR_UPDATED'; payload: { players: Player[] } }
   | { type: 'S2C_CHAT_MESSAGE'; payload: ChatMessage }
   | { type: 'S2C_TIMER_UPDATE'; payload: { endTime: number; duration: number; phase: GamePhase } }
+  | { type: 'S2C_IDENTITY_CONFIRMED'; payload: { deviceToken: string; playerName: string; isReturningPlayer: boolean } }
+  | { type: 'S2C_IDENTITY_ERROR'; payload: { message: string } }
+  | { type: 'S2C_PLAYER_STATS'; payload: PlayerStatsPayload }
+  | { type: 'S2C_LEADERBOARD'; payload: { metric: string; entries: LeaderboardEntryPayload[] } }
+  | { type: 'S2C_GLOBAL_STATS'; payload: GlobalStatsPayload }
   | { type: 'S2C_ERROR'; payload: { message: string } };
+
+// ============= Wave 2 Prompt 2: Stats payload shapes =============
+// Defined here (not in db/types.ts) so client and server share types.
+
+export interface PlayerStatsPayload {
+  gamesPlayed: number;
+  winsAsTraitor: number;
+  lossesAsTraitor: number;
+  winsAsFaithful: number;
+  lossesAsFaithful: number;
+  totalSurvived: number;
+  totalBanished: number;
+  totalMurdered: number;
+  totalVotesCast: number;
+  totalVotesReceived: number;
+  winRate: number;
+  traitorWinRate: number;
+  faithfulWinRate: number;
+  averageRoundsPlayed: number;
+  recentGames: GameSummaryPayload[];
+}
+
+export interface GameSummaryPayload {
+  gameId: string;
+  sessionId: string;
+  endedAt: number;
+  winner: 'TRAITORS' | 'FAITHFUL';
+  role: 'TRAITOR' | 'FAITHFUL';
+  outcome: 'WON' | 'LOST';
+  playerCount: number;
+  totalRounds: number;
+}
+
+export interface LeaderboardEntryPayload {
+  deviceToken: string;
+  playerName: string;
+  value: number;
+  gamesPlayed: number;
+}
+
+export interface GlobalStatsPayload {
+  totalGamesPlayed: number;
+  totalPlayersEver: number;
+  faithfulWinRate: number;
+  traitorWinRate: number;
+  averageGameLength: number;
+}

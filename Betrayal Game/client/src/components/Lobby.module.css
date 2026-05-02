@@ -122,6 +122,48 @@
   color: #fff;
 }
 
+/* Wave 2 Prompt 1+4: identity & profile drawer additions */
+.tertiaryBtn {
+  padding: 12px 20px;
+  background: transparent;
+  color: #aaa;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 10px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  min-height: 48px;
+}
+.tertiaryBtn:hover {
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.3);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.welcomeBack {
+  margin: -0.5rem 0 1.5rem;
+  text-align: center;
+  color: #4caf50;
+  font-size: 0.95rem;
+  animation: fadeInDown 0.4s ease;
+}
+
+.errorText {
+  color: #ff6b7a;
+  font-size: 0.85rem;
+  margin: 0;
+  padding: 0.5rem 0.75rem;
+  background: rgba(255, 107, 122, 0.1);
+  border-radius: 6px;
+  text-align: center;
+}
+
+@keyframes fadeInDown {
+  from { opacity: 0; transform: translateY(-10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
 .sessionInfo {
   display: flex;
   align-items: center;

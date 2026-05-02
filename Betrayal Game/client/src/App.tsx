@@ -15,7 +15,11 @@ import { useSoundContext } from './contexts/SoundContext';
 import './App.css';
 
 function App() {
-  const { connected, gameState, error, send, reconnecting } = useWebSocket();
+  const {
+    connected, gameState, error, send, reconnecting,
+    identity, identifyError, identify,
+    playerStats, leaderboard, globalStats,
+  } = useWebSocket();
   const { setEnabled } = useSoundContext();
   const [soundOn, setSoundOn] = useState(true);
 
@@ -103,6 +107,11 @@ function App() {
           players={gameState?.players || []}
           myRole={gameState?.myRole}
           history={gameState?.history}
+          myPlayerId={gameState?.myPlayerId}
+          playerStats={playerStats}
+          leaderboard={leaderboard}
+          globalStats={globalStats}
+          onSend={send}
         />
         {chatBox}
       </>
@@ -247,6 +256,9 @@ function App() {
         myPlayerId={gameState?.myPlayerId}
         settings={gameState?.settings}
         onSend={send}
+        identity={identity}
+        identifyError={identifyError}
+        identify={identify}
       />
     </>
   );

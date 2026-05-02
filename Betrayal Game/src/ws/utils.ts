@@ -5,10 +5,12 @@ import type { MurderResult } from '../game/manager.js';
 
 export function sanitizePlayersFor(players: Player[], recipientId: string | undefined): Player[] {
   return players.map((p) => {
+    // Strip server-only fields from every broadcast (deviceToken must never leave the server)
+    const { deviceToken: _dt, ...safe } = p;
     if (p.id === recipientId || p.shieldRevealed) {
-      return p;
+      return safe as Player;
     }
-    return { ...p, hasShield: false };
+    return { ...safe, hasShield: false } as Player;
   });
 }
 

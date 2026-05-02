@@ -1,6 +1,9 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import type { GameState, C2SEvent } from '../types';
+import type {
+  GameState, C2SEvent, PlayerStatsPayload, LeaderboardEntryPayload, GlobalStatsPayload
+} from '../types';
 import { gameStateReducer } from './gameStateReducer';
+import { getOrCreateDeviceToken, getSavedPlayerName } from '../utils/identity';
 
 const getWebSocketUrl = () => {
   const domain = window.location.host;
@@ -22,11 +25,24 @@ function clearSessionToken() {
   localStorage.removeItem(SESSION_TOKEN_KEY);
 }
 
+export interface IdentityState {
+  deviceToken: string;
+  playerName: string;
+  isReturningPlayer: boolean;
+}
+
 export function useWebSocket() {
   const [connected, setConnected] = useState(false);
   const [gameState, setGameState] = useState<GameState | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [reconnecting, setReconnecting] = useState(false);
+  // Wave 2 Prompt 1: persistent identity handshake state
+  const [identity, setIdentity] = useState<IdentityState | null>(null);
+  const [identifyError, setIdentifyError] = useState<string | null>(null);
+  // Wave 2 Prompt 2: stats / leaderboard / global stats from the server
+  const [playerStats, setPlayerStats] = useState<PlayerStatsPayload | null>(null);
+  const [leaderboard, setLeaderboard] = useState<{ metric: string; entries: LeaderboardEntryPayload[] } | null>(null);
+  const [globalStats, setGlobalStats] = useState<GlobalStatsPayload | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const myPlayerIdRef = useRef<string | null>(null);
   const reconnectAttemptedRef = useRef(false);
@@ -38,6 +54,19 @@ export function useWebSocket() {
     ws.onopen = () => {
       setConnected(true);
       setError(null);
+
+      // Wave 2 Prompt 1: auto-identify on connect when we have stored credentials.
+      // This guarantees the server has a deviceToken bound to this socket BEFORE the
+      // user clicks Create/Join, so stats always record (and fixes any race where the
+      // user clicks too fast after a page reload).
+      const savedName = getSavedPlayerName();
+      if (savedName) {
+        const deviceToken = getOrCreateDeviceToken();
+        ws.send(JSON.stringify({
+          type: 'C2S_IDENTIFY',
+          payload: { deviceToken, playerName: savedName }
+        }));
+      }
 
       const storedToken = getSessionToken();
       if (storedToken && !reconnectAttemptedRef.current) {
@@ -98,6 +127,41 @@ export function useWebSocket() {
       return;
     }
 
+    // Wave 2 Prompt 1: identity handshake responses
+    if (msg.type === 'S2C_IDENTITY_CONFIRMED') {
+      const p = msg.payload as unknown as IdentityState;
+      setIdentity(p);
+      setIdentifyError(null);
+      return;
+    }
+    if (msg.type === 'S2C_IDENTITY_ERROR') {
+      const p = msg.payload as { message: string };
+      setIdentifyError(p.message);
+      return;
+    }
+
+    // Wave 2 Prompt 2: stats / leaderboard / global stats responses.
+    // Also dispatched as window CustomEvents so detached components (ProfileDrawer)
+    // mounted in any subtree can react without prop-drilling.
+    if (msg.type === 'S2C_PLAYER_STATS') {
+      const payload = msg.payload as unknown as PlayerStatsPayload;
+      setPlayerStats(payload);
+      window.dispatchEvent(new CustomEvent('betrayal:player-stats', { detail: payload }));
+      return;
+    }
+    if (msg.type === 'S2C_LEADERBOARD') {
+      const payload = msg.payload as unknown as { metric: string; entries: LeaderboardEntryPayload[] };
+      setLeaderboard(payload);
+      window.dispatchEvent(new CustomEvent('betrayal:leaderboard', { detail: payload }));
+      return;
+    }
+    if (msg.type === 'S2C_GLOBAL_STATS') {
+      const payload = msg.payload as unknown as GlobalStatsPayload;
+      setGlobalStats(payload);
+      window.dispatchEvent(new CustomEvent('betrayal:global-stats', { detail: payload }));
+      return;
+    }
+
     // Delegate all state transitions to the pure reducer
     setGameState((prev) => gameStateReducer(prev, msg));
   }, []);
@@ -108,5 +172,20 @@ export function useWebSocket() {
     }
   }, []);
 
-  return { connected, gameState, error, send, myPlayerId: myPlayerIdRef.current, reconnecting };
+  const identify = useCallback((deviceToken: string, playerName: string) => {
+    setIdentifyError(null);
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({
+        type: 'C2S_IDENTIFY',
+        payload: { deviceToken, playerName }
+      }));
+    }
+  }, []);
+
+  return {
+    connected, gameState, error, send,
+    myPlayerId: myPlayerIdRef.current, reconnecting,
+    identity, identifyError, identify,
+    playerStats, leaderboard, globalStats,
+  };
 }
