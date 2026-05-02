@@ -1,0 +1,331 @@
+/* Persistent top HUD: identity bar + action prompt bar.
+   Sits at the very top of the viewport across every in-game phase.
+   The right-side `aliveBtn` keeps a wide gutter on the far right so it
+   never collides with the existing top-right floating buttons
+   (sound toggle, host dashboard toggle, timer). */
+
+.hud {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 52px;
+  /* Right padding leaves a corridor wide enough for the existing top-right
+     fixed buttons (sound toggle ~48px + host dashboard ~100px + timer
+     ~120px) so the in-bar `aliveBtn` never collides with them. */
+  padding: 0 230px 0 14px;
+  padding-top: env(safe-area-inset-top, 0px);
+  background: linear-gradient(180deg, rgba(15, 15, 34, 0.96) 0%, rgba(20, 20, 40, 0.92) 100%);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  color: #f5f5f5;
+  font-size: 0.92rem;
+}
+
+.left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex: 0 1 auto;
+}
+
+.name {
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 140px;
+}
+
+.deadName {
+  text-decoration: line-through;
+  color: #8a8a9a;
+}
+
+.roleBadge {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  border-radius: 12px;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  color: #fff;
+  text-transform: uppercase;
+}
+
+.traitorBadge {
+  background: #8b1a1a;
+  box-shadow: 0 0 0 1px rgba(255, 80, 80, 0.4) inset;
+}
+
+.faithfulBadge {
+  background: #2a4a6b;
+  box-shadow: 0 0 0 1px rgba(120, 180, 240, 0.4) inset;
+}
+
+.center {
+  flex: 1 1 auto;
+  display: flex;
+  justify-content: center;
+  min-width: 0;
+}
+
+.phaseLabel {
+  font-weight: 600;
+  font-size: 0.95rem;
+  color: #e0e0ee;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+  text-align: center;
+}
+
+.aliveBtn {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  min-height: 40px;
+  background: rgba(40, 40, 70, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 20px;
+  color: #fff;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.aliveBtn:hover {
+  background: rgba(60, 60, 100, 0.9);
+  border-color: rgba(255, 255, 255, 0.32);
+}
+
+.aliveBtn:active {
+  transform: scale(0.97);
+}
+
+.aliveIcon {
+  font-size: 1rem;
+}
+
+.aliveCount {
+  white-space: nowrap;
+}
+
+.aliveChevron {
+  font-size: 0.7rem;
+  opacity: 0.8;
+}
+
+/* Action prompt — second fixed bar directly under the HUD. */
+.promptBar {
+  position: fixed;
+  top: calc(52px + env(safe-area-inset-top, 0px));
+  left: 0;
+  right: 0;
+  z-index: 99;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 38px;
+  padding: 8px 16px;
+  background: #1f1f33;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  color: #d8d8e6;
+  font-size: 0.88rem;
+  text-align: center;
+}
+
+.promptText {
+  display: inline-block;
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.flashOn {
+  animation: hudPromptFlash 600ms ease-out;
+}
+
+@keyframes hudPromptFlash {
+  0% {
+    background-color: rgba(201, 168, 76, 0.4);
+    box-shadow: inset 0 0 0 9999px rgba(201, 168, 76, 0.0);
+  }
+  100% {
+    background-color: #1f1f33;
+  }
+}
+
+/* Roster drawer — overlays content (does not push it down). */
+.rosterBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 98;
+  background: rgba(0, 0, 0, 0.35);
+}
+
+.rosterPanel {
+  position: fixed;
+  top: calc(52px + 38px + env(safe-area-inset-top, 0px));
+  left: 0;
+  right: 0;
+  z-index: 99;
+  max-height: 60vh;
+  overflow-y: auto;
+  background: #14142a;
+  border-bottom: 2px solid #2a2a4a;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  animation: rosterSlideDown 180ms ease-out;
+}
+
+@keyframes rosterSlideDown {
+  from {
+    transform: translateY(-12px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.rosterHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  background: #1a1a32;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  font-size: 0.85rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: #cfcfe0;
+  text-transform: uppercase;
+}
+
+.rosterClose {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  color: #fff;
+  font-size: 0.95rem;
+  cursor: pointer;
+}
+
+.rosterClose:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.rosterList {
+  list-style: none;
+  margin: 0;
+  padding: 6px 0;
+}
+
+.rosterRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  min-height: 44px;
+  font-size: 0.95rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.rosterRow:last-child {
+  border-bottom: none;
+}
+
+.rosterName {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.youTag {
+  color: #9aa3b8;
+  font-size: 0.8rem;
+  font-weight: 500;
+}
+
+.rosterDead .rosterName {
+  text-decoration: line-through;
+  color: #6a6a7a;
+}
+
+.rosterDead {
+  background: rgba(0, 0, 0, 0.18);
+}
+
+.daggerIcon {
+  font-size: 1rem;
+  filter: drop-shadow(0 0 4px rgba(180, 30, 30, 0.6));
+}
+
+.deadTag {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #6a6a7a;
+  padding: 2px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+}
+
+/* Spacer rendered in App.tsx to push phase content below the two fixed
+   bars. Kept as a class here so the height stays in sync if either bar
+   is resized. */
+.spacer {
+  height: calc(52px + 38px + env(safe-area-inset-top, 0px));
+  flex-shrink: 0;
+}
+
+@media (max-width: 480px) {
+  .hud {
+    padding-right: 200px;
+    gap: 8px;
+  }
+  .name {
+    max-width: 80px;
+  }
+  .phaseLabel {
+    font-size: 0.78rem;
+  }
+  .roleBadge {
+    font-size: 0.62rem;
+    padding: 2px 6px;
+  }
+  .aliveBtn {
+    padding: 5px 9px;
+    font-size: 0.75rem;
+    min-height: 36px;
+  }
+  .aliveCount {
+    /* Save space on small screens by showing just the number + icon. */
+    font-size: 0.75rem;
+  }
+  .aliveIcon {
+    font-size: 0.85rem;
+  }
+  .aliveChevron {
+    display: none;
+  }
+}

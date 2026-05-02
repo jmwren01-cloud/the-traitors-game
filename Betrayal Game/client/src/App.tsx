@@ -11,6 +11,8 @@ import { ConnectionStatus } from './components/ConnectionStatus';
 import { Challenge } from './components/Challenge';
 import { Spectator } from './components/Spectator';
 import { HostDashboard } from './components/HostDashboard';
+import { HUD } from './components/HUD';
+import hudStyles from './components/HUD.module.css';
 import { useSoundContext } from './contexts/SoundContext';
 import './App.css';
 
@@ -97,6 +99,26 @@ function App() {
     <Timer endTime={gameState.timer.endTime} />
   ) : null;
 
+  // Persistent top HUD + action prompt. Only rendered for in-game phases —
+  // hidden in LOBBY, ROLE_ASSIGN, ROLE_REVEAL and GAME_END so those screens
+  // keep their full-bleed layouts.
+  const hud = gameState ? (
+    <>
+      <HUD
+        phase={phase}
+        myPlayerId={gameState.myPlayerId}
+        myRole={gameState.myRole}
+        players={gameState.players || []}
+        traitorIds={gameState.traitorIds}
+        currentRound={gameState.currentRound}
+        voteCount={gameState.voteCount}
+        votes={gameState.votes}
+        banishedName={gameState.banishedPlayer?.name}
+      />
+      <div className={hudStyles.spacer} aria-hidden />
+    </>
+  ) : null;
+
   if (phase === 'GAME_END') {
     return (
       <>
@@ -125,6 +147,7 @@ function App() {
       <>
         <ConnectionStatus connected={connected} reconnecting={reconnecting} />
         {soundToggle}
+        {hud}
         {hostDashboard}
         {timer}
         <Spectator
@@ -155,6 +178,7 @@ function App() {
       <>
         <ConnectionStatus connected={connected} reconnecting={reconnecting} />
         {soundToggle}
+        {hud}
         {hostDashboard}
         {timer}
         <NightPhase
@@ -184,6 +208,7 @@ function App() {
       <>
         <ConnectionStatus connected={connected} reconnecting={reconnecting} />
         {soundToggle}
+        {hud}
         {hostDashboard}
         {timer}
         <Voting
@@ -236,6 +261,7 @@ function App() {
       <>
         <ConnectionStatus connected={connected} reconnecting={reconnecting} />
         {soundToggle}
+        {hud}
         {hostDashboard}
         <Challenge
           challenge={gameState?.challenge}
