@@ -3,6 +3,7 @@ import { createServer } from 'http';
 import { readFileSync, existsSync, statSync } from 'fs';
 import { join, dirname, extname } from 'path';
 import { fileURLToPath } from 'url';
+import type { GameState } from './game/types.js';
 import { handleConnection } from './ws/router.js';
 import { cleanupExpiredDisconnections } from './ws/utils.js';
 
@@ -22,7 +23,7 @@ const MIME_TYPES: Record<string, string> = {
 };
 
 const httpServer = createServer((req, res) => {
-  let filePath = req.url || '/';
+  let filePath = req.url ?? '/';
 
   if (filePath === '/') {
     filePath = '/index.html';
@@ -34,7 +35,7 @@ const httpServer = createServer((req, res) => {
     try {
       const content = readFileSync(fullPath);
       const ext = extname(filePath);
-      const contentType = MIME_TYPES[ext] || 'application/octet-stream';
+      const contentType = MIME_TYPES[ext] ?? 'application/octet-stream';
 
       res.writeHead(200, {
         'Content-Type': contentType,
@@ -63,7 +64,17 @@ const httpServer = createServer((req, res) => {
 
 const wss = new WebSocketServer({ server: httpServer });
 
-setInterval(cleanupExpiredDisconnections, 15000);
+const games = new Map<string, GameState>();
+const playerConnections = new Map<string, WebSocket>();
+const sessionTokens = new Map<string, { playerId: string; sessionId: string }>();
+const disconnectedPlayers = new Map<string, { playerId: string; sessionId: string; disconnectedAt: number }>();
+
+const GRACE_PERIOD_MS = 60000;
+
+setInterval(
+  () => cleanupExpiredDisconnections(disconnectedPlayers, sessionTokens, GRACE_PERIOD_MS),
+  15000
+);
 
 httpServer.listen(PORT, '0.0.0.0', () => {
   console.log(`🎮 Betrayal Game Server running on http://0.0.0.0:${PORT}`);
@@ -71,5 +82,5 @@ httpServer.listen(PORT, '0.0.0.0', () => {
 });
 
 wss.on('connection', (ws: WebSocket) => {
-  handleConnection(ws);
+  handleConnection(ws, { games, playerConnections, sessionTokens, disconnectedPlayers });
 });
