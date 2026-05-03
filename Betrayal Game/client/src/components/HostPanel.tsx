@@ -108,10 +108,14 @@ export function HostPanel(props: HostPanelProps) {
       case 'CHALLENGE_RESULT':
         return true;
       // Once every vote has been revealed in VOTE_REVEAL the host
-      // must press Banish (handled in BANISH_REVEAL controls) — until
-      // then we don't pulse since reveals are still streaming.
-      case 'VOTE_REVEAL':
-        return !!voteCount && (revealedVotes?.length ?? 0) >= voteCount.needed;
+      // must advance to banishment — until the reveal stream finishes
+      // we don't pulse. Falls back to comparing against `votes.length`
+      // when `voteCount` isn't in the reconnect payload.
+      case 'VOTE_REVEAL': {
+        const revealed = revealedVotes?.length ?? 0;
+        const needed = voteCount?.needed ?? votes?.length ?? 0;
+        return needed > 0 && revealed >= needed;
+      }
       default: return false;
     }
   })();
