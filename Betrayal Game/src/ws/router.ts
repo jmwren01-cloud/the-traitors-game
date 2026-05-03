@@ -690,9 +690,14 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
                 updatedGame.suspicionTokensCurrent ?? [];
             }
           }
-          if (updatedGame.suspicionTokensByRound !== undefined) {
-            reconnectPayload.suspicionTokensByRound = updatedGame.suspicionTokensByRound;
-          }
+        }
+
+        // Past Suspicion Token rounds are public history available in
+        // every in-game phase (Voting, Night, Morning, etc.), not just
+        // Roundtable. Ship the archive on any reconnect so the in-game
+        // "Past Suspicions" panel renders correctly after a refresh.
+        if (updatedGame.suspicionTokensByRound !== undefined) {
+          reconnectPayload.suspicionTokensByRound = updatedGame.suspicionTokensByRound;
         }
 
         ws.send(JSON.stringify({ type: 'S2C_RECONNECTED', payload: reconnectPayload } satisfies S2CEvent));

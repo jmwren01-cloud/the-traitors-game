@@ -8,7 +8,7 @@ import { getOrCreateDeviceToken } from '../utils/identity';
 import { useSoundContext } from '../contexts/SoundContext';
 import { vibrate } from '../utils/haptics';
 import { ProfileDrawer } from './ProfileDrawer';
-import { RevealGraph } from './SuspicionTokens';
+import { RevealGraph } from './RevealGraph';
 import styles from './GameEnd.module.css';
 
 interface GameEndProps {

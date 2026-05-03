@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import type { ReactElement } from 'react';
 import type { Player, SuspicionToken } from '../types';
-import { RevealGraph } from './SuspicionTokens';
+import { RevealGraph } from './RevealGraph';
 import styles from './SuspicionTokenHistoryPanel.module.css';
 
 interface Props {
