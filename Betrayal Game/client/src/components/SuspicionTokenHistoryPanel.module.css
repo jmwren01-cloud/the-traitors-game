@@ -46,6 +46,54 @@
   color: #fff;
 }
 
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 10px;
+  font-size: 13px;
+  color: #d9b6ff;
+}
+
+.filterCheck {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+
+.filterSelect {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.filterSelect select {
+  background: #261a3d;
+  border: 1px solid #4a3370;
+  color: #f0e6ff;
+  padding: 4px 6px;
+  border-radius: 6px;
+  font-size: 13px;
+  min-height: 28px;
+}
+
+.filterClear {
+  background: transparent;
+  border: 1px solid #4a3370;
+  color: #d9b6ff;
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.filterClear:hover {
+  border-color: #ffb84d;
+  color: #fff;
+}
+
 .diffSection {
   margin-top: 10px;
   padding: 8px 10px;

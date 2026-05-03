@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import type { ReactElement } from 'react';
+import type { ChangeEvent, ReactElement } from 'react';
 import type { Player, SuspicionToken } from '../types';
 import { RevealGraph } from './RevealGraph';
 import styles from './SuspicionTokenHistoryPanel.module.css';
@@ -13,6 +13,8 @@ export function SuspicionTokenHistoryPanel(props: Props): ReactElement | null {
   const { players, byRound } = props;
   const [open, setOpen] = useState(false);
   const [selectedRound, setSelectedRound] = useState<number | null>(null);
+  const [hideAuto, setHideAuto] = useState(false);
+  const [focusPlayerId, setFocusPlayerId] = useState<string>('');
 
   const rounds = useMemo(() => {
     if (!byRound) return [];
@@ -38,8 +40,20 @@ export function SuspicionTokenHistoryPanel(props: Props): ReactElement | null {
     })
     .filter((d): d is { placerId: string; fromId: string; toId: string } => d !== null);
 
+  const filteredTokens = activeTokens.filter((t) => {
+    if (hideAuto && t.isAuto) return false;
+    if (focusPlayerId && t.placerId !== focusPlayerId && t.targetId !== focusPlayerId) {
+      return false;
+    }
+    return true;
+  });
+
   const nameOf = (id: string): string =>
     players.find((p) => p.id === id)?.name ?? '?';
+
+  const onFocusChange = (e: ChangeEvent<HTMLSelectElement>): void => {
+    setFocusPlayerId(e.target.value);
+  };
 
   return (
     <div className={styles.panel}>
@@ -68,12 +82,45 @@ export function SuspicionTokenHistoryPanel(props: Props): ReactElement | null {
             ))}
           </div>
 
-          <RevealGraph
-            players={players.filter((p) => activeTokens.some(
-              (t) => t.placerId === p.id || t.targetId === p.id,
-            ))}
-            tokens={activeTokens}
-          />
+          <div className={styles.filters}>
+            <label className={styles.filterCheck}>
+              <input
+                type="checkbox"
+                checked={hideAuto}
+                onChange={(e) => setHideAuto(e.target.checked)}
+              />
+              Hide auto-assigned
+            </label>
+            <label className={styles.filterSelect}>
+              Focus:
+              <select value={focusPlayerId} onChange={onFocusChange}>
+                <option value="">Everyone</option>
+                {players.map((p) => (
+                  <option key={p.id} value={p.id}>{p.name}</option>
+                ))}
+              </select>
+            </label>
+            {(hideAuto || focusPlayerId) && (
+              <button
+                type="button"
+                className={styles.filterClear}
+                onClick={() => { setHideAuto(false); setFocusPlayerId(''); }}
+              >
+                Clear
+              </button>
+            )}
+          </div>
+
+          {filteredTokens.length === 0 ? (
+            <div className={styles.diffEmpty}>No arrows match the current filters.</div>
+          ) : (
+            <RevealGraph
+              players={players.filter((p) => filteredTokens.some(
+                (t) => t.placerId === p.id || t.targetId === p.id,
+              ))}
+              tokens={filteredTokens}
+            />
+          )}
 
           {prevRound !== undefined && (
             <div className={styles.diffSection}>
