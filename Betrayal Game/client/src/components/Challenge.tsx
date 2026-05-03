@@ -4,6 +4,7 @@ import styles from './Challenge.module.css';
 import { useSoundContext } from '../contexts/SoundContext';
 import { vibrate } from '../utils/haptics';
 import { Timer } from './Timer';
+import { useRovingFocus } from '../hooks/useRovingFocus';
 
 interface ChallengeProps {
   challenge?: ChallengeState;
@@ -26,6 +27,7 @@ export function Challenge({
   const [inputValue, setInputValue] = useState('');
   const [showingPlayers, setShowingPlayers] = useState(true);
   const [tapTime, setTapTime] = useState<number | null>(null);
+  const [announcement, setAnnouncement] = useState('');
   const { play } = useSoundContext();
   const soundPlayedRef = useRef(false);
   const resultSoundPlayedRef = useRef(false);
@@ -111,6 +113,36 @@ export function Challenge({
   const me = players.find((p) => p.id === myPlayerId);
   const isAlive = me?.isAlive ?? true;
   const isHost = !!me?.isHost;
+
+  // MISSING_PLAYER picker is one-shot: activating immediately submits the
+  // chosen name. Roving focus is wired below so keyboard users can move
+  // between candidates with arrow keys and submit with Enter/Space.
+  const missingPlayerCandidates =
+    challenge?.type === 'MISSING_PLAYER' && !showingPlayers && !hasAnswered && isAlive
+      ? (challenge.shownPlayerIds ?? [])
+          .map((id) => players.find((p) => p.id === id))
+          .filter((p): p is Player => p !== undefined)
+      : [];
+  const missingPlayerRoving = useRovingFocus({
+    itemIds: missingPlayerCandidates.map((p) => p.id),
+    onActivate: (id) => {
+      const p = missingPlayerCandidates.find((x) => x.id === id);
+      if (p) {
+        setAnnouncement(`Submitting ${p.name} as the missing player.`);
+        handleMissingPlayerSubmit(p.name);
+      }
+    },
+  });
+
+  useEffect(() => {
+    if (challenge?.type === 'MISSING_PLAYER' && !showingPlayers && !hasAnswered && isAlive) {
+      setAnnouncement(
+        'Choose the missing player. Use arrow keys to move, Enter or Space to submit.',
+      );
+    } else {
+      setAnnouncement('');
+    }
+  }, [challenge?.type, showingPlayers, hasAnswered, isAlive]);
 
   if (!challenge) {
     return <div className={styles.container}>Loading challenge...</div>;
@@ -290,24 +322,39 @@ export function Challenge({
             {answerCountBadge}
 
             {!hasAnswered && isAlive ? (
-              <div className={styles.playerGrid}>
+              <div
+                className={styles.playerGrid}
+                role="radiogroup"
+                aria-label="Pick the missing player"
+              >
+                <div role="status" aria-live="polite" className={styles.srOnly}>
+                  {announcement}
+                </div>
                 {/*
                   Show a button for EVERY player who was originally on screen,
                   including the one the server is now hiding. Without the
                   hidden player in the list there is no correct button to
                   press, which made the challenge unwinnable.
                 */}
-                {shownPlayers.map((p) => (
-                  <button
-                    key={p.id}
-                    className={styles.playerButton}
-                    onClick={() => handleMissingPlayerSubmit(p.name)}
-                    disabled={hasAnswered}
-                  >
-                    <div className={styles.avatar}>{p.name[0]?.toUpperCase()}</div>
-                    <span className={styles.playerName}>{p.name}</span>
-                  </button>
-                ))}
+                {shownPlayers.map((p) => {
+                  const itemProps = missingPlayerRoving.getItemProps(p.id);
+                  return (
+                    <button
+                      {...itemProps}
+                      key={p.id}
+                      type="button"
+                      role="radio"
+                      aria-checked={false}
+                      aria-label={p.name}
+                      className={styles.playerButton}
+                      onClick={() => handleMissingPlayerSubmit(p.name)}
+                      disabled={hasAnswered}
+                    >
+                      <div className={styles.avatar}>{p.name[0]?.toUpperCase()}</div>
+                      <span className={styles.playerName}>{p.name}</span>
+                    </button>
+                  );
+                })}
               </div>
             ) : (
               <div className={styles.waitingSection}>

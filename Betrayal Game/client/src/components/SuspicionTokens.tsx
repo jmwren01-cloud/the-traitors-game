@@ -4,6 +4,7 @@ import type { SuspicionToken, SuspicionTokenPhase, SuspicionTokenErrorCode, C2SE
 import { TOKEN_PLACEMENT_WINDOW_MS } from '../types';
 import { RevealGraph } from './RevealGraph';
 import { SuspicionTokenHistoryPanel } from './SuspicionTokenHistoryPanel';
+import { useRovingFocus } from '../hooks/useRovingFocus';
 import styles from './SuspicionTokens.module.css';
 
 interface Props {
@@ -42,7 +43,39 @@ export function SuspicionTokens(props: Props): ReactElement {
 
   const alive = useMemo(() => players.filter((p) => p.isAlive), [players]);
 
+  const [announcement, setAnnouncement] = useState('');
+
   const placement = phase === 'PLACEMENT';
+
+  // Roving-focus group for the picker. Only the alive non-self alive
+  // candidates are reachable; spectators get an empty group.
+  const candidateIds =
+    placement && isAlive
+      ? alive.filter((p) => p.id !== myPlayerId).map((p) => p.id)
+      : [];
+  const playerName = (id: string): string =>
+    alive.find((p) => p.id === id)?.name ?? 'player';
+  const roving = useRovingFocus({
+    itemIds: candidateIds,
+    preferredId: myTokenTargetId ?? null,
+    onActivate: (id) => {
+      handlePick(id);
+      setAnnouncement(`Token cast on ${playerName(id)}.`);
+    },
+  });
+
+  useEffect(() => {
+    if (placement && isAlive) {
+      setAnnouncement(
+        'Place your Suspicion Token. Use arrow keys to move, Enter or Space to cast on a suspect.',
+      );
+    } else if (placement && !isAlive) {
+      setAnnouncement('Spectator — you cannot cast a Suspicion Token.');
+    } else {
+      setAnnouncement('');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [placement, isAlive]);
   const endsAt = placement ? windowEndsAt : revealEndsAt;
   const totalDuration = placement ? TOKEN_PLACEMENT_WINDOW_MS : 5_000;
   const remaining = endsAt ? Math.max(0, endsAt - now) : 0;
@@ -59,6 +92,9 @@ export function SuspicionTokens(props: Props): ReactElement {
   return (
     <div className={styles.overlay} role="dialog" aria-label="Suspicion Tokens">
       <div className={styles.card}>
+        <div role="status" aria-live="polite" className={styles.srOnly}>
+          {announcement}
+        </div>
         <h2 className={styles.title}>
           {placement ? 'Place Your Suspicion Token' : 'Suspicion Tokens'}
         </h2>
@@ -80,18 +116,30 @@ export function SuspicionTokens(props: Props): ReactElement {
               {Math.ceil(remaining / 1000)}s left
             </div>
 
-            <div className={styles.targets}>
+            <div
+              className={styles.targets}
+              role="radiogroup"
+              aria-label="Suspicion Token targets"
+            >
               {alive.map((p) => {
                 const isSelf = p.id === myPlayerId;
                 const selected = myTokenTargetId === p.id;
+                const disabled = !isAlive || isSelf;
+                const itemProps = !disabled ? roving.getItemProps(p.id) : null;
+                const accessibleName = isSelf
+                  ? `${p.name} (you, cannot vote for yourself)`
+                  : p.name;
                 return (
                   <button
+                    {...(itemProps ?? {})}
                     key={p.id}
                     type="button"
+                    role="radio"
+                    aria-checked={selected}
+                    aria-label={accessibleName}
                     className={`${styles.target} ${selected ? styles.targetSelected : ''}`}
                     onClick={() => handlePick(p.id)}
-                    disabled={!isAlive || isSelf}
-                    aria-pressed={selected}
+                    disabled={disabled}
                   >
                     {p.name}{isSelf ? ' (you)' : ''}
                   </button>

@@ -5,6 +5,7 @@ import { getColorHex, getAvatarEmoji } from '../avatarConstants';
 import styles from './Voting.module.css';
 import { useSoundContext } from '../contexts/SoundContext';
 import { vibrate } from '../utils/haptics';
+import { useRovingFocus } from '../hooks/useRovingFocus';
 
 interface VotingProps {
   players: Player[];
@@ -57,6 +58,9 @@ export function Voting({ players, myPlayerId, phase, votes: _votes, banishedPlay
   // (Reveal) and accepting the banishment (Decline). Reset whenever the phase
   // changes so a stale modal can never persist between rounds.
   const [shieldChoiceOpen, setShieldChoiceOpen] = useState(false);
+  // Polite live-region announcement for keyboard users on the day-phase
+  // pickers (voting + revote). Mirrors the night-phase pattern.
+  const [announcement, setAnnouncement] = useState('');
   // whisper UI state
   const [whisperTargetId, setWhisperTargetId] = useState<string | null>(null);
   const [whisperText, setWhisperText] = useState('');
@@ -190,6 +194,63 @@ export function Voting({ players, myPlayerId, phase, votes: _votes, banishedPlay
   const canVote = myPlayer?.isAlive && !hasVoted && (phase === 'VOTING' || phase === 'REVOTE');
   const isRound1 = currentRound === 1;
   const tiedPlayers = tiedPlayerIds ? alivePlayers.filter((p) => tiedPlayerIds.includes(p.id)) : [];
+
+  const playerNameById = (id: string): string =>
+    players.find((p) => p.id === id)?.name ?? 'player';
+
+  // Voting picker (alive players excluding self).
+  const voteCandidateIds =
+    canVote && phase === 'VOTING'
+      ? alivePlayers.filter((p) => p.id !== myPlayerId).map((p) => p.id)
+      : [];
+  const voteRoving = useRovingFocus({
+    itemIds: voteCandidateIds,
+    preferredId: selectedTarget,
+    onActivate: (id) => {
+      setSelectedTarget(id);
+      setAnnouncement(`Selected to banish: ${playerNameById(id)}.`);
+    },
+    onCancel: () => {
+      if (selectedTarget) {
+        setSelectedTarget(null);
+        setAnnouncement('Vote selection cleared.');
+      }
+    },
+  });
+
+  // Revote picker (tied players excluding self).
+  const revoteCandidateIds =
+    canVote && phase === 'REVOTE' && tiedPlayerIds
+      ? tiedPlayers.filter((p) => p.id !== myPlayerId).map((p) => p.id)
+      : [];
+  const revoteRoving = useRovingFocus({
+    itemIds: revoteCandidateIds,
+    preferredId: selectedTarget,
+    onActivate: (id) => {
+      setSelectedTarget(id);
+      setAnnouncement(`Selected to banish: ${playerNameById(id)}.`);
+    },
+    onCancel: () => {
+      if (selectedTarget) {
+        setSelectedTarget(null);
+        setAnnouncement('Revote selection cleared.');
+      }
+    },
+  });
+
+  useEffect(() => {
+    if (phase === 'VOTING' || phase === 'REVOTE') {
+      if (hasVoted) {
+        setAnnouncement('Vote submitted. Waiting for other players.');
+      } else if (myPlayer?.isAlive) {
+        setAnnouncement(
+          'Choose who to banish. Use arrow keys to move between players, Enter or Space to select, Escape to clear.',
+        );
+      }
+    } else {
+      setAnnouncement('');
+    }
+  }, [phase, hasVoted, myPlayer?.isAlive]);
 
   const handleVote = () => {
     if (selectedTarget) {
@@ -529,27 +590,47 @@ export function Voting({ players, myPlayerId, phase, votes: _votes, banishedPlay
         {shieldToastEl}
         {renderWhisperToast()}
         {renderWhisperInboxButton()}
+        <div role="status" aria-live="polite" className={styles.srOnly}>
+          {announcement}
+        </div>
         <h1 className={styles.title}>Vote to Banish</h1>
         {currentRound !== undefined && renderWhisperFeed(currentRound)}
-        <p className={styles.subtitle}>Who is the traitor among you?</p>
+        <p id="vote-picker-label" className={styles.subtitle}>Who is the traitor among you?</p>
 
-        <div className={styles.playerGrid}>
+        <div
+          className={styles.playerGrid}
+          role="radiogroup"
+          aria-labelledby="vote-picker-label"
+        >
           {alivePlayers.map((player) => {
             const colorHex = getColorHex(player.color);
             const avatarEmoji = getAvatarEmoji(player.avatar);
-            const isDisabled = player.id === myPlayerId;
+            const isDisabled = player.id === myPlayerId || !canVote;
             const isSelected = selectedTarget === player.id;
+            const itemProps = !isDisabled ? voteRoving.getItemProps(player.id) : null;
+            const shieldVisible = (player.id === myPlayerId && player.hasShield) || player.shieldRevealed;
+            const accessibleName = player.id === myPlayerId
+              ? `${player.name} (you, cannot vote for yourself)`
+              : shieldVisible
+                ? `${player.name}, shielded`
+                : player.name;
             return (
-              <div
+              <button
+                {...(itemProps ?? {})}
                 key={player.id}
-                className={`${styles.voteCard} ${isSelected ? styles.selected : ''} ${isDisabled ? styles.disabled : ''}`}
+                type="button"
+                role="radio"
+                aria-checked={isSelected}
+                aria-label={accessibleName}
+                disabled={isDisabled}
+                className={`${styles.voteCard} ${isSelected ? styles.selected : ''} ${player.id === myPlayerId ? styles.disabled : ''}`}
                 style={{ borderColor: isSelected ? colorHex : undefined, '--player-color': colorHex } as React.CSSProperties}
-                onClick={() => !isDisabled && canVote && setSelectedTarget(player.id)}
+                onClick={() => !isDisabled && setSelectedTarget(player.id)}
               >
                 <div className={styles.avatar} style={{ background: colorHex, color: '#000' }}>{avatarEmoji}</div>
                 <span className={styles.name}>{player.name}{renderShieldIndicator(player)}</span>
                 {player.id === myPlayerId && <span className={styles.youLabel}>You</span>}
-              </div>
+              </button>
             );
           })}
         </div>
@@ -574,9 +655,33 @@ export function Voting({ players, myPlayerId, phase, votes: _votes, banishedPlay
         )}
 
         {canVote && (
-          <button className={styles.voteBtn} onClick={handleVote} disabled={!selectedTarget}>
-            Cast Vote
-          </button>
+          <div className={styles.actionRow}>
+            <button
+              type="button"
+              className={styles.voteBtn}
+              onClick={handleVote}
+              disabled={!selectedTarget}
+              aria-label={
+                selectedTarget
+                  ? `Cast vote to banish ${playerNameById(selectedTarget)}`
+                  : 'Cast vote (no target selected)'
+              }
+            >
+              Cast Vote
+            </button>
+            <button
+              type="button"
+              className={styles.cancelSelectionBtn}
+              onClick={() => {
+                setSelectedTarget(null);
+                setAnnouncement('Vote selection cleared.');
+              }}
+              disabled={!selectedTarget}
+              aria-label="Clear vote selection"
+            >
+              Cancel
+            </button>
+          </div>
         )}
 
         {hasVoted && voteCount && (
@@ -777,36 +882,77 @@ export function Voting({ players, myPlayerId, phase, votes: _votes, banishedPlay
   if (phase === 'REVOTE' && tiedPlayerIds) {
     return (
       <div className={styles.container}>
+        <div role="status" aria-live="polite" className={styles.srOnly}>
+          {announcement}
+        </div>
         <h1 className={styles.title}>Revote</h1>
-        <div className={styles.tieBanner}>
+        <div id="revote-picker-label" className={styles.tieBanner}>
           Vote only for the tied candidates
         </div>
 
-        <div className={styles.playerGrid}>
+        <div
+          className={styles.playerGrid}
+          role="radiogroup"
+          aria-labelledby="revote-picker-label"
+        >
           {tiedPlayers.map((player) => {
             const colorHex = getColorHex(player.color);
             const avatarEmoji = getAvatarEmoji(player.avatar);
-            const isDisabled = player.id === myPlayerId;
+            const isDisabled = player.id === myPlayerId || !canVote;
             const isSelected = selectedTarget === player.id;
+            const itemProps = !isDisabled ? revoteRoving.getItemProps(player.id) : null;
+            const accessibleName = player.id === myPlayerId
+              ? `${player.name} (you, cannot vote for yourself)`
+              : player.name;
             return (
-              <div
+              <button
+                {...(itemProps ?? {})}
                 key={player.id}
-                className={`${styles.voteCard} ${isSelected ? styles.selected : ''} ${isDisabled ? styles.disabled : ''}`}
+                type="button"
+                role="radio"
+                aria-checked={isSelected}
+                aria-label={accessibleName}
+                disabled={isDisabled}
+                className={`${styles.voteCard} ${isSelected ? styles.selected : ''} ${player.id === myPlayerId ? styles.disabled : ''}`}
                 style={{ borderColor: isSelected ? colorHex : undefined }}
-                onClick={() => !isDisabled && canVote && setSelectedTarget(player.id)}
+                onClick={() => !isDisabled && setSelectedTarget(player.id)}
               >
                 <div className={styles.avatar} style={{ background: colorHex, color: '#000' }}>{avatarEmoji}</div>
                 <span className={styles.name}>{player.name}</span>
                 {player.id === myPlayerId && <span className={styles.youLabel}>You</span>}
-              </div>
+              </button>
             );
           })}
         </div>
 
         {canVote && (
-          <button className={styles.voteBtn} onClick={handleVote} disabled={!selectedTarget}>
-            Cast Revote
-          </button>
+          <div className={styles.actionRow}>
+            <button
+              type="button"
+              className={styles.voteBtn}
+              onClick={handleVote}
+              disabled={!selectedTarget}
+              aria-label={
+                selectedTarget
+                  ? `Cast revote for ${playerNameById(selectedTarget)}`
+                  : 'Cast revote (no target selected)'
+              }
+            >
+              Cast Revote
+            </button>
+            <button
+              type="button"
+              className={styles.cancelSelectionBtn}
+              onClick={() => {
+                setSelectedTarget(null);
+                setAnnouncement('Revote selection cleared.');
+              }}
+              disabled={!selectedTarget}
+              aria-label="Clear revote selection"
+            >
+              Cancel
+            </button>
+          </div>
         )}
 
         {hasVoted && voteCount && (

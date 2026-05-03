@@ -871,3 +871,64 @@
     animation: none;
   }
 }
+
+/* Day-phase keyboard accessibility (Task #44). */
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.voteCard:focus {
+  outline: none;
+}
+
+.voteCard:focus-visible {
+  outline: 3px solid #ffd54a;
+  outline-offset: 3px;
+  box-shadow: 0 0 0 4px rgba(255, 213, 74, 0.35);
+}
+
+.cancelSelectionBtn {
+  margin-top: 12px;
+  padding: 10px 20px;
+  background: transparent;
+  color: #ddd;
+  border: 2px solid #666;
+  border-radius: 10px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 0.2s, color 0.2s;
+}
+
+.cancelSelectionBtn:hover:not(:disabled) {
+  border-color: #aaa;
+  color: #fff;
+}
+
+.cancelSelectionBtn:focus-visible {
+  outline: 3px solid #ffd54a;
+  outline-offset: 2px;
+}
+
+.cancelSelectionBtn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.actionRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  margin-top: 12px;
+}
