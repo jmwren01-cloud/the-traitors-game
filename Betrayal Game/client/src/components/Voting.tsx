@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import type { Player, C2SEvent, Role, Vote, VoteTally, Whisper } from '../types';
+import type { Player, C2SEvent, Role, Vote, VoteTally, Whisper, ConfessionReveal } from '../types';
 import { WHISPER_MAX_LENGTH } from '../types';
 import { getColorHex, getAvatarEmoji } from '../avatarConstants';
 import styles from './Voting.module.css';
@@ -37,6 +37,8 @@ interface VotingProps {
   whispersRead?: string[];
   /** Most recent server-side whisper validation error for this player. */
   whisperError?: { code: string; message: string };
+  /** Anonymous confessions revealed for the current Roundtable. */
+  confessions?: ConfessionReveal[];
   /** Local action dispatcher (not a server event). */
   onLocalAction?: (action: { type: string; payload?: Record<string, unknown> }) => void;
   onSend: (event: C2SEvent) => void;
@@ -44,7 +46,7 @@ interface VotingProps {
 
 const REASON_MAX_LENGTH = 120;
 
-export function Voting({ players, myPlayerId, phase, votes: _votes, banishedPlayer, currentRound, voteCount, tiedPlayerIds, tiedPlayerNames, randomlySelectedPlayer, revealIndex, currentTally, revealedVotes, totalVotes: serverTotalVotes, currentReveal, shieldBlockedBanishment, shieldBlockedBanishmentName, whispers, lastWhisperReceivedId, whispersRead, whisperError, onLocalAction, onSend }: VotingProps) {
+export function Voting({ players, myPlayerId, phase, votes: _votes, banishedPlayer, currentRound, voteCount, tiedPlayerIds, tiedPlayerNames, randomlySelectedPlayer, revealIndex, currentTally, revealedVotes, totalVotes: serverTotalVotes, currentReveal, shieldBlockedBanishment, shieldBlockedBanishmentName, whispers, lastWhisperReceivedId, whispersRead, whisperError, confessions, onLocalAction, onSend }: VotingProps) {
   void _votes;
   const [selectedTarget, setSelectedTarget] = useState<string | null>(null);
   const [reasonText, setReasonText] = useState('');
@@ -480,6 +482,23 @@ export function Voting({ players, myPlayerId, phase, votes: _votes, banishedPlay
         </div>
 
         {currentRound !== undefined && renderWhisperFeed(currentRound)}
+
+        {confessions && confessions.length > 0 && (
+          <div style={{
+            margin: '12px 0', padding: '10px 12px',
+            border: '1px solid rgba(212,165,80,0.4)', borderRadius: 8,
+            background: 'rgba(80,30,10,0.18)',
+          }}>
+            <div style={{ fontSize: 12, opacity: 0.85, marginBottom: 6, letterSpacing: 0.4, color: '#f7d896' }}>
+              🕯️ ANONYMOUS CONFESSIONS
+            </div>
+            {confessions.map((c) => (
+              <div key={c.id} style={{ fontSize: 13, padding: '4px 0', color: '#f0e2c4', fontStyle: 'italic' }}>
+                — "{c.text}"
+              </div>
+            ))}
+          </div>
+        )}
 
         {deadPlayers.length > 0 && (
           <div className={styles.deadPlayersSection}>
