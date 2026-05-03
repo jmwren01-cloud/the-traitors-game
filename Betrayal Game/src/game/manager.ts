@@ -13,6 +13,22 @@ const WORD_BANK = [
   'king', 'lord', 'lady', 'duke', 'earl', 'hunt', 'mask', 'clue', 'trap'
 ];
 
+// ============= INTERNAL HELPERS =============
+
+/**
+ * Strip a set of optional keys from an object so that
+ * `exactOptionalPropertyTypes` is happy. Use this instead of writing
+ * `field: undefined` (which the strict TS settings reject) when you want
+ * to clear an optional GameState/ChallengeState field across spreads.
+ */
+function omit<T extends object, K extends keyof T>(obj: T, ...keys: K[]): Omit<T, K> {
+  const copy: T = { ...obj };
+  for (const k of keys) {
+    delete copy[k];
+  }
+  return copy;
+}
+
 // ============= TIMER CONFIGURATION =============
 
 export function createTimer(phase: GamePhase, settings: GameSettings): TimerState | undefined {
@@ -204,11 +220,14 @@ export function setAvatar(game: GameState, playerId: string, color?: string, ava
     throw new Error('Invalid avatar choice');
   }
 
-  const updatedPlayers = game.players.map((p: Player) =>
-    p.id === playerId
-      ? { ...p, color: color ?? p.color, avatar: avatar ?? p.avatar }
-      : p
-  );
+  const updatedPlayers = game.players.map((p: Player) => {
+    if (p.id !== playerId) return p;
+    return {
+      ...p,
+      ...(color !== undefined ? { color } : {}),
+      ...(avatar !== undefined ? { avatar } : {}),
+    };
+  });
 
   return { ...game, players: updatedPlayers };
 }
@@ -505,11 +524,12 @@ export function submitVoteWithReason(game: GameState, voterId: string, targetId:
   // Remove any existing vote from this voter
   const filteredVotes = game.votes.filter((v: Vote) => v.voterId !== voterId);
   
-  const vote: Vote = { 
-    voterId, 
+  const trimmedReason = reasonText?.trim().slice(0, 120);
+  const vote: Vote = {
+    voterId,
     targetId,
-    reasonText: reasonText?.trim().slice(0, 120) || undefined,
-    timestamp: Date.now()
+    timestamp: Date.now(),
+    ...(trimmedReason ? { reasonText: trimmedReason } : {}),
   };
   
   // Track this as a manual vote for future auto-vote fallback
@@ -710,7 +730,7 @@ export function banishPlayer(game: GameState): BanishResult {
     // If this is a revote tie, do random selection
     if (game.isRevote) {
       const randomIndex = Math.floor(Math.random() * topCandidates.length);
-      const randomlySelectedId = topCandidates[randomIndex];
+      const randomlySelectedId = topCandidates[randomIndex]!;
       const updatedPlayers = game.players.map((p: Player) =>
         p.id === randomlySelectedId ? { ...p, isAlive: false } : p
       );
@@ -750,7 +770,7 @@ export function banishPlayer(game: GameState): BanishResult {
   }
 
   // Clear winner - banish them
-  const banishedId = topCandidates[0];
+  const banishedId = topCandidates[0]!;
   const snapshotVotes = [...game.revealedVotes];
   const updatedPlayers = game.players.map((p: Player) =>
     p.id === banishedId ? { ...p, isAlive: false } : p
@@ -758,13 +778,12 @@ export function banishPlayer(game: GameState): BanishResult {
 
   return {
     game: {
-      ...game,
+      ...omit(game, 'tiedPlayerIds'),
       players: updatedPlayers,
       banishedPlayerId: banishedId,
       phase: 'BANISH_REVEAL',
       votes: [],
       revealedVotes: [],
-      tiedPlayerIds: undefined,
       lastRoundVotes: snapshotVotes,
     },
     isTie: false
@@ -812,17 +831,15 @@ export function transferHost(game: GameState, newHostId: string): GameState {
  */
 export function endGameEarly(game: GameState): GameState {
   return {
-    ...game,
+    ...omit(game, 'winner', 'timer'),
     phase: 'GAME_END',
-    winner: undefined,
-    timer: undefined,
   };
 }
 
 export function findNewHost(game: GameState): string | null {
   const connectedPlayers = game.players.filter((p: Player) => p.isConnected && p.id !== game.hostId);
   if (connectedPlayers.length === 0) return null;
-  return connectedPlayers[0].id;
+  return connectedPlayers[0]!.id;
 }
 
 export function isGameEmpty(game: GameState): boolean {
@@ -835,14 +852,15 @@ function buildRoundRecord(game: GameState): RoundRecord {
   const votes: VoteEntry[] = (game.lastRoundVotes ?? []).map((v) => {
     const voter = game.players.find((p: Player) => p.id === v.voterId);
     const target = game.players.find((p: Player) => p.id === v.targetId);
-    return {
+    const entry: VoteEntry = {
       voterName: voter?.name ?? 'Unknown',
       voterRole: (voter?.role ?? 'FAITHFUL') as Role,
       targetName: target?.name ?? 'Unknown',
       targetRole: (target?.role ?? 'FAITHFUL') as Role,
-      isAutoVote: v.isAutoVote,
-      reasonText: v.reasonText,
-    } satisfies VoteEntry;
+      ...(v.isAutoVote !== undefined ? { isAutoVote: v.isAutoVote } : {}),
+      ...(v.reasonText !== undefined ? { reasonText: v.reasonText } : {}),
+    };
+    return entry;
   });
 
   const banishedPlayer = game.players.find((p: Player) => p.id === game.banishedPlayerId);
@@ -854,14 +872,14 @@ function buildRoundRecord(game: GameState): RoundRecord {
   return {
     round: game.currentRound,
     votes,
-    banishedName: banishedPlayer?.name,
-    banishedRole: banishedPlayer?.role,
-    murderedName: murderedPlayer?.name,
-    murderedRole: murderedPlayer?.role,
     murderBlocked: game.lastMurderBlocked ?? false,
-    shieldedName: shieldedPlayer?.name,
-    shieldedRole: shieldedPlayer?.role,
-    recruitedName: recruitedPlayer?.name,
+    ...(banishedPlayer?.name !== undefined ? { banishedName: banishedPlayer.name } : {}),
+    ...(banishedPlayer?.role !== undefined ? { banishedRole: banishedPlayer.role } : {}),
+    ...(murderedPlayer?.name !== undefined ? { murderedName: murderedPlayer.name } : {}),
+    ...(murderedPlayer?.role !== undefined ? { murderedRole: murderedPlayer.role } : {}),
+    ...(shieldedPlayer?.name !== undefined ? { shieldedName: shieldedPlayer.name } : {}),
+    ...(shieldedPlayer?.role !== undefined ? { shieldedRole: shieldedPlayer.role } : {}),
+    ...(recruitedPlayer?.name !== undefined ? { recruitedName: recruitedPlayer.name } : {}),
   };
 }
 
@@ -877,10 +895,8 @@ export function checkWinCondition(game: GameState): GameState {
   if (aliveTraitors >= aliveFaithful) {
     const record = buildRoundRecord(game);
     return {
-      ...game,
+      ...omit(game, 'lastRoundVotes', 'lastRecruitedPlayerId'),
       history: [...game.history, record],
-      lastRoundVotes: undefined,
-      lastRecruitedPlayerId: undefined,
       phase: 'GAME_END',
       winner: 'TRAITORS'
     };
@@ -890,10 +906,8 @@ export function checkWinCondition(game: GameState): GameState {
   if (aliveTraitors === 0) {
     const record = buildRoundRecord(game);
     return {
-      ...game,
+      ...omit(game, 'lastRoundVotes', 'lastRecruitedPlayerId'),
       history: [...game.history, record],
-      lastRoundVotes: undefined,
-      lastRecruitedPlayerId: undefined,
       phase: 'GAME_END',
       winner: 'FAITHFUL'
     };
@@ -926,12 +940,9 @@ export function startNight(game: GameState): GameState {
   }
 
   return {
-    ...game,
+    ...omit(game, 'pendingRecruitmentTargetId', 'lastRecruitedPlayerId', 'medicProtectionTargetId'),
     phase: 'NIGHT',
     murderVotes: [],
-    pendingRecruitmentTargetId: undefined,
-    lastRecruitedPlayerId: undefined,
-    medicProtectionTargetId: undefined,
   };
 }
 
@@ -1100,22 +1111,18 @@ export function resolveMurder(game: GameState): MurderResult {
   ) {
     return {
       game: {
-        ...game,
+        ...omit(game, 'lastMurderedPlayerId', 'lastShieldedPlayerId', 'pendingRecruitmentTargetId', 'medicProtectionTargetId'),
         players: playersWithRecruitment,
-        lastMurderedPlayerId: undefined,
         lastMurderBlocked: true,
-        lastShieldedPlayerId: undefined,
-        lastRecruitedPlayerId: recruitedPlayerId,
-        pendingRecruitmentTargetId: undefined,
-        medicProtectionTargetId: undefined,
+        ...(recruitedPlayerId !== undefined ? { lastRecruitedPlayerId: recruitedPlayerId } : {}),
         murderVotes: [],
         phase: 'MORNING',
       },
       blocked: true,
       // Intentionally omit shieldedPlayerId / shieldedPlayerName so the
       // router routes this as the silent "no one died" morning event.
-      recruitedPlayerId,
-      recruitedPlayerName,
+      ...(recruitedPlayerId !== undefined ? { recruitedPlayerId } : {}),
+      ...(recruitedPlayerName !== undefined ? { recruitedPlayerName } : {}),
     };
   }
 
@@ -1127,21 +1134,19 @@ export function resolveMurder(game: GameState): MurderResult {
 
     return {
       game: {
-        ...game,
+        ...omit(game, 'lastMurderedPlayerId', 'pendingRecruitmentTargetId'),
         players: updatedPlayers,
-        lastMurderedPlayerId: undefined,
         lastMurderBlocked: true,
         lastShieldedPlayerId: targetId,
-        lastRecruitedPlayerId: recruitedPlayerId,
-        pendingRecruitmentTargetId: undefined,
+        ...(recruitedPlayerId !== undefined ? { lastRecruitedPlayerId: recruitedPlayerId } : {}),
         murderVotes: [],
         phase: 'MORNING'
       },
       blocked: true,
       shieldedPlayerId: targetId,
       shieldedPlayerName: finalTarget.name,
-      recruitedPlayerId,
-      recruitedPlayerName,
+      ...(recruitedPlayerId !== undefined ? { recruitedPlayerId } : {}),
+      ...(recruitedPlayerName !== undefined ? { recruitedPlayerName } : {}),
     };
   }
 
@@ -1152,21 +1157,19 @@ export function resolveMurder(game: GameState): MurderResult {
 
   return {
     game: {
-      ...game,
+      ...omit(game, 'lastShieldedPlayerId', 'pendingRecruitmentTargetId'),
       players: updatedPlayers,
       lastMurderedPlayerId: targetId,
       lastMurderBlocked: false,
-      lastShieldedPlayerId: undefined,
-      lastRecruitedPlayerId: recruitedPlayerId,
-      pendingRecruitmentTargetId: undefined,
+      ...(recruitedPlayerId !== undefined ? { lastRecruitedPlayerId: recruitedPlayerId } : {}),
       murderVotes: [],
       phase: 'MORNING'
     },
     blocked: false,
     murderedPlayerId: targetId,
     murderedPlayerName: finalTarget.name,
-    recruitedPlayerId,
-    recruitedPlayerName,
+    ...(recruitedPlayerId !== undefined ? { recruitedPlayerId } : {}),
+    ...(recruitedPlayerName !== undefined ? { recruitedPlayerName } : {}),
   };
 }
 
@@ -1196,10 +1199,8 @@ export function continueToDayPhase(game: GameState): GameState {
   // Check win conditions after murder
   if (aliveTraitors >= aliveFaithful) {
     return {
-      ...game,
+      ...omit(game, 'lastRoundVotes', 'lastShieldedPlayerId'),
       history: newHistory,
-      lastRoundVotes: undefined,
-      lastShieldedPlayerId: undefined,
       phase: 'GAME_END',
       winner: 'TRAITORS'
     };
@@ -1207,10 +1208,8 @@ export function continueToDayPhase(game: GameState): GameState {
 
   if (aliveTraitors === 0) {
     return {
-      ...game,
+      ...omit(game, 'lastRoundVotes', 'lastShieldedPlayerId'),
       history: newHistory,
-      lastRoundVotes: undefined,
-      lastShieldedPlayerId: undefined,
       phase: 'GAME_END',
       winner: 'FAITHFUL'
     };
@@ -1222,11 +1221,8 @@ export function continueToDayPhase(game: GameState): GameState {
   // If challenges are enabled, go to CHALLENGE phase, otherwise go directly to ROUNDTABLE
   if (game.settings.challengesEnabled) {
     return {
-      ...game,
+      ...omit(game, 'lastRoundVotes', 'lastShieldedPlayerId', 'lastRecruitedPlayerId'),
       history: newHistory,
-      lastRoundVotes: undefined,
-      lastShieldedPlayerId: undefined,
-      lastRecruitedPlayerId: undefined,
       phase: 'CHALLENGE',
       currentRound: nextRound,
       lastMurderBlocked: false
@@ -1235,11 +1231,8 @@ export function continueToDayPhase(game: GameState): GameState {
 
   // Continue directly to roundtable
   return {
-    ...game,
+    ...omit(game, 'lastRoundVotes', 'lastShieldedPlayerId', 'lastRecruitedPlayerId'),
     history: newHistory,
-    lastRoundVotes: undefined,
-    lastShieldedPlayerId: undefined,
-    lastRecruitedPlayerId: undefined,
     phase: 'ROUNDTABLE',
     currentRound: nextRound,
     lastMurderBlocked: false
@@ -1474,11 +1467,13 @@ export function submitChallengeAnswer(
       break;
   }
 
+  const nextWinnerId = isWinner ? playerId : game.challenge.winnerId;
+  const nextWinnerName = isWinner ? player.name : game.challenge.winnerName;
   const updatedChallenge: ChallengeState = {
     ...game.challenge,
     answers: updatedAnswers,
-    winnerId: isWinner ? playerId : game.challenge.winnerId,
-    winnerName: isWinner ? player.name : game.challenge.winnerName
+    ...(nextWinnerId !== undefined ? { winnerId: nextWinnerId } : {}),
+    ...(nextWinnerName !== undefined ? { winnerName: nextWinnerName } : {}),
   };
 
   return {
@@ -1565,14 +1560,14 @@ export function resolveChallenge(game: GameState): ChallengeResolution {
       players: updatedPlayers,
       challenge: {
         ...game.challenge,
-        winnerId,
-        winnerName,
+        ...(winnerId !== undefined ? { winnerId } : {}),
+        ...(winnerName !== undefined ? { winnerName } : {}),
         completed: true
       }
     },
-    winnerId,
-    winnerName,
-    correctAnswer,
+    ...(winnerId !== undefined ? { winnerId } : {}),
+    ...(winnerName !== undefined ? { winnerName } : {}),
+    ...(correctAnswer !== undefined ? { correctAnswer } : {}),
     shieldAwarded
   };
 }
@@ -1583,9 +1578,8 @@ export function continueToRoundtable(game: GameState): GameState {
   }
 
   return {
-    ...game,
+    ...omit(game, 'challenge'),
     phase: 'ROUNDTABLE',
-    challenge: undefined
   };
 }
 
