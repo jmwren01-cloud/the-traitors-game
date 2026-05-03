@@ -883,6 +883,85 @@ export function gameStateReducer(state: GameState | null, msg: Msg): GameState |
       return state ? { ...state, players: payload.players } : null;
     }
 
+    case 'S2C_PLAYER_REMOVED': {
+      const payload = msg.payload as {
+        removedPlayerId: string;
+        removedPlayerName: string;
+        players: Player[];
+        newHostId?: string;
+      };
+      if (!state) return null;
+      const removedId = payload.removedPlayerId;
+      // Drop any vote rows that referenced the removed player so the
+      // host's vote panel doesn't keep showing ghost arrows.
+      const filterVote = (v: Vote) =>
+        v.voterId !== removedId && v.targetId !== removedId;
+      const next: GameState = {
+        ...state,
+        players: payload.players,
+        votes: (state.votes ?? []).filter(filterVote),
+        revealedVotes: (state.revealedVotes ?? []).filter(filterVote),
+      };
+      if (state.currentTally) {
+        next.currentTally = state.currentTally.filter((t) => t.playerId !== removedId);
+      }
+      if (state.tiedPlayerIds) {
+        const filtered = state.tiedPlayerIds.filter((id) => id !== removedId);
+        next.tiedPlayerIds = filtered.length > 0 ? filtered : undefined;
+      }
+      if (state.tiedPlayerNames && payload.removedPlayerName) {
+        const filtered = state.tiedPlayerNames.filter((n) => n !== payload.removedPlayerName);
+        next.tiedPlayerNames = filtered.length > 0 ? filtered : undefined;
+      }
+      if (state.tiebreakerResults) {
+        next.tiebreakerResults = state.tiebreakerResults.filter((r) => r.playerId !== removedId);
+      }
+      if (state.revealOrder) {
+        next.revealOrder = state.revealOrder.filter((id) => id !== removedId);
+      }
+      if (state.murderVoterIds) {
+        next.murderVoterIds = state.murderVoterIds.filter((id) => id !== removedId);
+      }
+      // Clear single-id state slots that referred to the removed
+      // player so stale banners / banished names don't linger after the
+      // server has already wiped them.
+      if (state.banishedPlayer?.id === removedId) next.banishedPlayer = undefined;
+      if (state.murderedPlayer?.id === removedId) next.murderedPlayer = undefined;
+      if (state.murderBlocked?.shieldedPlayerId === removedId) next.murderBlocked = undefined;
+      if (state.randomlySelectedPlayer?.id === removedId) next.randomlySelectedPlayer = undefined;
+      if (state.recruitedPlayer?.id === removedId) next.recruitedPlayer = undefined;
+      if (state.nightRecruitmentTargetId === removedId) {
+        next.nightRecruitmentTargetId = undefined;
+        next.nightRecruitmentTargetName = undefined;
+        next.nightRecruitmentSubmittedBy = undefined;
+      }
+      if (state.medicProtectedTarget?.id === removedId) next.medicProtectedTarget = undefined;
+      if (state.seerResult?.targetId === removedId) next.seerResult = undefined;
+      // Suspicion Token cleanup so token graph edges and the local
+      // "I picked X" pointer can't reference the removed player.
+      if (state.suspicionTokensCurrent) {
+        next.suspicionTokensCurrent = state.suspicionTokensCurrent.filter(
+          (t) => t.placerId !== removedId && t.targetId !== removedId,
+        );
+      }
+      if (state.myTokenTargetId === removedId) {
+        next.myTokenTargetId = undefined;
+      }
+      if (state.suspicionTokensByRound && state.currentRound !== undefined) {
+        const round = state.currentRound;
+        const current = state.suspicionTokensByRound[round];
+        if (current) {
+          next.suspicionTokensByRound = {
+            ...state.suspicionTokensByRound,
+            [round]: current.filter(
+              (t) => t.placerId !== removedId && t.targetId !== removedId,
+            ),
+          };
+        }
+      }
+      return next;
+    }
+
     case 'S2C_CHAT_MESSAGE': {
       const payload = msg.payload as unknown as ChatMessage;
       if (!state) return null;

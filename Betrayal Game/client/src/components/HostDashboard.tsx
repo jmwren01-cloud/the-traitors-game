@@ -38,6 +38,15 @@ export function HostDashboard({
   onSend,
 }: HostDashboardProps) {
   const [open, setOpen] = useState(false);
+  // Tracks which player row has its action menu expanded, plus a pending
+  // confirmation for destructive actions (remove / transfer host) so the
+  // host can't fat-finger a kick.
+  const [actionMenuFor, setActionMenuFor] = useState<string | null>(null);
+  const [confirmAction, setConfirmAction] = useState<
+    { kind: 'remove' | 'transfer'; playerId: string } | null
+  >(null);
+
+  const canManagePlayers = phase === 'LOBBY' || phase === 'MORNING';
 
   const isHost = players.find((p) => p.id === myPlayerId)?.isHost;
   if (!isHost) return null;
@@ -166,34 +175,105 @@ export function HostDashboard({
                 const colorHex = getColorHex(player.color);
                 const avatarEmoji = getAvatarEmoji(player.avatar);
                 const isTraitor = player.role === 'TRAITOR' || (traitorIds?.includes(player.id));
+                const isSelf = player.id === myPlayerId;
+                const showActions = canManagePlayers && !isSelf;
+                const menuOpen = actionMenuFor === player.id;
+                const pending = confirmAction?.playerId === player.id ? confirmAction : null;
                 return (
                   <div
                     key={player.id}
                     className={`${styles.rosterRow} ${!player.isAlive ? styles.rosterDead : ''}`}
                     style={{ borderLeftColor: colorHex }}
                   >
-                    <div className={styles.rosterAvatar} style={{ background: colorHex, color: '#000' }}>
-                      {avatarEmoji}
-                    </div>
-                    <div className={styles.rosterInfo}>
-                      <span className={styles.rosterName}>
-                        {player.name}
-                        {player.id === myPlayerId && <span className={styles.youTag}>YOU</span>}
-                      </span>
-                      <div className={styles.rosterBadges}>
-                        {player.role ? (
-                          <span className={`${styles.roleBadge} ${isTraitor ? styles.traitorBadge : styles.faithfulBadge}`}>
-                            {isTraitor ? 'TRAITOR' : 'FAITHFUL'}
-                          </span>
-                        ) : traitorIds?.includes(player.id) ? (
-                          <span className={`${styles.roleBadge} ${styles.traitorBadge}`}>TRAITOR</span>
-                        ) : null}
-                        {!player.isAlive && <span className={styles.deadBadge}>DEAD</span>}
-                        {player.hasShield && <span className={styles.shieldBadge}>🛡️</span>}
-                        {player.isConnected === false && <span className={styles.disconnBadge}>AWAY</span>}
+                    <div className={styles.rosterMain}>
+                      <div className={styles.rosterAvatar} style={{ background: colorHex, color: '#000' }}>
+                        {avatarEmoji}
                       </div>
+                      <div className={styles.rosterInfo}>
+                        <span className={styles.rosterName}>
+                          {player.name}
+                          {isSelf && <span className={styles.youTag}>YOU</span>}
+                          {player.isHost && <span className={styles.hostTag}>HOST</span>}
+                        </span>
+                        <div className={styles.rosterBadges}>
+                          {player.role ? (
+                            <span className={`${styles.roleBadge} ${isTraitor ? styles.traitorBadge : styles.faithfulBadge}`}>
+                              {isTraitor ? 'TRAITOR' : 'FAITHFUL'}
+                            </span>
+                          ) : traitorIds?.includes(player.id) ? (
+                            <span className={`${styles.roleBadge} ${styles.traitorBadge}`}>TRAITOR</span>
+                          ) : null}
+                          {!player.isAlive && <span className={styles.deadBadge}>DEAD</span>}
+                          {player.hasShield && <span className={styles.shieldBadge}>🛡️</span>}
+                          {player.isConnected === false && <span className={styles.disconnBadge}>AWAY</span>}
+                        </div>
+                      </div>
+                      <div className={`${styles.connDot} ${player.isConnected === false ? styles.connDotOff : styles.connDotOn}`} />
+                      {showActions && (
+                        <button
+                          className={styles.rosterMenuBtn}
+                          aria-label={`Manage ${player.name}`}
+                          aria-expanded={menuOpen}
+                          onClick={() => {
+                            setActionMenuFor(menuOpen ? null : player.id);
+                            setConfirmAction(null);
+                          }}
+                        >
+                          ⋯
+                        </button>
+                      )}
                     </div>
-                    <div className={`${styles.connDot} ${player.isConnected === false ? styles.connDotOff : styles.connDotOn}`} />
+
+                    {showActions && menuOpen && !pending && (
+                      <div className={styles.rosterActions}>
+                        <button
+                          className={styles.rosterActionBtn}
+                          disabled={player.isConnected === false}
+                          title={player.isConnected === false ? 'Cannot transfer host to a disconnected player' : undefined}
+                          onClick={() => setConfirmAction({ kind: 'transfer', playerId: player.id })}
+                        >
+                          Transfer Host
+                        </button>
+                        <button
+                          className={styles.rosterActionBtnDanger}
+                          onClick={() => setConfirmAction({ kind: 'remove', playerId: player.id })}
+                        >
+                          Remove from Game
+                        </button>
+                      </div>
+                    )}
+
+                    {pending && (
+                      <div className={styles.rosterConfirm}>
+                        <p className={styles.rosterConfirmText}>
+                          {pending.kind === 'remove'
+                            ? `Remove ${player.name} from the game? They will be disconnected.`
+                            : `Hand off host to ${player.name}?`}
+                        </p>
+                        <div className={styles.rosterConfirmRow}>
+                          <button
+                            className={styles.rosterActionBtn}
+                            onClick={() => setConfirmAction(null)}
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            className={pending.kind === 'remove' ? styles.rosterActionBtnDanger : styles.rosterActionBtnPrimary}
+                            onClick={() => {
+                              if (pending.kind === 'remove') {
+                                onSend({ type: 'C2S_REMOVE_PLAYER', payload: { targetPlayerId: player.id } });
+                              } else {
+                                onSend({ type: 'C2S_TRANSFER_HOST', payload: { targetPlayerId: player.id } });
+                              }
+                              setConfirmAction(null);
+                              setActionMenuFor(null);
+                            }}
+                          >
+                            {pending.kind === 'remove' ? 'Remove' : 'Transfer'}
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 );
               })}

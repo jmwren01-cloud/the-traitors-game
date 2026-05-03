@@ -116,6 +116,16 @@ export function useWebSocket() {
       setReconnecting(false);
     }
 
+    if (msg.type === 'S2C_YOU_WERE_REMOVED') {
+      const p = msg.payload as { message: string };
+      clearSessionToken();
+      setReconnecting(false);
+      setGameState(null);
+      setError(p.message);
+      setTimeout(() => setError(null), 6000);
+      return;
+    }
+
     if (msg.type === 'S2C_ERROR') {
       const p = msg.payload as { message: string };
       setError(p.message);

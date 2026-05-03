@@ -465,6 +465,7 @@ export type C2SEvent =
   | { type: 'C2S_GET_LEADERBOARD'; payload: { metric: 'winRate' | 'gamesPlayed' | 'traitorWins' } }
   | { type: 'C2S_GET_GLOBAL_STATS'; payload: Record<string, never> }
   | { type: 'C2S_TRANSFER_HOST'; payload: { targetPlayerId: string } }
+  | { type: 'C2S_REMOVE_PLAYER'; payload: { targetPlayerId: string } }
   | { type: 'C2S_END_GAME_EARLY'; payload: Record<string, never> }
   /** Send a private whisper to another alive player during ROUNDTABLE. */
   | { type: 'C2S_SEND_WHISPER'; payload: { recipientId: string; content: string } }
@@ -647,6 +648,28 @@ export type S2CEvent =
       newHostId: string; 
       newHostName: string; 
       players: Player[];
+    } }
+  /**
+   * Broadcast to every remaining player after the host removes a player
+   * mid-game. `players` is the post-removal roster (per-recipient scrubbed
+   * by the router). `newHostId` is set only when the removed player was
+   * the host and the role was auto-transferred.
+   */
+  | { type: 'S2C_PLAYER_REMOVED'; payload: {
+      removedPlayerId: string;
+      removedPlayerName: string;
+      players: Player[];
+      newHostId?: string;
+    } }
+  /**
+   * Sent privately to the player being removed by the host, just before
+   * their socket is closed. The client uses this to clear local game
+   * state and surface a "you were removed" notice instead of treating
+   * the close as a transient disconnect.
+   */
+  | { type: 'S2C_YOU_WERE_REMOVED'; payload: {
+      reason: 'HOST_REMOVED';
+      message: string;
     } }
   | { type: 'S2C_CONTINUE_GAME'; payload: { phase: GamePhase; currentRound: number } }
   | { type: 'S2C_NIGHT_STARTED'; payload: { 

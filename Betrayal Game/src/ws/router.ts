@@ -13,6 +13,16 @@ import {
 } from './utils.js';
 import { startVoteRevealSequence } from './voteReveal.js';
 
+// Phases where the host may remove a player or transfer host. Excludes
+// any phase with an in-flight reveal sequence, timer, or active
+// sub-phase (CHALLENGE, VOTING, VOTE_REVEAL, TIE_DETECTED, REVOTE,
+// TIEBREAKER_REVEAL, BANISH_REVEAL, NIGHT, and ROUNDTABLE — which
+// hosts the Confession Booth and Suspicion Token sub-phases).
+const HOST_MGMT_SAFE_PHASES = new Set<GameState['phase']>([
+  'LOBBY',
+  'MORNING',
+]);
+
 const activeChallengeTimers = new Map<string, NodeJS.Timeout>();
 // Wave 4 / 3 — server-side 60s false-evidence unanimity timer.
 const evidenceWindowTimers = new Map<string, NodeJS.Timeout>();
@@ -1793,6 +1803,10 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
           sendError(ws, 'Only the host can transfer host');
           return;
         }
+        if (!HOST_MGMT_SAFE_PHASES.has(gameState.phase)) {
+          sendError(ws, 'Host actions are only available in the lobby or after morning resolves.');
+          return;
+        }
         const targetId = event.payload.targetPlayerId;
         const target = gameState.players.find((p) => p.id === targetId);
         if (!target) {
@@ -1801,6 +1815,10 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
         }
         if (target.id === currentPlayerId) {
           sendError(ws, 'You are already the host');
+          return;
+        }
+        if (target.isConnected === false) {
+          sendError(ws, 'Cannot transfer host to a disconnected player');
           return;
         }
         try {
@@ -1816,6 +1834,106 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
           });
         } catch (err) {
           sendError(ws, (err as Error).message);
+        }
+        return;
+      }
+
+      if (event.type === 'C2S_REMOVE_PLAYER') {
+        const currentPlayer = gameState.players.find((p) => p.id === currentPlayerId);
+        if (!currentPlayer?.isHost) {
+          sendError(ws, 'Only the host can remove a player');
+          return;
+        }
+        if (!HOST_MGMT_SAFE_PHASES.has(gameState.phase)) {
+          sendError(ws, 'Host actions are only available in the lobby or after morning resolves.');
+          return;
+        }
+        const targetId = event.payload.targetPlayerId;
+        if (targetId === currentPlayerId) {
+          sendError(ws, 'Use Transfer Host before removing yourself');
+          return;
+        }
+        const target = gameState.players.find((p) => p.id === targetId);
+        if (!target) {
+          sendError(ws, 'Target player not found');
+          return;
+        }
+
+        let result;
+        try {
+          result = game.removePlayer(gameState, targetId);
+        } catch (err) {
+          sendError(ws, (err as Error).message);
+          return;
+        }
+        const updatedGame = result.game;
+        setGame(updatedGame);
+
+        // Notify the removed player privately, then close their socket
+        // and tear down their session token + any pending grace-period
+        // disconnection record so they can't auto-reconnect into the
+        // game they were just removed from.
+        const removedSocket = playerConnections.get(targetId);
+        if (removedSocket) {
+          // Mark this close as an intentional host removal so the
+          // socket's generic close handler skips the standard
+          // S2C_PLAYER_DISCONNECTED broadcast and grace-period setup.
+          (removedSocket as unknown as { __hostRemoved?: boolean }).__hostRemoved = true;
+          if (removedSocket.readyState === WebSocket.OPEN) {
+            try {
+              removedSocket.send(JSON.stringify({
+                type: 'S2C_YOU_WERE_REMOVED',
+                payload: {
+                  reason: 'HOST_REMOVED',
+                  message: 'The host removed you from the game.',
+                }
+              } satisfies S2CEvent));
+            } catch {
+              // Ignore send failures — we're closing the socket regardless.
+            }
+            try { removedSocket.close(); } catch { /* ignore */ }
+          }
+        }
+        playerConnections.delete(targetId);
+        for (const [token, data] of Array.from(sessionTokens.entries())) {
+          if (data.playerId === targetId && data.sessionId === currentSessionId) {
+            removeToken(token);
+            disconnectedPlayers.delete(token);
+          }
+        }
+
+        const removalPayload: {
+          removedPlayerId: string;
+          removedPlayerName: string;
+          players: typeof updatedGame.players;
+          newHostId?: string;
+        } = {
+          removedPlayerId: target.id,
+          removedPlayerName: target.name,
+          players: updatedGame.players,
+        };
+        if (result.newHostId !== undefined) removalPayload.newHostId = result.newHostId;
+
+        broadcastPerRecipient(currentSessionId, (recipientId) => ({
+          type: 'S2C_PLAYER_REMOVED',
+          payload: {
+            ...removalPayload,
+            players: scrubPlayersForRecipient(updatedGame.players, recipientId),
+          },
+        }));
+
+        if (result.hostChanged && result.newHostId) {
+          const newHost = updatedGame.players.find((p) => p.id === result.newHostId);
+          if (newHost) {
+            broadcast(currentSessionId, {
+              type: 'S2C_HOST_TRANSFERRED',
+              payload: {
+                newHostId: newHost.id,
+                newHostName: newHost.name,
+                players: updatedGame.players,
+              },
+            });
+          }
         }
         return;
       }
@@ -1973,6 +2091,14 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
   ws.on('close', () => {
     if (currentPlayerId && currentSessionId) {
       playerConnections.delete(currentPlayerId);
+
+      // The host-remove handler tears state down and broadcasts
+      // S2C_PLAYER_REMOVED itself; skip the generic disconnect path so
+      // we don't broadcast a stale S2C_PLAYER_DISCONNECTED for a
+      // player who no longer exists.
+      if ((ws as unknown as { __hostRemoved?: boolean }).__hostRemoved) {
+        return;
+      }
 
       const gameState = games.get(currentSessionId);
       if (gameState) {

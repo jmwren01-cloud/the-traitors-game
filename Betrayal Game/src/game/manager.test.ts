@@ -12,6 +12,7 @@ import {
   activateSeer,
   sendWhisper,
   WHISPER_MAX_LENGTH,
+  removePlayer,
 } from './manager.js';
 import type { GameState, Player } from './types.js';
 import { DEFAULT_SETTINGS } from './types.js';
@@ -485,5 +486,150 @@ describe('generateAutoVotes()', () => {
     const voterAutoVote = autoVotes.find((v) => v.voterId === voter.id);
     expect(voterAutoVote).toBeDefined();
     expect(voterAutoVote!.targetId).toBe(lastTarget.id);
+  });
+});
+
+// ============= removePlayer =============
+
+describe('removePlayer()', () => {
+  it('drops the target from players[] and scrubs vote rows on both sides', () => {
+    const players = makePlayers(4);
+    const [host, victim, voterA, voterB] = players as [Player, Player, Player, Player];
+    host.isHost = true;
+    const game = makeGame({
+      players: [host, victim, voterA, voterB],
+      hostId: host.id,
+      phase: 'VOTING',
+      votes: [
+        { voterId: voterA.id, targetId: victim.id },
+        { voterId: victim.id, targetId: voterB.id },
+        { voterId: voterB.id, targetId: voterA.id },
+      ],
+      revealedVotes: [
+        { voterId: voterA.id, targetId: victim.id },
+      ],
+      murderVotes: [{ voterId: victim.id, targetId: voterB.id }],
+      currentTally: [
+        { playerId: victim.id, playerName: victim.name, voteCount: 1 },
+        { playerId: voterA.id, playerName: voterA.name, voteCount: 1 },
+      ],
+      tiedPlayerIds: [victim.id, voterA.id],
+      revealOrder: [voterA.id, victim.id, voterB.id],
+    });
+
+    const { game: next, hostChanged } = removePlayer(game, victim.id);
+
+    expect(next.players.find((p) => p.id === victim.id)).toBeUndefined();
+    expect(next.players).toHaveLength(3);
+    expect(next.votes).toEqual([{ voterId: voterB.id, targetId: voterA.id }]);
+    expect(next.revealedVotes).toEqual([]);
+    expect(next.murderVotes).toEqual([]);
+    expect(next.currentTally).toEqual([
+      { playerId: voterA.id, playerName: voterA.name, voteCount: 1 },
+    ]);
+    expect(next.tiedPlayerIds).toEqual([voterA.id]);
+    expect(next.revealOrder).toEqual([voterA.id, voterB.id]);
+    expect(hostChanged).toBe(false);
+    expect(next.hostId).toBe(host.id);
+  });
+
+  it('auto-transfers host to a connected survivor when the host is removed', () => {
+    const host = makePlayer({ isHost: true });
+    const a = makePlayer({ isConnected: false });
+    const b = makePlayer();
+    const game = makeGame({
+      players: [host, a, b],
+      hostId: host.id,
+      phase: 'ROUNDTABLE',
+    });
+
+    const { game: next, hostChanged, newHostId } = removePlayer(game, host.id);
+
+    expect(hostChanged).toBe(true);
+    // Prefers a connected player over the away player.
+    expect(newHostId).toBe(b.id);
+    expect(next.hostId).toBe(b.id);
+    expect(next.players.find((p) => p.id === b.id)?.isHost).toBe(true);
+    expect(next.players.find((p) => p.id === a.id)?.isHost).toBe(false);
+  });
+
+  it('clears state slots that referenced the removed player', () => {
+    const host = makePlayer({ isHost: true });
+    const target = makePlayer();
+    const game = makeGame({
+      players: [host, target],
+      hostId: host.id,
+      phase: 'NIGHT',
+      banishedPlayerId: target.id,
+      lastMurderedPlayerId: target.id,
+      lastShieldedPlayerId: target.id,
+      randomlySelectedPlayerId: target.id,
+      pendingRecruitmentTargetId: target.id,
+      lastRecruitedPlayerId: target.id,
+      medicProtectionTargetId: target.id,
+      whispersUsedThisRound: [target.id, host.id],
+      confessionSubmittedIds: [target.id],
+      confessionEntries: [{ id: 'c1', playerId: target.id, text: 'oops' }],
+    });
+
+    const { game: next } = removePlayer(game, target.id);
+
+    expect(next.banishedPlayerId).toBeUndefined();
+    expect(next.lastMurderedPlayerId).toBeUndefined();
+    expect(next.lastShieldedPlayerId).toBeUndefined();
+    expect(next.randomlySelectedPlayerId).toBeUndefined();
+    expect(next.pendingRecruitmentTargetId).toBeUndefined();
+    expect(next.lastRecruitedPlayerId).toBeUndefined();
+    expect(next.medicProtectionTargetId).toBeUndefined();
+    expect(next.whispersUsedThisRound).toEqual([host.id]);
+    expect(next.confessionSubmittedIds).toEqual([]);
+    expect(next.confessionEntries).toEqual([]);
+  });
+
+  it('scrubs Suspicion Token edges, submission ids, and the current-round archive', () => {
+    const host = makePlayer({ isHost: true });
+    const target = makePlayer();
+    const other = makePlayer();
+    const game = makeGame({
+      players: [host, target, other],
+      hostId: host.id,
+      phase: 'ROUNDTABLE',
+      currentRound: 2,
+      tokenPhase: 'PLACEMENT',
+      tokensSubmittedIds: [host.id, target.id],
+      suspicionTokensCurrent: [
+        { placerId: host.id, targetId: target.id, round: 2 },
+        { placerId: target.id, targetId: other.id, round: 2 },
+        { placerId: other.id, targetId: host.id, round: 2 },
+      ],
+      suspicionTokensByRound: {
+        1: [{ placerId: other.id, targetId: target.id, round: 1 }],
+        2: [
+          { placerId: host.id, targetId: target.id, round: 2 },
+          { placerId: other.id, targetId: host.id, round: 2 },
+        ],
+      },
+    });
+
+    const { game: next } = removePlayer(game, target.id);
+
+    expect(next.tokensSubmittedIds).toEqual([host.id]);
+    expect(next.suspicionTokensCurrent).toEqual([
+      { placerId: other.id, targetId: host.id, round: 2 },
+    ]);
+    // Prior-round archive is untouched; current round is scrubbed.
+    expect(next.suspicionTokensByRound?.[1]).toEqual([
+      { placerId: other.id, targetId: target.id, round: 1 },
+    ]);
+    expect(next.suspicionTokensByRound?.[2]).toEqual([
+      { placerId: other.id, targetId: host.id, round: 2 },
+    ]);
+  });
+
+  it('throws when the target does not exist or is the only player', () => {
+    const solo = makePlayer({ isHost: true });
+    const game = makeGame({ players: [solo], hostId: solo.id });
+    expect(() => removePlayer(game, solo.id)).toThrow(/only player/);
+    expect(() => removePlayer(game, 'no-such-id')).toThrow(/not found/);
   });
 });

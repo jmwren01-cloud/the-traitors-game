@@ -414,6 +414,7 @@ export type C2SEvent =
   | { type: 'C2S_GET_LEADERBOARD'; payload: { metric: 'winRate' | 'gamesPlayed' | 'traitorWins' } }
   | { type: 'C2S_GET_GLOBAL_STATS'; payload: Record<string, never> }
   | { type: 'C2S_TRANSFER_HOST'; payload: { targetPlayerId: string } }
+  | { type: 'C2S_REMOVE_PLAYER'; payload: { targetPlayerId: string } }
   | { type: 'C2S_END_GAME_EARLY'; payload: Record<string, never> }
   /** Send a private whisper to another alive player during ROUNDTABLE. */
   | { type: 'C2S_SEND_WHISPER'; payload: { recipientId: string; content: string } }

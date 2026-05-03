@@ -1471,6 +1471,162 @@ export function findNewHost(game: GameState): string | null {
   return connectedPlayers[0]!.id;
 }
 
+/**
+ * Host-initiated mid-game player removal. Drops the target completely
+ * from the player list and scrubs every state slot that references their
+ * id (votes, murderVotes, evidenceVotes, confession bookkeeping, pending
+ * recruitment / banishment / random selection / shield / murder targets,
+ * tiebreaker results, tied player lists, the medic protection target, and
+ * the per-round whisper budget). When the removed player held the host
+ * role the function transfers host to the first remaining player (prefer
+ * connected) so the game can keep moving — callers can still run the
+ * transfer broadcast off the returned `hostChanged` flag. Refuses to
+ * remove the only remaining player.
+ */
+export function removePlayer(
+  game: GameState,
+  targetId: string,
+): { game: GameState; hostChanged: boolean; newHostId?: string } {
+  const target = game.players.find((p: Player) => p.id === targetId);
+  if (!target) {
+    throw new Error('Player not found');
+  }
+  if (game.players.length <= 1) {
+    throw new Error('Cannot remove the only player');
+  }
+
+  let next: GameState = {
+    ...game,
+    players: game.players.filter((p: Player) => p.id !== targetId),
+    votes: game.votes.filter((v: Vote) => v.voterId !== targetId && v.targetId !== targetId),
+    revealedVotes: game.revealedVotes.filter(
+      (v: Vote) => v.voterId !== targetId && v.targetId !== targetId,
+    ),
+    murderVotes: game.murderVotes.filter(
+      (v: Vote) => v.voterId !== targetId && v.targetId !== targetId,
+    ),
+  };
+
+  if (next.evidenceVotes) {
+    next = {
+      ...next,
+      evidenceVotes: next.evidenceVotes.filter(
+        (v: EvidenceVote) => v.voterId !== targetId && v.targetId !== targetId,
+      ),
+    };
+  }
+  if (next.confessionSubmittedIds) {
+    next = {
+      ...next,
+      confessionSubmittedIds: next.confessionSubmittedIds.filter((id) => id !== targetId),
+    };
+  }
+  if (next.confessionEntries) {
+    next = {
+      ...next,
+      confessionEntries: next.confessionEntries.filter((e) => e.playerId !== targetId),
+    };
+  }
+  if (next.whispersUsedThisRound) {
+    next = {
+      ...next,
+      whispersUsedThisRound: next.whispersUsedThisRound.filter((id) => id !== targetId),
+    };
+  }
+  if (next.tiedPlayerIds) {
+    const filtered = next.tiedPlayerIds.filter((id) => id !== targetId);
+    next = filtered.length > 0
+      ? { ...next, tiedPlayerIds: filtered }
+      : omit(next, 'tiedPlayerIds');
+  }
+  if (next.tiebreakerResults) {
+    next = {
+      ...next,
+      tiebreakerResults: next.tiebreakerResults.filter((r) => r.playerId !== targetId),
+    };
+  }
+  if (next.currentTally) {
+    next = {
+      ...next,
+      currentTally: next.currentTally.filter((t) => t.playerId !== targetId),
+    };
+  }
+  if (next.revealOrder) {
+    next = {
+      ...next,
+      revealOrder: next.revealOrder.filter((id) => id !== targetId),
+    };
+  }
+  if (next.forceSuspiciousIds) {
+    next = {
+      ...next,
+      forceSuspiciousIds: next.forceSuspiciousIds.filter((id) => id !== targetId),
+    };
+  }
+  if (next.banishedPlayerId === targetId) next = omit(next, 'banishedPlayerId');
+  if (next.lastMurderedPlayerId === targetId) next = omit(next, 'lastMurderedPlayerId');
+  if (next.lastShieldedPlayerId === targetId) next = omit(next, 'lastShieldedPlayerId');
+  if (next.randomlySelectedPlayerId === targetId) next = omit(next, 'randomlySelectedPlayerId');
+  if (next.pendingRecruitmentTargetId === targetId) next = omit(next, 'pendingRecruitmentTargetId');
+  if (next.lastRecruitedPlayerId === targetId) next = omit(next, 'lastRecruitedPlayerId');
+  if (next.medicProtectionTargetId === targetId) next = omit(next, 'medicProtectionTargetId');
+  if (next.falseEvidence && next.falseEvidence.targetId === targetId) {
+    next = omit(next, 'falseEvidence');
+  }
+  // Suspicion Token sub-phase cleanup so token graph edges and
+  // submission progress can't reference the removed player.
+  if (next.suspicionTokensCurrent) {
+    next = {
+      ...next,
+      suspicionTokensCurrent: next.suspicionTokensCurrent.filter(
+        (t: SuspicionToken) => t.placerId !== targetId && t.targetId !== targetId,
+      ),
+    };
+  }
+  if (next.tokensSubmittedIds) {
+    next = {
+      ...next,
+      tokensSubmittedIds: next.tokensSubmittedIds.filter((id) => id !== targetId),
+    };
+  }
+  if (next.suspicionTokensByRound && next.currentRound !== undefined) {
+    const round = next.currentRound;
+    const current = next.suspicionTokensByRound[round];
+    if (current) {
+      const filtered = current.filter(
+        (t: SuspicionToken) => t.placerId !== targetId && t.targetId !== targetId,
+      );
+      next = {
+        ...next,
+        suspicionTokensByRound: { ...next.suspicionTokensByRound, [round]: filtered },
+      };
+    }
+  }
+
+  let hostChanged = false;
+  let newHostId: string | undefined;
+  if (target.isHost) {
+    const replacement =
+      next.players.find((p: Player) => p.isConnected) ?? next.players[0];
+    if (replacement) {
+      newHostId = replacement.id;
+      next = {
+        ...next,
+        hostId: newHostId,
+        players: next.players.map((p: Player) => ({ ...p, isHost: p.id === newHostId })),
+      };
+      hostChanged = true;
+    }
+  }
+
+  const result: { game: GameState; hostChanged: boolean; newHostId?: string } = {
+    game: next,
+    hostChanged,
+  };
+  if (newHostId !== undefined) result.newHostId = newHostId;
+  return result;
+}
+
 export function isGameEmpty(game: GameState): boolean {
   return game.players.every((p: Player) => !p.isConnected);
 }
