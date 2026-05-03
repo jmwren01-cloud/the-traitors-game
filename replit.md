@@ -22,6 +22,7 @@ The game is built as a real-time web application with a clear separation between
 - Tabbed chat UI with separate channels for general and traitor-only communication, including unread badges.
 - Sound effects generated via Web Audio API for key game events, with a global mute/unmute toggle.
 - PWA support with manifest.json for installability and improved mobile experience, including iOS Safari fixes and haptic feedback integration.
+- Accessibility: roving-focus keyboard navigation across night- and day-phase pickers (voting, suspicion tokens, challenges) with ARIA radiogroups and polite live regions; global `prefers-reduced-motion` safety net that neutralises CSS animations, transitions, and haptic vibrations for motion-sensitive players.
 
 **Technical Implementations:**
 - **Backend:** Node.js with Express and WebSocket for real-time communication.

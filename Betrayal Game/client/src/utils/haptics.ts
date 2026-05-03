@@ -9,9 +9,21 @@ const patterns: Record<HapticPattern, number[]> = {
   error: [30, 50, 30, 50, 30],
 };
 
+function reducedMotionPreferred(): boolean {
+  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
+    return false;
+  }
+  try {
+    return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  } catch {
+    return false;
+  }
+}
+
 export function vibrate(pattern: HapticPattern = 'light'): void {
   if (!('vibrate' in navigator)) return;
-  
+  if (reducedMotionPreferred()) return;
+
   try {
     navigator.vibrate(patterns[pattern]);
   } catch {
@@ -21,7 +33,8 @@ export function vibrate(pattern: HapticPattern = 'light'): void {
 
 export function vibrateOnce(duration: number = 10): void {
   if (!('vibrate' in navigator)) return;
-  
+  if (reducedMotionPreferred()) return;
+
   try {
     navigator.vibrate(duration);
   } catch {

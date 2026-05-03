@@ -86,3 +86,25 @@
   border-color: #888;
   opacity: 0.7;
 }
+
+/*
+  Global reduced-motion safety net. Per-component CSS modules already kill
+  a handful of named animations, but most keyframes and every CSS
+  transition were still running. This block follows the standard
+  recommendation: shrink every animation and transition to a hair, freeze
+  iteration counts, and switch off smooth scrolling. We deliberately do
+  not set duration to 0 so opacity/visibility hand-offs still fire and
+  the layout settles correctly. Per-file `prefers-reduced-motion` rules
+  remain authoritative for elements that need a stronger override
+  (animation: none).
+*/
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
