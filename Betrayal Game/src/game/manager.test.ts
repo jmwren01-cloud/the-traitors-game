@@ -17,6 +17,9 @@ import {
   createChallenge,
   submitChallengeAnswer,
   resolveChallenge,
+  startNight,
+  submitMurder,
+  continueToDayPhase,
 } from './manager.js';
 import type { GameState, Player } from './types.js';
 import { DEFAULT_SETTINGS } from './types.js';
@@ -1252,5 +1255,65 @@ describe('challenge shield cooldown', () => {
     const aAfter = resolved.game.players.find((p) => p.id === aWithShield.id)!;
     expect(aAfter.hasShield).toBe(true);
     expect(aAfter.lastChallengeWinRound).toBeUndefined();
+  });
+});
+
+// ============= Full night-cycle smoke test =============
+
+describe('full night cycle (startNight → submitMurder → resolveMurder → continueToDayPhase)', () => {
+  it('walks a 5-player game through one full night cycle and advances to the next round', () => {
+    const traitor = makePlayer({ name: 'Traitor', role: 'TRAITOR' });
+    const victim = makePlayer({ name: 'Victim', role: 'FAITHFUL' });
+    const f2 = makePlayer({ name: 'Faithful2', role: 'FAITHFUL' });
+    const f3 = makePlayer({ name: 'Faithful3', role: 'FAITHFUL' });
+    const f4 = makePlayer({ name: 'Faithful4', role: 'FAITHFUL' });
+    const players = [traitor, victim, f2, f3, f4];
+
+    // Round 1 ROUNDTABLE → startNight is allowed (round-1 skip-voting path).
+    // Disable challenges so continueToDayPhase lands directly in ROUNDTABLE,
+    // matching the task's expected phase advance.
+    const initial = makeGame({
+      players,
+      phase: 'ROUNDTABLE',
+      currentRound: 1,
+      settings: { ...DEFAULT_SETTINGS, challengesEnabled: false },
+    });
+
+    // 1. startNight() → NIGHT
+    const night = startNight(initial);
+    expect(night.phase).toBe('NIGHT');
+    expect(night.murderVotes).toEqual([]);
+
+    // 2. submitMurderVote() (single traitor)
+    const voted = submitMurder(night, traitor.id, victim.id);
+    expect(voted.murderVotes).toHaveLength(1);
+    expect(voted.murderVotes[0]).toEqual({ voterId: traitor.id, targetId: victim.id });
+
+    // 3. resolveMurder() → MORNING (murder confirmed, victim dead)
+    const resolved = resolveMurder(voted);
+    expect(resolved.blocked).toBe(false);
+    expect(resolved.murderedPlayerId).toBe(victim.id);
+    expect(resolved.murderedPlayerName).toBe('Victim');
+    expect(resolved.game.phase).toBe('MORNING');
+    expect(resolved.game.players.find((p) => p.id === victim.id)?.isAlive).toBe(false);
+    expect(resolved.game.lastMurderedPlayerId).toBe(victim.id);
+    expect(resolved.game.murderVotes).toEqual([]);
+
+    // 4. continueToDayPhase() → ROUNDTABLE / phase advance
+    const advanced = continueToDayPhase(resolved.game);
+
+    // 5. Assertions: victim is dead, history has the round record, game not ended.
+    expect(advanced.phase).toBe('ROUNDTABLE');
+    expect(advanced.phase).not.toBe('GAME_END');
+    expect(advanced.winner).toBeUndefined();
+    expect(advanced.currentRound).toBe(2);
+    expect(advanced.players.find((p) => p.id === victim.id)?.isAlive).toBe(false);
+
+    expect(advanced.history).toHaveLength(1);
+    const record = advanced.history[0]!;
+    expect(record.round).toBe(1);
+    expect(record.murderedName).toBe('Victim');
+    expect(record.murderedRole).toBe('FAITHFUL');
+    expect(record.murderBlocked).toBe(false);
   });
 });
