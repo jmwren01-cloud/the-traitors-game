@@ -5,6 +5,7 @@ import { getColorHex, getAvatarEmoji } from '../avatarConstants';
 import styles from './NightPhase.module.css';
 import { useSoundContext } from '../contexts/SoundContext';
 import { vibrate } from '../utils/haptics';
+import { useRovingFocus } from '../hooks/useRovingFocus';
 
 interface NightPhaseProps {
   players: Player[];
@@ -73,6 +74,8 @@ export function NightPhase({
   const [selectedTarget, setSelectedTarget] = useState<string | null>(null);
   const [hasVoted, setHasVoted] = useState(false);
   const [selectedRecruitTarget, setSelectedRecruitTarget] = useState<string | null>(null);
+  // Polite live-region content for screen readers covering the night pickers.
+  const [announcement, setAnnouncement] = useState('');
   const { play } = useSoundContext();
   const nightSoundPlayedRef = useRef(false);
   const morningSoundPlayedRef = useRef(false);
@@ -169,6 +172,97 @@ export function NightPhase({
     ? players.filter((p) => traitorIds.includes(p.id) && p.id !== myPlayerId && p.isAlive)
     : [];
 
+  // Traitors may only frame Faithful-aligned players (server enforces).
+  const traitorIdSet = new Set(traitorIds ?? []);
+  const evidenceCandidates = players.filter(
+    (p) => p.isAlive && p.id !== myPlayerId && !traitorIdSet.has(p.id),
+  );
+
+  const isNightTraitor = phase === 'NIGHT' && isTraitor;
+  const murderPickerOpen = isNightTraitor && !hasVoted;
+  const recruitPickerOpen =
+    isNightTraitor && !myPlayerRecruitmentUsed && !nightRecruitmentSubmittedBy;
+  const evidencePickerOpen =
+    isNightTraitor && !evidenceUsed && !falseEvidence
+    && evidenceType !== null && evidenceType !== 'SKIP';
+
+  const playerName = (id: string) => players.find((p) => p.id === id)?.name ?? 'player';
+  const announce = (msg: string) => setAnnouncement(msg);
+
+  const murderRoving = useRovingFocus({
+    itemIds: murderPickerOpen ? aliveFaithful.map((p) => p.id) : [],
+    preferredId: selectedTarget,
+    onActivate: (id) => {
+      setSelectedTarget(id);
+      announce(`Selected as victim: ${playerName(id)}.`);
+    },
+    onCancel: () => {
+      if (selectedTarget) {
+        setSelectedTarget(null);
+        announce('Victim selection cleared.');
+      }
+    },
+  });
+
+  const recruitRoving = useRovingFocus({
+    itemIds: recruitPickerOpen ? aliveFaithful.map((p) => p.id) : [],
+    preferredId: selectedRecruitTarget,
+    onActivate: (id) => {
+      setSelectedRecruitTarget(id);
+      announce(`Selected to recruit: ${playerName(id)}.`);
+    },
+    onCancel: () => {
+      if (selectedRecruitTarget) {
+        setSelectedRecruitTarget(null);
+        announce('Recruitment selection cleared.');
+      }
+    },
+  });
+
+  const evidenceRoving = useRovingFocus({
+    itemIds: evidencePickerOpen ? evidenceCandidates.map((p) => p.id) : [],
+    preferredId: evidenceTarget,
+    onActivate: (id) => {
+      setEvidenceTarget(id);
+      announce(`Selected as false-evidence target: ${playerName(id)}.`);
+    },
+    onCancel: () => {
+      if (evidenceType === null && !evidenceTarget && !evidenceContent) return;
+      setEvidenceType(null);
+      setEvidenceTarget(null);
+      setEvidenceContent('');
+      announce('False-evidence selection cleared.');
+    },
+  });
+
+  useEffect(() => {
+    if (phase !== 'NIGHT' || !isTraitor) {
+      setAnnouncement('');
+    } else if (hasVoted) {
+      setAnnouncement('Murder vote submitted. Waiting for other traitors.');
+    } else {
+      setAnnouncement(
+        'Choose your victim. Use arrow keys to move between players, Enter or Space to select, Escape to clear.',
+      );
+    }
+  }, [phase, isTraitor, hasVoted]);
+
+  useEffect(() => {
+    if (recruitPickerOpen) {
+      setAnnouncement(
+        'Recruitment picker open. Choose a Faithful to recruit. Arrow keys to move, Enter to select, Escape to clear.',
+      );
+    }
+  }, [recruitPickerOpen]);
+
+  useEffect(() => {
+    if (evidencePickerOpen) {
+      setAnnouncement(
+        'False-evidence target picker open. Choose a player to frame. Arrow keys to move, Enter to select, Escape to clear.',
+      );
+    }
+  }, [evidencePickerOpen]);
+
   const handleSubmitMurder = () => {
     if (selectedTarget) {
       vibrate('heavy');
@@ -176,6 +270,8 @@ export function NightPhase({
       // not double-fire alongside the host-side ack.
       justSubmittedMurderRef.current = true;
       play('hardDrum');
+      const name = players.find((p) => p.id === selectedTarget)?.name ?? 'target';
+      setAnnouncement(`Murder vote cast for ${name}.`);
       onSend({ type: 'C2S_SUBMIT_MURDER', payload: { targetId: selectedTarget } });
       setHasVoted(true);
     }
@@ -184,6 +280,8 @@ export function NightPhase({
   const handleSubmitRecruitment = () => {
     if (selectedRecruitTarget) {
       vibrate('medium');
+      const name = players.find((p) => p.id === selectedRecruitTarget)?.name ?? 'target';
+      setAnnouncement(`Recruitment submitted for ${name}.`);
       onSend({ type: 'C2S_SUBMIT_RECRUITMENT', payload: { targetId: selectedRecruitTarget } });
     }
   };
@@ -193,6 +291,9 @@ export function NightPhase({
       return (
         <div className={styles.container}>
           <div className={styles.nightOverlay}>
+            <div role="status" aria-live="polite" className={styles.srOnly}>
+              {announcement}
+            </div>
             <h1 className={styles.title}>Night Falls</h1>
             <p className={styles.subtitle}>Round {currentRound}</p>
             
@@ -218,25 +319,42 @@ export function NightPhase({
               <p className={styles.loneTraitorInfo}>You are the only traitor remaining</p>
             )}
 
-            <h2 className={styles.sectionTitle}>Choose Your Victim</h2>
+            <h2 id="murder-picker-label" className={styles.sectionTitle}>Choose Your Victim</h2>
 
-            <div className={styles.targetGrid}>
+            <div
+              className={styles.targetGrid}
+              role="radiogroup"
+              aria-labelledby="murder-picker-label"
+            >
               {aliveFaithful.map((player) => {
                 const colorHex = getColorHex(player.color);
                 const avatarEmoji = getAvatarEmoji(player.avatar);
+                const selected = selectedTarget === player.id;
+                const hasShieldVisible =
+                  player.shieldRevealed || (player.id === myPlayerId && player.hasShield);
+                const accessibleName = hasShieldVisible
+                  ? `${player.name}, shielded`
+                  : player.name;
+                const itemProps = murderRoving.getItemProps(player.id);
                 return (
-                  <div
+                  <button
+                    {...itemProps}
                     key={player.id}
-                    className={`${styles.targetCard} ${selectedTarget === player.id ? styles.selected : ''} ${player.shieldRevealed ? styles.hasShield : ''}`}
-                    style={{ borderColor: selectedTarget === player.id ? colorHex : undefined }}
+                    type="button"
+                    role="radio"
+                    aria-checked={selected}
+                    aria-label={accessibleName}
+                    disabled={hasVoted}
+                    className={`${styles.targetCard} ${selected ? styles.selected : ''} ${player.shieldRevealed ? styles.hasShield : ''}`}
+                    style={{ borderColor: selected ? colorHex : undefined }}
                     onClick={() => !hasVoted && setSelectedTarget(player.id)}
                   >
                     <div className={styles.avatar} style={{ background: colorHex, color: '#000' }}>
                       {avatarEmoji}
-                      {(player.shieldRevealed || (player.id === myPlayerId && player.hasShield)) && <span className={styles.shieldBadge}>🛡️</span>}
+                      {hasShieldVisible && <span className={styles.shieldBadge} aria-hidden="true">🛡️</span>}
                     </div>
                     <span className={styles.name}>{player.name}</span>
-                  </div>
+                  </button>
                 );
               })}
             </div>
@@ -250,9 +368,33 @@ export function NightPhase({
             )}
 
             {!hasVoted && (
-              <button className={styles.murderBtn} onClick={handleSubmitMurder} disabled={!selectedTarget}>
-                Vote to Murder
-              </button>
+              <div className={styles.actionRow}>
+                <button
+                  type="button"
+                  className={styles.murderBtn}
+                  onClick={handleSubmitMurder}
+                  disabled={!selectedTarget}
+                  aria-label={
+                    selectedTarget
+                      ? `Vote to murder ${playerName(selectedTarget)}`
+                      : 'Vote to murder (no target selected)'
+                  }
+                >
+                  Vote to Murder
+                </button>
+                <button
+                  type="button"
+                  className={styles.cancelBtn}
+                  onClick={() => {
+                    setSelectedTarget(null);
+                    announce('Victim selection cleared.');
+                  }}
+                  disabled={!selectedTarget}
+                  aria-label="Cancel victim selection"
+                >
+                  Cancel
+                </button>
+              </div>
             )}
 
             {hasVoted && <p className={styles.waiting}>Waiting for other traitors... Murder will auto-resolve when all votes are in.</p>}
@@ -294,34 +436,65 @@ export function NightPhase({
               }
               return (
                 <div className={styles.recruitSection}>
-                  <h2 className={styles.sectionTitle}>🤝 Recruit a Faithful</h2>
+                  <h2 id="recruit-picker-label" className={styles.sectionTitle}>🤝 Recruit a Faithful</h2>
                   <p className={styles.recruitSubtitle}>One-time ability — Convert a Faithful player to your side</p>
-                  <div className={styles.targetGrid}>
+                  <div
+                    className={styles.targetGrid}
+                    role="radiogroup"
+                    aria-labelledby="recruit-picker-label"
+                  >
                     {aliveFaithful.map((player) => {
                       const colorHex = getColorHex(player.color);
                       const avatarEmoji = getAvatarEmoji(player.avatar);
+                      const selected = selectedRecruitTarget === player.id;
+                      const itemProps = recruitRoving.getItemProps(player.id);
                       return (
-                        <div
+                        <button
+                          {...itemProps}
                           key={player.id}
-                          className={`${styles.targetCard} ${styles.recruitTarget} ${selectedRecruitTarget === player.id ? styles.recruitSelected : ''}`}
-                          style={{ borderColor: selectedRecruitTarget === player.id ? colorHex : undefined }}
+                          type="button"
+                          role="radio"
+                          aria-checked={selected}
+                          aria-label={player.name}
+                          className={`${styles.targetCard} ${styles.recruitTarget} ${selected ? styles.recruitSelected : ''}`}
+                          style={{ borderColor: selected ? colorHex : undefined }}
                           onClick={() => setSelectedRecruitTarget(player.id)}
                         >
                           <div className={styles.avatar} style={{ background: colorHex, color: '#000' }}>
                             {avatarEmoji}
                           </div>
                           <span className={styles.name}>{player.name}</span>
-                        </div>
+                        </button>
                       );
                     })}
                   </div>
-                  <button
-                    className={styles.recruitBtn}
-                    onClick={handleSubmitRecruitment}
-                    disabled={!selectedRecruitTarget}
-                  >
-                    Recruit Player
-                  </button>
+                  <div className={styles.actionRow}>
+                    <button
+                      type="button"
+                      className={styles.recruitBtn}
+                      onClick={handleSubmitRecruitment}
+                      disabled={!selectedRecruitTarget}
+                      aria-label={
+                        selectedRecruitTarget
+                          ? `Recruit ${playerName(selectedRecruitTarget)}`
+                          : 'Recruit player (no target selected)'
+                      }
+                    >
+                      Recruit Player
+                    </button>
+                    <button
+                      type="button"
+                      className={styles.cancelBtn}
+                      onClick={() => {
+                        setSelectedRecruitTarget(null);
+                        announce('Recruitment selection cleared.');
+                      }}
+                      disabled={!selectedRecruitTarget}
+                      aria-label="Cancel recruitment selection"
+                    >
+                      Cancel
+                    </button>
+                  </div>
                 </div>
               );
             })()}
@@ -341,6 +514,14 @@ export function NightPhase({
                 evidenceType !== null && !targetMissing && !contentMissing && !windowExpired;
               const submit = () => {
                 if (!canSubmit || !evidenceType) return;
+                const targetName = evidenceTarget
+                  ? players.find((p) => p.id === evidenceTarget)?.name ?? 'target'
+                  : null;
+                if (evidenceType === 'SKIP') {
+                  setAnnouncement('False-evidence vote cast: Skip.');
+                } else if (targetName) {
+                  setAnnouncement(`False-evidence vote cast for ${targetName}.`);
+                }
                 onSend({
                   type: 'C2S_CAST_EVIDENCE_VOTE',
                   payload: {
@@ -350,13 +531,7 @@ export function NightPhase({
                   },
                 });
               };
-              // Spec: Traitors may only frame Faithful-aligned players. We
-              // exclude any teammate whose id appears in `traitorIds` so the
-              // UI matches the server-side enforcement.
-              const traitorIdSet = new Set(traitorIds ?? []);
-              const aliveOthers = players.filter(
-                (p) => p.isAlive && p.id !== myPlayerId && !traitorIdSet.has(p.id)
-              );
+              const aliveOthers = evidenceCandidates;
               const secondsLeft =
                 evidenceWindowEndsAt !== undefined
                   ? Math.max(0, Math.ceil((evidenceWindowEndsAt - nowTick) / 1000))
@@ -407,14 +582,24 @@ export function NightPhase({
                   </div>
 
                   {evidenceType && evidenceType !== 'SKIP' && (
-                    <div className={styles.targetGrid}>
+                    <div
+                      className={styles.targetGrid}
+                      role="radiogroup"
+                      aria-label="Choose a target for the false evidence"
+                    >
                       {aliveOthers.map((player) => {
                         const colorHex = getColorHex(player.color);
                         const avatarEmoji = getAvatarEmoji(player.avatar);
                         const selected = evidenceTarget === player.id;
+                        const itemProps = evidenceRoving.getItemProps(player.id);
                         return (
-                          <div
+                          <button
+                            {...itemProps}
                             key={player.id}
+                            type="button"
+                            role="radio"
+                            aria-checked={selected}
+                            aria-label={player.name}
                             className={`${styles.targetCard} ${selected ? styles.recruitSelected : ''}`}
                             style={{ borderColor: selected ? colorHex : undefined }}
                             onClick={() => setEvidenceTarget(player.id)}
@@ -423,7 +608,7 @@ export function NightPhase({
                               {avatarEmoji}
                             </div>
                             <span className={styles.name}>{player.name}</span>
-                          </div>
+                          </button>
                         );
                       })}
                     </div>
@@ -454,14 +639,37 @@ export function NightPhase({
                     </p>
                   )}
 
-                  <button
-                    type="button"
-                    className={styles.recruitBtn}
-                    onClick={submit}
-                    disabled={!canSubmit}
-                  >
-                    {myVote ? 'Update Vote' : 'Cast Evidence Vote'}
-                  </button>
+                  <div className={styles.actionRow}>
+                    <button
+                      type="button"
+                      className={styles.recruitBtn}
+                      onClick={submit}
+                      disabled={!canSubmit}
+                      aria-label={(() => {
+                        const tName = evidenceTarget ? playerName(evidenceTarget) : null;
+                        const verb = myVote ? 'Update vote' : 'Cast evidence vote';
+                        if (evidenceType === 'SKIP') return `${verb}: skip this round`;
+                        if (tName) return `${verb} targeting ${tName}`;
+                        return `${verb} (no target selected)`;
+                      })()}
+                    >
+                      {myVote ? 'Update Vote' : 'Cast Evidence Vote'}
+                    </button>
+                    <button
+                      type="button"
+                      className={styles.cancelBtn}
+                      onClick={() => {
+                        setEvidenceType(null);
+                        setEvidenceTarget(null);
+                        setEvidenceContent('');
+                        announce('False-evidence selection cleared.');
+                      }}
+                      disabled={evidenceType === null && !evidenceTarget && !evidenceContent}
+                      aria-label="Cancel false-evidence selection"
+                    >
+                      Cancel
+                    </button>
+                  </div>
                 </div>
               );
             })()}

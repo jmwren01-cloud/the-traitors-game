@@ -1,5 +1,34 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Player, C2SEvent, Role, SheriffReport } from '../types';
+import { useRovingFocus } from '../hooks/useRovingFocus';
+
+const srOnlyStyle: React.CSSProperties = {
+  position: 'absolute',
+  width: 1,
+  height: 1,
+  padding: 0,
+  margin: -1,
+  overflow: 'hidden',
+  clip: 'rect(0,0,0,0)',
+  whiteSpace: 'nowrap',
+  border: 0,
+};
+
+const medicCandidateBaseStyle: React.CSSProperties = {
+  padding: '6px 10px',
+  borderRadius: 6,
+  border: '1px solid rgba(255,255,255,0.25)',
+  background: 'rgba(255,255,255,0.08)',
+  color: '#fff',
+  font: 'inherit',
+  cursor: 'pointer',
+  minHeight: 36,
+};
+
+const medicCandidateFocusStyle: React.CSSProperties = {
+  outline: '3px solid #ffd54a',
+  outlineOffset: 2,
+};
 
 const MEDIC_AUTO_SKIP_SECONDS = 30;
 
@@ -59,6 +88,53 @@ export function SpecialRoleHud(props: SpecialRoleHudProps) {
     return () => window.clearInterval(interval);
   }, [myRole, phase, medicProtectedTarget, medicNightKey]);
 
+  // Locally dismissed Medic picker. The server auto-skips after the
+  // timer; this lets a keyboard user explicitly skip without committing
+  // a protection. We compare against the current nightId so a stale
+  // skip from a previous night does not bleed through.
+  const nightId = `${phase}-${me?.medicLastProtectedTargetId ?? ''}`;
+  const [medicSkippedNight, setMedicSkippedNight] = useState<string | null>(null);
+  const [transientMedicMsg, setTransientMedicMsg] = useState<string | null>(null);
+
+  const medicPickerVisible =
+    myRole === 'MEDIC'
+    && phase === 'NIGHT'
+    && !medicProtectedTarget
+    && medicSkippedNight !== nightId;
+  const medicCandidates = medicPickerVisible
+    ? players.filter((p) => p.isAlive && p.id !== myPlayerId)
+    : [];
+  const medicLastTarget = me?.medicLastProtectedTargetId;
+  const medicEligibleIds = medicCandidates
+    .filter((p) => p.id !== medicLastTarget)
+    .map((p) => p.id);
+  const medicPickerOpenForUser = medicPickerVisible && medicSecondsLeft > 0;
+
+  const medicAnnouncement = transientMedicMsg
+    ?? (medicPickerOpenForUser
+      ? 'Medic picker open. Use arrow keys to move, Enter or Space to protect, Escape to skip tonight.'
+      : '');
+
+  const skipMedicProtection = (reason: 'escape' | 'button') => {
+    setMedicSkippedNight(nightId);
+    setTransientMedicMsg(
+      reason === 'escape'
+        ? 'Protection skipped via Escape. The night will auto-resolve.'
+        : 'Protection skipped. The night will auto-resolve.',
+    );
+  };
+
+  const medicRoving = useRovingFocus({
+    itemIds: medicEligibleIds,
+    onActivate: (id) => {
+      if (id === medicLastTarget) return;
+      const name = players.find((p) => p.id === id)?.name ?? 'player';
+      setTransientMedicMsg(`Protecting ${name} tonight.`);
+      onSend({ type: 'C2S_MEDIC_PROTECT', payload: { targetId: id } });
+    },
+    onCancel: () => skipMedicProtection('escape'),
+  });
+
   const blocks: React.ReactNode[] = [];
 
   if (myRole === 'SHERIFF' && sheriffReports && sheriffReports.length > 0) {
@@ -92,44 +168,89 @@ export function SpecialRoleHud(props: SpecialRoleHudProps) {
   }
 
   if (myRole === 'MEDIC' && phase === 'NIGHT') {
-    const aliveOthers = players.filter((p) => p.isAlive && p.id !== myPlayerId);
-    const lastTarget = me?.medicLastProtectedTargetId;
     if (medicProtectedTarget) {
       blocks.push(
-        <div key="medic-confirm" style={banner}>
+        <div key="medic-confirm" style={banner} role="status" aria-live="polite">
           🛡️ You are silently protecting <strong>{medicProtectedTarget.name}</strong> tonight.
+        </div>
+      );
+    } else if (medicSkippedNight === nightId) {
+      blocks.push(
+        <div key="medic-user-skipped" style={banner} role="status" aria-live="polite">
+          ⌛ You skipped protection for tonight.
         </div>
       );
     } else if (medicSecondsLeft > 0) {
       blocks.push(
         <div key="medic-pick" style={banner}>
-          <div>
+          <div role="status" aria-live="polite" style={srOnlyStyle}>
+            {medicAnnouncement}
+          </div>
+          <div id="medic-pick-label">
             <strong>🛡️ Medic — choose a player to protect tonight</strong>{' '}
             <span style={{ opacity: 0.75, fontSize: 12 }}>
               ({medicSecondsLeft}s — auto-skip if you don't pick)
             </span>
           </div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 6 }}>
-            {aliveOthers.map((p) => {
-              const disabled = p.id === lastTarget;
+          <div
+            role="group"
+            aria-labelledby="medic-pick-label"
+            style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 6 }}
+          >
+            {medicCandidates.map((p) => {
+              const disabled = p.id === medicLastTarget;
+              const itemProps = disabled ? null : medicRoving.getItemProps(p.id);
+              const isFocusTarget = medicRoving.focusedId === p.id;
+              const ariaLabel = disabled
+                ? `${p.name}, already protected last night, unavailable`
+                : `Protect ${p.name}`;
               return (
                 <button
                   key={p.id}
+                  type="button"
                   disabled={disabled}
-                  onClick={() => onSend({ type: 'C2S_MEDIC_PROTECT', payload: { targetId: p.id } })}
+                  ref={itemProps?.ref}
+                  tabIndex={disabled ? -1 : itemProps?.tabIndex ?? -1}
+                  onKeyDown={itemProps?.onKeyDown}
+                  onFocus={itemProps?.onFocus}
+                  onClick={() =>
+                    !disabled && onSend({ type: 'C2S_MEDIC_PROTECT', payload: { targetId: p.id } })
+                  }
+                  aria-label={ariaLabel}
                   title={disabled ? 'Cannot protect the same player two nights in a row' : ''}
-                  style={{ padding: '4px 8px', borderRadius: 4 }}
+                  style={{
+                    ...medicCandidateBaseStyle,
+                    ...(isFocusTarget ? medicCandidateFocusStyle : null),
+                    opacity: disabled ? 0.5 : 1,
+                    cursor: disabled ? 'not-allowed' : 'pointer',
+                  }}
                 >
-                  {p.name}{disabled ? ' (last night)' : ''}
+                  {p.name}
+                  {disabled ? ' (last night)' : ''}
                 </button>
               );
             })}
+          </div>
+          <div style={{ marginTop: 8 }}>
+            <button
+              type="button"
+              onClick={() => skipMedicProtection('button')}
+              aria-label="Skip protection for tonight"
+              style={{
+                ...medicCandidateBaseStyle,
+                padding: '6px 14px',
+                background: 'transparent',
+                borderColor: 'rgba(255,255,255,0.4)',
+              }}
+            >
+              Skip Tonight
+            </button>
           </div>
         </div>
       );
     } else {
       blocks.push(
-        <div key="medic-skipped" style={banner}>
+        <div key="medic-skipped" style={banner} role="status" aria-live="polite">
           ⌛ You did not protect anyone tonight.
         </div>
       );
@@ -154,8 +275,10 @@ export function SpecialRoleHud(props: SpecialRoleHudProps) {
           </div>
           <div style={{ marginTop: 8 }}>
             <button
+              type="button"
               onClick={() => onSend({ type: 'C2S_ACTIVATE_SEER', payload: {} })}
-              style={{ padding: '6px 12px', borderRadius: 4 }}
+              aria-label="Activate Seer gift to reveal a random player's true role"
+              style={{ ...medicCandidateBaseStyle, padding: '8px 14px' }}
             >
               Activate Gift
             </button>
