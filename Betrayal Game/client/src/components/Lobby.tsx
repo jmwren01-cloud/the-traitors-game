@@ -138,7 +138,10 @@ export function Lobby({
   const canStart = players.length >= minPlayers;
   const myPlayer = players.find((p) => p.id === myPlayerId);
 
-  const takenColors = players.filter((p) => p.id !== myPlayerId).map((p) => p.color).filter(Boolean) as string[];
+  const takenColors = players
+    .filter((p) => p.id !== myPlayerId && p.isConnected !== false)
+    .map((p) => p.color)
+    .filter(Boolean) as string[];
 
   const handleCreate = () => {
     const name = playerName.trim();

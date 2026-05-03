@@ -199,8 +199,16 @@ export function addPlayer(game: GameState, playerName: string, deviceToken?: str
   }
 
   const playerId = generatePlayerId();
-  const takenColors = game.players.map((p: Player) => p.color).filter(Boolean) as string[];
-  const takenAvatars = game.players.map((p: Player) => p.avatar).filter(Boolean) as string[];
+  // Only connected players' colors/avatars are considered taken — a
+  // disconnected lobby member's slots are claimable by others.
+  const takenColors = game.players
+    .filter((p: Player) => p.isConnected !== false)
+    .map((p: Player) => p.color)
+    .filter(Boolean) as string[];
+  const takenAvatars = game.players
+    .filter((p: Player) => p.isConnected !== false)
+    .map((p: Player) => p.avatar)
+    .filter(Boolean) as string[];
   const newPlayer: Player = {
     id: playerId,
     name: playerName,
@@ -221,32 +229,11 @@ export function addPlayer(game: GameState, playerName: string, deviceToken?: str
 }
 
 /**
- * Clear a player's color/avatar so the slots become free for other
- * lobby members to claim. Used when a player disconnects from the
- * LOBBY: we don't want their reservation to keep blocking the picker.
- * Returns the input unchanged outside the LOBBY phase.
- */
-export function freeAvatarSlot(game: GameState, playerId: string): GameState {
-  if (game.phase !== 'LOBBY') return game;
-  const player = game.players.find((p) => p.id === playerId);
-  if (!player || (player.color === undefined && player.avatar === undefined)) return game;
-  return {
-    ...game,
-    players: game.players.map((p) => {
-      if (p.id !== playerId) return p;
-      const { color: _c, avatar: _a, ...rest } = p;
-      void _c; void _a;
-      return rest as Player;
-    }),
-  };
-}
-
-/**
- * On reconnect into the LOBBY, ensure the player has valid + available
- * color and avatar slots. If their stored color was freed (or somehow
- * conflicts with another connected player), pick the next available
- * one. Returns `{ game, changed }` so the caller can decide whether to
- * broadcast S2C_AVATAR_UPDATED.
+ * On reconnect into the LOBBY, keep the player's stored color/avatar
+ * if still free, otherwise (another *connected* player has claimed it
+ * during the absence) auto-assign the next available slot. Returns
+ * `{ game, changed }` so the caller can decide whether to broadcast
+ * S2C_AVATAR_UPDATED. Outside the LOBBY this is a no-op.
  */
 export function ensureAvatarSlotForReconnect(
   game: GameState,
@@ -256,11 +243,13 @@ export function ensureAvatarSlotForReconnect(
   const player = game.players.find((p) => p.id === playerId);
   if (!player) return { game, changed: false };
 
+  // Conflicts only matter against other *connected* players. A
+  // disconnected lobby member's stored slots are considered freed.
   const takenColors = game.players
-    .filter((p) => p.id !== playerId && p.color !== undefined)
+    .filter((p) => p.id !== playerId && p.isConnected !== false && p.color !== undefined)
     .map((p) => p.color as string);
   const takenAvatars = game.players
-    .filter((p) => p.id !== playerId && p.avatar !== undefined)
+    .filter((p) => p.id !== playerId && p.isConnected !== false && p.avatar !== undefined)
     .map((p) => p.avatar as string);
 
   let nextColor = player.color;
@@ -301,8 +290,13 @@ export function setAvatar(game: GameState, playerId: string, color?: string, ava
     if (!COLOR_IDS.includes(color)) {
       throw new Error('Invalid color choice');
     }
-    const takenByOther = game.players.some((p: Player) => p.id !== playerId && p.color === color);
-    if (takenByOther) {
+    // Disconnected lobby members' colors are freely claimable. If a
+    // disconnected player held the color, clear theirs so they get a
+    // fresh pick on reconnect via ensureAvatarSlotForReconnect.
+    const takenByOtherConnected = game.players.some(
+      (p: Player) => p.id !== playerId && p.isConnected !== false && p.color === color,
+    );
+    if (takenByOtherConnected) {
       throw new Error('Color already taken by another player');
     }
   }
@@ -312,7 +306,23 @@ export function setAvatar(game: GameState, playerId: string, color?: string, ava
   }
 
   const updatedPlayers = game.players.map((p: Player) => {
-    if (p.id !== playerId) return p;
+    if (p.id !== playerId) {
+      // Strip a disconnected holder's color/avatar that is being claimed.
+      let updated = p;
+      if (p.isConnected === false) {
+        if (color !== undefined && p.color === color) {
+          const { color: _c, ...rest } = updated;
+          void _c;
+          updated = rest as Player;
+        }
+        if (avatar !== undefined && p.avatar === avatar) {
+          const { avatar: _a, ...rest } = updated;
+          void _a;
+          updated = rest as Player;
+        }
+      }
+      return updated;
+    }
     return {
       ...p,
       ...(color !== undefined ? { color } : {}),

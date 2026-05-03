@@ -1785,18 +1785,17 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
 
       const gameState = games.get(currentSessionId);
       if (gameState) {
-        const markedDisconnected = {
+        // Keep the disconnected player's stored color/avatar on the
+        // record so they can resume with it if it's still free on
+        // reconnect. The lobby treats disconnected players as not
+        // holding their slot (see Lobby.tsx + addPlayer / setAvatar).
+        let updatedGame = {
           ...gameState,
           players: gameState.players.map((p) =>
             p.id === currentPlayerId ? { ...p, isConnected: false } : p
           )
         };
-        // In the LOBBY, free the disconnecting player's color/avatar so
-        // other lobby members can claim it immediately. Outside the
-        // lobby roles are locked and avatars are cosmetic, so no-op.
-        const freed = game.freeAvatarSlot(markedDisconnected, currentPlayerId);
-        const slotChanged = freed !== markedDisconnected;
-        let updatedGame = freed;
+        const wasInLobby = updatedGame.phase === 'LOBBY';
 
         for (const [token, data] of sessionTokens.entries()) {
           if (data.playerId === currentPlayerId && data.sessionId === currentSessionId) {
@@ -1835,7 +1834,10 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
           type: 'S2C_PLAYER_DISCONNECTED',
           payload: { playerId: currentPlayerId!, players: scrubPlayersForRecipient(updatedGame.players, recipientId) }
         }));
-        if (slotChanged) {
+        // In the LOBBY, also broadcast an explicit avatar-updated
+        // event so color pickers refresh and the freed slot becomes
+        // immediately clickable for the remaining players.
+        if (wasInLobby) {
           broadcastPerRecipient(currentSessionId, (recipientId) => ({
             type: 'S2C_AVATAR_UPDATED',
             payload: { players: scrubPlayersForRecipient(updatedGame.players, recipientId) }
