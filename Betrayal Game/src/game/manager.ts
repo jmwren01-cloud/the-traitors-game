@@ -1,6 +1,6 @@
 // Game Manager - Core Game Logic
 
-import type { GameState, Player, Role, Vote, TimerState, GamePhase, GameSettings, ChallengeState, ChallengeType, RoundRecord, VoteEntry, Whisper, EvidenceVote, EvidenceType, FalseEvidence, ConfessionEntry, ConfessionReveal, SuspicionToken } from './types.js';
+import type { GameState, Player, Role, Vote, TimerState, GamePhase, GameSettings, ChallengeState, ChallengeType, RoundRecord, VoteEntry, Whisper, EvidenceVote, EvidenceType, FalseEvidence, ConfessionEntry, ConfessionReveal, SuspicionToken, SheriffInvestigationRecord, MedicProtectionRecord, SeerRevealRecord } from './types.js';
 import { DEFAULT_SETTINGS, FALSE_EVIDENCE_CONTENT_MAX, FALSE_EVIDENCE_WINDOW_MS, CONFESSION_MIN_LENGTH, CONFESSION_MAX_LENGTH, CONFESSION_WINDOW_MS, TOKEN_PLACEMENT_WINDOW_MS } from './types.js';
 import { pickAvailableColor, pickRandomAvatar, COLOR_IDS, AVATAR_IDS } from './avatarConstants.js';
 
@@ -28,9 +28,22 @@ const WORD_BANK = [
 export function scrubHistoryForLive(history: RoundRecord[], phase: GamePhase): RoundRecord[] {
   if (phase === 'GAME_END') return history;
   return history.map((r) => {
-    if (!r.confessions) return r;
-    const { confessions: _omit, ...rest } = r;
-    void _omit;
+    if (
+      !r.confessions &&
+      !r.sheriffInvestigations &&
+      !r.medicProtection &&
+      !r.seerReveal
+    ) {
+      return r;
+    }
+    const {
+      confessions: _c,
+      sheriffInvestigations: _s,
+      medicProtection: _m,
+      seerReveal: _v,
+      ...rest
+    } = r;
+    void _c; void _s; void _m; void _v;
     return rest as RoundRecord;
   });
 }
@@ -475,10 +488,23 @@ export function runSheriffInvestigations(
     });
   }
 
-  const updated: GameState =
+  const base: GameState =
     pendingForce.length === 0
       ? omit(game, 'forceSuspiciousIds')
       : { ...game, forceSuspiciousIds: pendingForce };
+  // Archive into the current round so the post-game replay can show every
+  // Sheriff investigation. Stripped from mid-game broadcasts by
+  // `scrubHistoryForLive`.
+  const updated: GameState =
+    out.length === 0
+      ? base
+      : {
+          ...base,
+          currentSheriffInvestigations: [
+            ...(base.currentSheriffInvestigations ?? []),
+            ...out,
+          ],
+        };
   return { game: updated, investigations: out };
 }
 
@@ -524,6 +550,15 @@ export function submitMedicProtect(
     ...game,
     players: updatedPlayers,
     medicProtectionTargetId: targetId,
+    // Archive for the post-game replay. `saved` is flipped to true by
+    // `resolveMurder` if the Traitors actually targeted this player.
+    currentMedicProtection: {
+      medicId,
+      medicName: medic.name,
+      targetId,
+      targetName: target.name,
+      saved: false,
+    },
   };
 }
 
@@ -572,7 +607,20 @@ export function activateSeer(
   const updatedPlayers = game.players.map((p) =>
     p.id === seerId ? { ...p, seerGiftUsed: true } : p
   );
-  const updated: GameState = { ...game, players: updatedPlayers };
+  const reveal: SeerRevealRecord = {
+    seerId,
+    seerName: seer.name,
+    targetId: target.id,
+    targetName: target.name,
+    actualRole: target.role!,
+  };
+  // Archive into the current round so the post-game replay can show the
+  // Seer's gift. Stripped from mid-game broadcasts by `scrubHistoryForLive`.
+  const updated: GameState = {
+    ...game,
+    players: updatedPlayers,
+    currentSeerReveal: reveal,
+  };
 
   return {
     game: updated,
@@ -1673,6 +1721,16 @@ function buildRoundRecord(game: GameState): RoundRecord {
     ...(game.suspicionTokensCurrent && game.suspicionTokensCurrent.length > 0
       ? { suspicionTokens: game.suspicionTokensCurrent }
       : {}),
+    // Special-role activity for the post-game replay only.
+    ...(game.currentSheriffInvestigations && game.currentSheriffInvestigations.length > 0
+      ? { sheriffInvestigations: game.currentSheriffInvestigations }
+      : {}),
+    ...(game.currentMedicProtection !== undefined
+      ? { medicProtection: game.currentMedicProtection }
+      : {}),
+    ...(game.currentSeerReveal !== undefined
+      ? { seerReveal: game.currentSeerReveal }
+      : {}),
   };
 }
 
@@ -1688,7 +1746,7 @@ export function checkWinCondition(game: GameState): GameState {
   if (aliveTraitors >= aliveFaithful) {
     const record = buildRoundRecord(game);
     return {
-      ...omit(game, 'lastRoundVotes', 'lastRecruitedPlayerId'),
+      ...omit(game, 'lastRoundVotes', 'lastRecruitedPlayerId', 'currentSheriffInvestigations', 'currentMedicProtection', 'currentSeerReveal'),
       history: [...game.history, record],
       phase: 'GAME_END',
       winner: 'TRAITORS'
@@ -1699,7 +1757,7 @@ export function checkWinCondition(game: GameState): GameState {
   if (aliveTraitors === 0) {
     const record = buildRoundRecord(game);
     return {
-      ...omit(game, 'lastRoundVotes', 'lastRecruitedPlayerId'),
+      ...omit(game, 'lastRoundVotes', 'lastRecruitedPlayerId', 'currentSheriffInvestigations', 'currentMedicProtection', 'currentSeerReveal'),
       history: [...game.history, record],
       phase: 'GAME_END',
       winner: 'FAITHFUL'
@@ -2221,11 +2279,17 @@ export function resolveMurder(game: GameState): MurderResult {
     game.medicProtectionTargetId !== undefined &&
     game.medicProtectionTargetId === targetId
   ) {
+    // Mark the round's archived MedicProtectionRecord as a save so the
+    // post-game timeline can call it out as "Medic saved <player>".
+    const savedMedic: MedicProtectionRecord | undefined = game.currentMedicProtection
+      ? { ...game.currentMedicProtection, saved: true }
+      : undefined;
     return {
       game: {
         ...omit(game, 'lastMurderedPlayerId', 'lastShieldedPlayerId', 'pendingRecruitmentTargetId', 'medicProtectionTargetId'),
         players: playersWithRecruitment,
         lastMurderBlocked: true,
+        ...(savedMedic !== undefined ? { currentMedicProtection: savedMedic } : {}),
         ...(recruitedPlayerId !== undefined ? { lastRecruitedPlayerId: recruitedPlayerId } : {}),
         murderVotes: [],
         phase: 'MORNING',
@@ -2311,7 +2375,7 @@ export function continueToDayPhase(game: GameState): GameState {
   // Check win conditions after murder
   if (aliveTraitors >= aliveFaithful) {
     return {
-      ...omit(game, 'lastRoundVotes', 'lastShieldedPlayerId'),
+      ...omit(game, 'lastRoundVotes', 'lastShieldedPlayerId', 'currentSheriffInvestigations', 'currentMedicProtection', 'currentSeerReveal'),
       history: newHistory,
       phase: 'GAME_END',
       winner: 'TRAITORS'
@@ -2320,7 +2384,7 @@ export function continueToDayPhase(game: GameState): GameState {
 
   if (aliveTraitors === 0) {
     return {
-      ...omit(game, 'lastRoundVotes', 'lastShieldedPlayerId'),
+      ...omit(game, 'lastRoundVotes', 'lastShieldedPlayerId', 'currentSheriffInvestigations', 'currentMedicProtection', 'currentSeerReveal'),
       history: newHistory,
       phase: 'GAME_END',
       winner: 'FAITHFUL'
@@ -2333,7 +2397,7 @@ export function continueToDayPhase(game: GameState): GameState {
   // If challenges are enabled, go to CHALLENGE phase, otherwise go directly to ROUNDTABLE
   if (game.settings.challengesEnabled) {
     return {
-      ...omit(game, 'lastRoundVotes', 'lastShieldedPlayerId', 'lastRecruitedPlayerId'),
+      ...omit(game, 'lastRoundVotes', 'lastShieldedPlayerId', 'lastRecruitedPlayerId', 'currentSheriffInvestigations', 'currentMedicProtection', 'currentSeerReveal'),
       history: newHistory,
       phase: 'CHALLENGE',
       currentRound: nextRound,
@@ -2345,7 +2409,7 @@ export function continueToDayPhase(game: GameState): GameState {
   // Confession Booth sub-phase here too (the router relies on this
   // to broadcast S2C_CONFESSION_PHASE_STARTED).
   return {
-    ...omit(game, 'lastRoundVotes', 'lastShieldedPlayerId', 'lastRecruitedPlayerId', 'confessionRevealed'),
+    ...omit(game, 'lastRoundVotes', 'lastShieldedPlayerId', 'lastRecruitedPlayerId', 'confessionRevealed', 'currentSheriffInvestigations', 'currentMedicProtection', 'currentSeerReveal'),
     history: newHistory,
     phase: 'ROUNDTABLE',
     currentRound: nextRound,

@@ -161,6 +161,54 @@ function RoundCard({ record, index, whispers, players }: { record: RoundRecord; 
         )}
       </div>
 
+      {/* Wave 4 special-role activity: Seer first (used during the day),
+          then Medic protect/save, then Sheriff reports (resolved overnight). */}
+      {record.seerReveal && (
+        <div className={styles.outcomeRow}>
+          <div className={styles.outcomeNeutral}>
+            <span className={styles.outcomeIcon}>🔮</span>
+            <span className={styles.outcomeText}>
+              <PlayerChip player={playerById(record.seerReveal.seerId)} name={record.seerReveal.seerName} />
+              {"'s gift revealed "}
+              <PlayerChip player={playerById(record.seerReveal.targetId)} name={record.seerReveal.targetName} />
+              {' as '}<RolePill role={record.seerReveal.actualRole} />
+            </span>
+          </div>
+        </div>
+      )}
+
+      {record.medicProtection && (
+        <div className={styles.outcomeRow}>
+          <div className={styles.outcomeNeutral}>
+            <span className={styles.outcomeIcon}>{record.medicProtection.saved ? '💉' : '🩺'}</span>
+            <span className={styles.outcomeText}>
+              <PlayerChip player={playerById(record.medicProtection.medicId)} name={record.medicProtection.medicName} />
+              {record.medicProtection.saved ? ' saved ' : ' protected '}
+              <PlayerChip player={playerById(record.medicProtection.targetId)} name={record.medicProtection.targetName} />
+              {record.medicProtection.saved && ' from the Traitors'}
+            </span>
+          </div>
+        </div>
+      )}
+
+      {record.sheriffInvestigations && record.sheriffInvestigations.length > 0 && (
+        <div className={styles.outcomeRow}>
+          <div className={styles.outcomeNeutral} style={{ flexDirection: 'column', alignItems: 'flex-start', gap: 4 }}>
+            {record.sheriffInvestigations.map((inv, i) => (
+              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                <span className={styles.outcomeIcon}>🔎</span>
+                <span className={styles.outcomeText}>
+                  <PlayerChip player={playerById(inv.sheriffId)} name={inv.sheriffName} />
+                  {' investigated '}
+                  <PlayerChip player={playerById(inv.targetId)} name={inv.targetName} />
+                  {' and learned they are '}<RolePill role={inv.reportedRole} />
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {record.recruitedName && (
         <div className={styles.outcomeRow}>
           <div className={styles.recruitedOutcome}>

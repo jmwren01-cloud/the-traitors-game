@@ -209,6 +209,50 @@ export interface RoundRecord {
    * server-assigned placements for players who didn't pick in time.
    */
   suspicionTokens?: SuspicionToken[];
+  /**
+   * Sheriff investigations carried out this round (one per alive Sheriff).
+   * Populated only on the post-game replay payload — stripped mid-game by
+   * `scrubHistoryForLive` so reportedRole never leaks while the game runs.
+   */
+  sheriffInvestigations?: SheriffInvestigationRecord[];
+  /**
+   * Medic protection target for this round and whether it actually blocked
+   * a kill. Stripped mid-game by `scrubHistoryForLive`.
+   */
+  medicProtection?: MedicProtectionRecord;
+  /**
+   * Seer's one-time gift, if used this round. Stripped mid-game by
+   * `scrubHistoryForLive` so the actual role isn't leaked.
+   */
+  seerReveal?: SeerRevealRecord;
+}
+
+/** Per-round archive of a single Sheriff investigation. Post-game only. */
+export interface SheriffInvestigationRecord {
+  sheriffId: string;
+  sheriffName: string;
+  targetId: string;
+  targetName: string;
+  reportedRole: 'TRAITOR' | 'FAITHFUL';
+}
+
+/** Per-round archive of the Medic's chosen protect. Post-game only. */
+export interface MedicProtectionRecord {
+  medicId: string;
+  medicName: string;
+  targetId: string;
+  targetName: string;
+  /** True iff `resolveMurder` silently blocked a kill on this target. */
+  saved: boolean;
+}
+
+/** Per-round archive of a Seer reveal. Post-game only. */
+export interface SeerRevealRecord {
+  seerId: string;
+  seerName: string;
+  targetId: string;
+  targetName: string;
+  actualRole: Role;
 }
 
 /**
@@ -378,6 +422,14 @@ export interface GameState {
   tokenRevealEndsAt?: number;
   /** Tokens placed (real + auto-backfilled) for the current round. */
   suspicionTokensCurrent?: SuspicionToken[];
+  /**
+   * Special-role activity captured for the CURRENT round, copied into the
+   * round's `RoundRecord` by `buildRoundRecord` and then cleared. Never
+   * broadcast outside the post-game `S2C_GAME_END` payload.
+   */
+  currentSheriffInvestigations?: SheriffInvestigationRecord[];
+  currentMedicProtection?: MedicProtectionRecord;
+  currentSeerReveal?: SeerRevealRecord;
   /** Player ids that have already submitted a token this round. */
   tokensSubmittedIds?: string[];
   /**

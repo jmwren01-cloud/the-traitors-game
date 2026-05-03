@@ -164,6 +164,39 @@ export interface RoundRecord {
    * "How It Happened" timeline.
    */
   suspicionTokens?: SuspicionToken[];
+  /** Per-round Sheriff investigations (post-game replay only). */
+  sheriffInvestigations?: SheriffInvestigationRecord[];
+  /** Per-round Medic protect target + whether it saved (post-game only). */
+  medicProtection?: MedicProtectionRecord;
+  /** Per-round Seer reveal, if used (post-game only). */
+  seerReveal?: SeerRevealRecord;
+}
+
+/** Mirror of server `SheriffInvestigationRecord`. Post-game only. */
+export interface SheriffInvestigationRecord {
+  sheriffId: string;
+  sheriffName: string;
+  targetId: string;
+  targetName: string;
+  reportedRole: 'TRAITOR' | 'FAITHFUL';
+}
+
+/** Mirror of server `MedicProtectionRecord`. Post-game only. */
+export interface MedicProtectionRecord {
+  medicId: string;
+  medicName: string;
+  targetId: string;
+  targetName: string;
+  saved: boolean;
+}
+
+/** Mirror of server `SeerRevealRecord`. Post-game only. */
+export interface SeerRevealRecord {
+  seerId: string;
+  seerName: string;
+  targetId: string;
+  targetName: string;
+  actualRole: Role;
 }
 
 // ============= Suspicion Tokens  =============
