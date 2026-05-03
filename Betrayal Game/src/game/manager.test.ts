@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import {
   assignRoles,
   submitVote,
@@ -14,6 +14,9 @@ import {
   WHISPER_MAX_LENGTH,
   removePlayer,
   submitRecruitment,
+  createChallenge,
+  submitChallengeAnswer,
+  resolveChallenge,
 } from './manager.js';
 import type { GameState, Player } from './types.js';
 import { DEFAULT_SETTINGS } from './types.js';
@@ -779,5 +782,475 @@ describe('resolveMurder() — pending recruitment', () => {
     expect(flipped.isAlive).toBe(true);
     expect(result.game.lastRecruitedPlayerId).toBe(recruit.id);
     expect(result.game.pendingRecruitmentTargetId).toBeUndefined();
+  });
+});
+
+// ============= CHALLENGE SYSTEM =============
+
+function makeChallengeGame(playerCount: number, currentRound = 1): GameState {
+  const players = makePlayers(playerCount).map((p) => ({ ...p, role: 'FAITHFUL' as const }));
+  return makeGame({ players, phase: 'CHALLENGE', currentRound });
+}
+
+describe('createChallenge()', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  // Pin Math.random so each test deterministically picks one of the
+  // three challenge types (index = floor(random * 3)).
+  it('produces valid TIME_ESTIMATE state with a target between 4 and 8 seconds', () => {
+    const seq = [0.0, 0.5];
+    let i = 0;
+    vi.spyOn(Math, 'random').mockImplementation(() => seq[i++ % seq.length]!);
+
+    const game = makeChallengeGame(6);
+    const { challenge } = createChallenge(game);
+    expect(challenge.type).toBe('TIME_ESTIMATE');
+    expect(challenge.completed).toBe(false);
+    expect(challenge.answers.size).toBe(0);
+    expect(typeof challenge.startTime).toBe('number');
+    expect(challenge.targetTime).toBeGreaterThanOrEqual(4);
+    expect(challenge.targetTime).toBeLessThanOrEqual(8);
+    expect(challenge.shownPlayerIds).toBeUndefined();
+    expect(challenge.correctWord).toBeUndefined();
+  });
+
+  it('produces valid MISSING_PLAYER state with a hidden player drawn from the shown set', () => {
+    vi.spyOn(Math, 'random').mockReturnValue(0.4);
+
+    const game = makeChallengeGame(6);
+    const { challenge } = createChallenge(game);
+    expect(challenge.type).toBe('MISSING_PLAYER');
+    expect(challenge.completed).toBe(false);
+    expect(challenge.answers.size).toBe(0);
+    expect(challenge.shownPlayerIds).toBeDefined();
+    expect(challenge.shownPlayerIds!.length).toBeGreaterThan(0);
+    expect(challenge.shownPlayerIds!.length).toBeLessThanOrEqual(6);
+    expect(challenge.hiddenPlayerId).toBeDefined();
+    expect(challenge.shownPlayerIds!).toContain(challenge.hiddenPlayerId!);
+    // Hidden player is one of the alive players in the game.
+    const aliveIds = new Set(game.players.filter((p) => p.isAlive).map((p) => p.id));
+    expect(aliveIds.has(challenge.hiddenPlayerId!)).toBe(true);
+  });
+
+  it('produces valid WORD_SCRAMBLE state with a known word and same-length scramble', () => {
+    vi.spyOn(Math, 'random').mockReturnValue(0.9);
+
+    const game = makeChallengeGame(6);
+    const { challenge } = createChallenge(game);
+    expect(challenge.type).toBe('WORD_SCRAMBLE');
+    expect(challenge.completed).toBe(false);
+    expect(challenge.answers.size).toBe(0);
+    expect(challenge.correctWord).toBeDefined();
+    expect(challenge.scrambledWord).toBeDefined();
+    expect(challenge.scrambledWord!.length).toBe(challenge.correctWord!.length);
+    // scramble is a permutation of the original
+    const sortChars = (s: string) => s.split('').sort().join('');
+    expect(sortChars(challenge.scrambledWord!)).toBe(sortChars(challenge.correctWord!));
+  });
+
+  it('transitions the game phase to CHALLENGE', () => {
+    const game = makeChallengeGame(5);
+    const result = createChallenge({ ...game, phase: 'ROUNDTABLE' });
+    expect(result.game.phase).toBe('CHALLENGE');
+    expect(result.game.challenge).toBeDefined();
+  });
+});
+
+describe('submitChallengeAnswer()', () => {
+  it('records the answer in the challenge state', () => {
+    const game = makeChallengeGame(3);
+    const word = 'table';
+    const target: GameState = {
+      ...game,
+      challenge: {
+        type: 'WORD_SCRAMBLE',
+        startTime: Date.now(),
+        answers: new Map(),
+        completed: false,
+        correctWord: word,
+        scrambledWord: 'btale',
+      },
+    };
+
+    const result = submitChallengeAnswer(target, target.players[0]!.id, word);
+    expect(result.isCorrect).toBe(true);
+    expect(result.game.challenge!.answers.has(target.players[0]!.id)).toBe(true);
+    expect(result.game.challenge!.answers.get(target.players[0]!.id)!.answer).toBe(word);
+  });
+
+  it('returns isCorrect=false (and does not re-record) when the player has already answered', () => {
+    const game = makeChallengeGame(3);
+    const word = 'table';
+    let state: GameState = {
+      ...game,
+      challenge: {
+        type: 'WORD_SCRAMBLE',
+        startTime: Date.now(),
+        answers: new Map(),
+        completed: false,
+        correctWord: word,
+        scrambledWord: 'btale',
+      },
+    };
+    const pid = state.players[0]!.id;
+    state = submitChallengeAnswer(state, pid, word).game;
+    const second = submitChallengeAnswer(state, pid, 'wrong');
+    expect(second.isCorrect).toBe(false);
+    expect(second.isWinner).toBe(false);
+    // First-write-wins: the original correct answer is still recorded.
+    expect(second.game.challenge!.answers.get(pid)!.answer).toBe(word);
+  });
+
+  it('marks the challenge completed exactly when the final alive player answers', () => {
+    const players = makePlayers(3).map((p) => ({ ...p, role: 'FAITHFUL' as const }));
+    // Mark one player dead so we only need answers from the alive 2.
+    players[2] = { ...players[2]!, isAlive: false };
+    const game = makeGame({ players, phase: 'CHALLENGE', currentRound: 1 });
+    const word = 'table';
+    let state: GameState = {
+      ...game,
+      challenge: {
+        type: 'WORD_SCRAMBLE',
+        startTime: Date.now(),
+        answers: new Map(),
+        completed: false,
+        correctWord: word,
+        scrambledWord: 'btale',
+      },
+    };
+    // After the first alive player answers, completion is still false.
+    const afterFirst = submitChallengeAnswer(state, players[0]!.id, word);
+    expect(afterFirst.game.challenge!.answers.size).toBe(1);
+    expect(afterFirst.game.challenge!.completed).toBe(false);
+
+    // After the last alive player answers, submitChallengeAnswer itself
+    // flips `completed` to true (no resolveChallenge required).
+    const afterLast = submitChallengeAnswer(afterFirst.game, players[1]!.id, 'xxxxx');
+    expect(afterLast.game.challenge!.answers.size).toBe(2);
+    expect(afterLast.game.challenge!.completed).toBe(true);
+
+    // The dead player's lack of an answer must not prevent completion,
+    // and resolveChallenge still advances the phase as before.
+    const resolved = resolveChallenge(afterLast.game);
+    expect(resolved.game.phase).toBe('CHALLENGE_RESULT');
+    expect(resolved.game.challenge!.completed).toBe(true);
+  });
+
+  it('rejects submission when not in CHALLENGE phase', () => {
+    const game = makeChallengeGame(3);
+    expect(() =>
+      submitChallengeAnswer({ ...game, phase: 'ROUNDTABLE' }, game.players[0]!.id, 'x'),
+    ).toThrow();
+  });
+
+  it('rejects submission from a dead player', () => {
+    const game = makeChallengeGame(3);
+    const dead = { ...game.players[0]!, isAlive: false };
+    const state: GameState = {
+      ...game,
+      players: [dead, ...game.players.slice(1)],
+      challenge: {
+        type: 'WORD_SCRAMBLE',
+        startTime: Date.now(),
+        answers: new Map(),
+        completed: false,
+        correctWord: 'table',
+        scrambledWord: 'btale',
+      },
+    };
+    expect(() => submitChallengeAnswer(state, dead.id, 'table')).toThrow();
+  });
+});
+
+describe('resolveChallenge() — TIME_ESTIMATE', () => {
+  it('picks the player whose guess is closest to the target', () => {
+    const game = makeChallengeGame(3);
+    const [a, b, c] = game.players;
+    const answers = new Map<string, { answer: string | number; timestamp: number }>([
+      [a!.id, { answer: 3, timestamp: 100 }],
+      [b!.id, { answer: 5, timestamp: 200 }],
+      [c!.id, { answer: 9, timestamp: 300 }],
+    ]);
+    const state: GameState = {
+      ...game,
+      challenge: {
+        type: 'TIME_ESTIMATE',
+        startTime: 0,
+        answers,
+        completed: false,
+        targetTime: 6,
+      },
+    };
+
+    const result = resolveChallenge(state);
+    expect(result.winnerId).toBe(b!.id);
+    expect(result.correctAnswer).toBe(6);
+    expect(result.shieldAwarded).toBe(true);
+  });
+
+  it('breaks ties by earliest submission timestamp', () => {
+    const game = makeChallengeGame(3);
+    const [a, b] = game.players;
+    const answers = new Map<string, { answer: string | number; timestamp: number }>([
+      // Both are equidistant from 5 (diff=2). The earlier submitter wins.
+      [a!.id, { answer: 7, timestamp: 500 }],
+      [b!.id, { answer: 3, timestamp: 200 }],
+    ]);
+    const state: GameState = {
+      ...game,
+      challenge: {
+        type: 'TIME_ESTIMATE',
+        startTime: 0,
+        answers,
+        completed: false,
+        targetTime: 5,
+      },
+    };
+
+    const result = resolveChallenge(state);
+    expect(result.winnerId).toBe(b!.id);
+  });
+
+  it('returns no winner when no players answered', () => {
+    const game = makeChallengeGame(3);
+    const state: GameState = {
+      ...game,
+      challenge: {
+        type: 'TIME_ESTIMATE',
+        startTime: 0,
+        answers: new Map(),
+        completed: false,
+        targetTime: 5,
+      },
+    };
+    const result = resolveChallenge(state);
+    expect(result.winnerId).toBeUndefined();
+    expect(result.shieldAwarded).toBe(false);
+  });
+});
+
+describe('resolveChallenge() — MISSING_PLAYER', () => {
+  it('awards the win to the first player who names the hidden player (case-insensitive)', () => {
+    const game = makeChallengeGame(4);
+    const [a, b, c, hidden] = game.players;
+    const state: GameState = {
+      ...game,
+      challenge: {
+        type: 'MISSING_PLAYER',
+        startTime: 0,
+        answers: new Map(),
+        completed: false,
+        shownPlayerIds: [a!.id, b!.id, c!.id, hidden!.id],
+        hiddenPlayerId: hidden!.id,
+      },
+    };
+
+    let next = submitChallengeAnswer(state, a!.id, 'wrong-name');
+    expect(next.isCorrect).toBe(false);
+    expect(next.isWinner).toBe(false);
+
+    next = submitChallengeAnswer(next.game, b!.id, hidden!.name.toUpperCase());
+    expect(next.isCorrect).toBe(true);
+    expect(next.isWinner).toBe(true);
+
+    // A later correct answer must NOT steal the win.
+    next = submitChallengeAnswer(next.game, c!.id, hidden!.name);
+    expect(next.isCorrect).toBe(true);
+    expect(next.isWinner).toBe(false);
+
+    const resolved = resolveChallenge(next.game);
+    expect(resolved.winnerId).toBe(b!.id);
+    expect(resolved.correctAnswer).toBe(hidden!.name);
+    expect(resolved.shieldAwarded).toBe(true);
+  });
+
+  it('also accepts the hidden player id as a valid answer', () => {
+    const game = makeChallengeGame(3);
+    const [a, , hidden] = game.players;
+    const state: GameState = {
+      ...game,
+      challenge: {
+        type: 'MISSING_PLAYER',
+        startTime: 0,
+        answers: new Map(),
+        completed: false,
+        shownPlayerIds: game.players.map((p) => p.id),
+        hiddenPlayerId: hidden!.id,
+      },
+    };
+    const next = submitChallengeAnswer(state, a!.id, hidden!.id);
+    expect(next.isCorrect).toBe(true);
+    expect(next.isWinner).toBe(true);
+  });
+});
+
+describe('resolveChallenge() — WORD_SCRAMBLE', () => {
+  it('accepts an exact match', () => {
+    const game = makeChallengeGame(2);
+    const [a] = game.players;
+    const state: GameState = {
+      ...game,
+      challenge: {
+        type: 'WORD_SCRAMBLE',
+        startTime: 0,
+        answers: new Map(),
+        completed: false,
+        correctWord: 'table',
+        scrambledWord: 'btale',
+      },
+    };
+    const next = submitChallengeAnswer(state, a!.id, 'table');
+    expect(next.isCorrect).toBe(true);
+    expect(next.isWinner).toBe(true);
+
+    const resolved = resolveChallenge(next.game);
+    expect(resolved.winnerId).toBe(a!.id);
+    expect(resolved.correctAnswer).toBe('table');
+    expect(resolved.shieldAwarded).toBe(true);
+  });
+
+  it('accepts a single-character typo (Levenshtein distance = 1)', () => {
+    const game = makeChallengeGame(3);
+    const [a, b] = game.players;
+    const state: GameState = {
+      ...game,
+      challenge: {
+        type: 'WORD_SCRAMBLE',
+        startTime: 0,
+        answers: new Map(),
+        completed: false,
+        correctWord: 'table',
+        scrambledWord: 'btale',
+      },
+    };
+    // substitution
+    let next = submitChallengeAnswer(state, a!.id, 'tabke');
+    expect(next.isCorrect).toBe(true);
+    expect(next.isWinner).toBe(true);
+    // a deletion (distance 1) is also accepted but doesn't steal the win
+    next = submitChallengeAnswer(next.game, b!.id, 'tale');
+    expect(next.isCorrect).toBe(true);
+    expect(next.isWinner).toBe(false);
+  });
+
+  it('rejects answers with Levenshtein distance > 1', () => {
+    const game = makeChallengeGame(2);
+    const [a] = game.players;
+    const state: GameState = {
+      ...game,
+      challenge: {
+        type: 'WORD_SCRAMBLE',
+        startTime: 0,
+        answers: new Map(),
+        completed: false,
+        correctWord: 'table',
+        scrambledWord: 'btale',
+      },
+    };
+    const next = submitChallengeAnswer(state, a!.id, 'xxxxx');
+    expect(next.isCorrect).toBe(false);
+    expect(next.isWinner).toBe(false);
+
+    const resolved = resolveChallenge(next.game);
+    expect(resolved.winnerId).toBeUndefined();
+    expect(resolved.shieldAwarded).toBe(false);
+  });
+});
+
+describe('challenge shield cooldown', () => {
+  it('prevents a player who won last round from winning again (WORD_SCRAMBLE)', () => {
+    const game = makeChallengeGame(3, /* currentRound */ 2);
+    const [a, b] = game.players;
+    // Player A won the previous round (round 1) and still has the shield.
+    const aWithCooldown: Player = { ...a!, lastChallengeWinRound: 1, hasShield: true };
+    const state: GameState = {
+      ...game,
+      players: [aWithCooldown, ...game.players.slice(1)],
+      challenge: {
+        type: 'WORD_SCRAMBLE',
+        startTime: 0,
+        answers: new Map(),
+        completed: false,
+        correctWord: 'table',
+        scrambledWord: 'btale',
+      },
+    };
+
+    const aSubmit = submitChallengeAnswer(state, aWithCooldown.id, 'table');
+    expect(aSubmit.isCorrect).toBe(true);
+    // On cooldown — answer recorded, but no win.
+    expect(aSubmit.isWinner).toBe(false);
+    expect(aSubmit.game.challenge!.winnerId).toBeUndefined();
+
+    const bSubmit = submitChallengeAnswer(aSubmit.game, b!.id, 'table');
+    expect(bSubmit.isWinner).toBe(true);
+
+    const resolved = resolveChallenge(bSubmit.game);
+    expect(resolved.winnerId).toBe(b!.id);
+    expect(resolved.shieldAwarded).toBe(true);
+
+    // Player A's shield/cooldown state is untouched.
+    const aAfter = resolved.game.players.find((p) => p.id === aWithCooldown.id)!;
+    expect(aAfter.lastChallengeWinRound).toBe(1);
+    expect(aAfter.hasShield).toBe(true);
+    // Player B is now the new winner, with hasShield + cooldown stamp.
+    const bAfter = resolved.game.players.find((p) => p.id === b!.id)!;
+    expect(bAfter.hasShield).toBe(true);
+    expect(bAfter.lastChallengeWinRound).toBe(2);
+  });
+
+  it('prevents a player who won last round from winning TIME_ESTIMATE (skipped during resolution)', () => {
+    const game = makeChallengeGame(2, /* currentRound */ 5);
+    const [a, b] = game.players;
+    const aWithCooldown: Player = { ...a!, lastChallengeWinRound: 4, hasShield: true };
+    const answers = new Map<string, { answer: string | number; timestamp: number }>([
+      // A's guess is closer (perfect), but A is on cooldown, so B should win.
+      [aWithCooldown.id, { answer: 6, timestamp: 100 }],
+      [b!.id, { answer: 9, timestamp: 200 }],
+    ]);
+    const state: GameState = {
+      ...game,
+      players: [aWithCooldown, b!],
+      challenge: {
+        type: 'TIME_ESTIMATE',
+        startTime: 0,
+        answers,
+        completed: false,
+        targetTime: 6,
+      },
+    };
+
+    const resolved = resolveChallenge(state);
+    expect(resolved.winnerId).toBe(b!.id);
+  });
+
+  it('does NOT award a shield to a winner who already holds one', () => {
+    const game = makeChallengeGame(2);
+    const [a] = game.players;
+    const aWithShield: Player = { ...a!, hasShield: true };
+    const state: GameState = {
+      ...game,
+      players: [aWithShield, ...game.players.slice(1)],
+      challenge: {
+        type: 'WORD_SCRAMBLE',
+        startTime: 0,
+        answers: new Map(),
+        completed: false,
+        correctWord: 'table',
+        scrambledWord: 'btale',
+      },
+    };
+    const next = submitChallengeAnswer(state, aWithShield.id, 'table');
+    expect(next.isWinner).toBe(true);
+
+    const resolved = resolveChallenge(next.game);
+    expect(resolved.winnerId).toBe(aWithShield.id);
+    // shield was already held — no new award, lastChallengeWinRound stays put.
+    expect(resolved.shieldAwarded).toBe(false);
+    const aAfter = resolved.game.players.find((p) => p.id === aWithShield.id)!;
+    expect(aAfter.hasShield).toBe(true);
+    expect(aAfter.lastChallengeWinRound).toBeUndefined();
   });
 });

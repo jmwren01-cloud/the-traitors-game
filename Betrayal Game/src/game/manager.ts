@@ -2454,7 +2454,7 @@ function levenshteinDistance(a: string, b: string): number {
       } else {
         matrix[i]![j] = Math.min(
           matrix[i - 1]![j - 1]! + 1,
-          matrix[i]![j]! + 1,
+          matrix[i - 1]![j]! + 1,
           matrix[i]![j - 1]! + 1
         );
       }
@@ -2587,11 +2587,18 @@ export function submitChallengeAnswer(
 
   const nextWinnerId = isWinner ? playerId : game.challenge.winnerId;
   const nextWinnerName = isWinner ? player.name : game.challenge.winnerName;
+  // Mark the challenge as completed once every alive player has submitted
+  // an answer. Final resolution (winner/shield) still happens in
+  // `resolveChallenge`; this flag lets the router fast-forward past the
+  // challenge timer when nobody else is going to answer.
+  const aliveCount = game.players.filter((p: Player) => p.isAlive).length;
+  const allAnswered = updatedAnswers.size >= aliveCount;
   const updatedChallenge: ChallengeState = {
     ...game.challenge,
     answers: updatedAnswers,
     ...(nextWinnerId !== undefined ? { winnerId: nextWinnerId } : {}),
     ...(nextWinnerName !== undefined ? { winnerName: nextWinnerName } : {}),
+    completed: game.challenge.completed || allAnswered,
   };
 
   return {
