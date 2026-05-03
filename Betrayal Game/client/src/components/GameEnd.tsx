@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type {
-  Player, RoundRecord, C2SEvent, Role, Whisper,
+  Player, RoundRecord, C2SEvent, Role, Whisper, FalseEvidence,
   PlayerStatsPayload, LeaderboardEntryPayload, GlobalStatsPayload
 } from '../types';
 import { getColorHex, getAvatarEmoji } from '../avatarConstants';
@@ -18,6 +18,8 @@ interface GameEndProps {
   history?: RoundRecord[];
   /** every whisper from the game, content fully revealed. */
   whispers?: Whisper[];
+  /** Wave 4 / 3 — False Evidence revealed for everyone post-game. */
+  falseEvidence?: FalseEvidence;
 
   myPlayerId?: string;
   playerStats?: PlayerStatsPayload | null;
@@ -158,7 +160,7 @@ function RoundCard({ record, index, whispers }: { record: RoundRecord; index: nu
 }
 
 export function GameEnd({
-  winner, endReason, players, myRole, history, whispers,
+  winner, endReason, players, myRole, history, whispers, falseEvidence,
   myPlayerId: _myPlayerId, playerStats, leaderboard, globalStats, onSend,
 }: GameEndProps) {
   const hostEnded = endReason === 'HOST_ENDED' || !winner;
@@ -281,6 +283,30 @@ export function GameEnd({
                 <Stat label="Traitor W-L" value={`${playerStats.winsAsTraitor}–${playerStats.lossesAsTraitor}`} />
                 <Stat label="Faithful W-L" value={`${playerStats.winsAsFaithful}–${playerStats.lossesAsFaithful}`} />
                 <Stat label="Survived" value={playerStats.totalSurvived} />
+              </div>
+            </div>
+          )}
+
+          {falseEvidence && (
+            <div className={`${styles.timeline} ${styles.stageEnter}`} style={{ marginTop: 16 }}>
+              <h3 className={styles.timelineTitle}>📜 False Evidence Revealed</h3>
+              <div style={{ padding: 12, border: '1px solid rgba(212,165,255,0.4)', borderRadius: 10, background: 'rgba(108,74,182,0.12)' }}>
+                <div style={{ fontSize: 14, marginBottom: 4 }}>
+                  Round {falseEvidence.activatedAtRound ?? falseEvidence.plantedAtRound} —{' '}
+                  <strong>
+                    {falseEvidence.type === 'FRAME' && 'Frame (Sheriff misled)'}
+                    {falseEvidence.type === 'WHISPER_FABRICATION' && 'Fabricated Whisper'}
+                    {falseEvidence.type === 'ANONYMOUS_TIP' && 'Anonymous Tip'}
+                  </strong>
+                </div>
+                <div style={{ fontSize: 13, opacity: 0.85 }}>
+                  Framed: <strong>{falseEvidence.targetName}</strong>
+                </div>
+                {falseEvidence.content && (
+                  <div style={{ fontSize: 13, marginTop: 6, fontStyle: 'italic', opacity: 0.85 }}>
+                    "{falseEvidence.content}"
+                  </div>
+                )}
               </div>
             </div>
           )}

@@ -71,6 +71,13 @@ const PAGES: Page[] = [
     ),
   },
   {
+    title: 'False Evidence',
+    body:
+      'During the night, the Traitors can secretly agree to plant ONE piece of false evidence — a Frame that taints a Sheriff read, a Fake Whisper "from" their target, or an Anonymous Tip. Used wisely, it can turn the castle against an innocent.',
+    illoClass: 'illoNight',
+    illoContent: <span className={styles.crown} />,
+  },
+  {
     title: 'How to Win',
     body:
       'Faithful win when every Traitor is banished. Traitors win the moment they equal or outnumber the Faithful. Trust no one.',

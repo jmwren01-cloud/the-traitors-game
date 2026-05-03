@@ -1,7 +1,7 @@
 // Game Manager - Core Game Logic
 
-import type { GameState, Player, Role, Vote, TimerState, GamePhase, GameSettings, ChallengeState, ChallengeType, RoundRecord, VoteEntry, Whisper } from './types.js';
-import { DEFAULT_SETTINGS } from './types.js';
+import type { GameState, Player, Role, Vote, TimerState, GamePhase, GameSettings, ChallengeState, ChallengeType, RoundRecord, VoteEntry, Whisper, EvidenceVote, EvidenceType, FalseEvidence } from './types.js';
+import { DEFAULT_SETTINGS, FALSE_EVIDENCE_CONTENT_MAX } from './types.js';
 import { pickAvailableColor, pickRandomAvatar, COLOR_IDS, AVATAR_IDS } from './avatarConstants.js';
 
 // Word bank for Word Scramble challenge (simple 4-5 letter words)
@@ -328,17 +328,45 @@ export interface SheriffInvestigation {
  * Returns one investigation per alive Sheriff, or an empty array if none.
  * The router fans these out as private S2C_SHERIFF_RESULT messages.
  */
-export function runSheriffInvestigations(game: GameState): SheriffInvestigation[] {
+/**
+ * Wave 4 / 3 — When the Traitors have planted a FRAME plant, the framed
+ * player's id sits in `forceSuspiciousIds`. The next Sheriff investigation
+ * that lands on them is corrupted: it will report TRAITOR (no inversion
+ * roll) and the id is consumed so the override fires only once.
+ *
+ * Implementation details:
+ *  - We bias one alive Sheriff into investigating the framed player so a
+ *    plant is never silently wasted by RNG. The first Sheriff with the
+ *    framed player as a valid candidate is rebound to that target.
+ *  - Returns the updated GameState with consumed override ids removed.
+ */
+export function runSheriffInvestigations(
+  game: GameState
+): { game: GameState; investigations: SheriffInvestigation[] } {
   const out: SheriffInvestigation[] = [];
   const alive = game.players.filter((p) => p.isAlive);
+  let pendingForce = [...(game.forceSuspiciousIds ?? [])];
+
   for (const sheriff of alive) {
     if (sheriff.role !== 'SHERIFF') continue;
     const candidates = alive.filter((p) => p.id !== sheriff.id);
     if (candidates.length === 0) continue;
-    const target = candidates[Math.floor(Math.random() * candidates.length)]!;
-    const trueIsTraitor = target.role === 'TRAITOR';
-    const inverted = Math.random() < 0.25;
-    const reported: 'TRAITOR' | 'FAITHFUL' = trueIsTraitor !== inverted ? 'TRAITOR' : 'FAITHFUL';
+
+    const forcedId = pendingForce.find((id) =>
+      candidates.some((c) => c.id === id)
+    );
+    let target: Player;
+    let reported: 'TRAITOR' | 'FAITHFUL';
+    if (forcedId) {
+      target = candidates.find((c) => c.id === forcedId)!;
+      reported = 'TRAITOR';
+      pendingForce = pendingForce.filter((id) => id !== forcedId);
+    } else {
+      target = candidates[Math.floor(Math.random() * candidates.length)]!;
+      const trueIsTraitor = target.role === 'TRAITOR';
+      const inverted = Math.random() < 0.25;
+      reported = trueIsTraitor !== inverted ? 'TRAITOR' : 'FAITHFUL';
+    }
     out.push({
       sheriffId: sheriff.id,
       sheriffName: sheriff.name,
@@ -347,7 +375,12 @@ export function runSheriffInvestigations(game: GameState): SheriffInvestigation[
       reportedRole: reported,
     });
   }
-  return out;
+
+  const updated: GameState =
+    pendingForce.length === 0
+      ? omit(game, 'forceSuspiciousIds')
+      : { ...game, forceSuspiciousIds: pendingForce };
+  return { game: updated, investigations: out };
 }
 
 /**
@@ -1080,9 +1113,274 @@ export function startNight(game: GameState): GameState {
   }
 
   return {
-    ...omit(game, 'pendingRecruitmentTargetId', 'lastRecruitedPlayerId', 'medicProtectionTargetId'),
+    ...omit(game, 'pendingRecruitmentTargetId', 'lastRecruitedPlayerId', 'medicProtectionTargetId', 'evidenceVotes'),
     phase: 'NIGHT',
     murderVotes: [],
+  };
+}
+
+// ============= WAVE 4 / 3 — FALSE EVIDENCE =============
+
+/**
+ * Sanitise a free-text evidence body (WHISPER_FABRICATION / ANONYMOUS_TIP).
+ * Strips control characters, trims, and caps at FALSE_EVIDENCE_CONTENT_MAX.
+ * Returns undefined if the resulting string is empty.
+ */
+function sanitiseEvidenceContent(raw: string | undefined): string | undefined {
+  if (raw === undefined) return undefined;
+  // eslint-disable-next-line no-control-regex
+  const stripped = raw.replace(/[\u0000-\u001F\u007F]/g, '').trim();
+  if (stripped.length === 0) return undefined;
+  return stripped.slice(0, FALSE_EVIDENCE_CONTENT_MAX);
+}
+
+/**
+ * Cast (or update) a single Traitor's evidence vote. Idempotent: a traitor
+ * may overwrite their own pending vote freely until unanimity is reached.
+ *
+ * Throws if:
+ *  - Not in NIGHT phase
+ *  - Voter is not an alive Traitor
+ *  - A plant has already been used this game
+ *  - Non-SKIP vote is missing a target
+ *  - Target (for non-SKIP) is not an alive non-self player
+ *  - WHISPER_FABRICATION / ANONYMOUS_TIP have no usable content
+ */
+export function castEvidenceVote(
+  game: GameState,
+  voterId: string,
+  voteType: EvidenceType | 'SKIP',
+  targetId: string | undefined,
+  rawContent: string | undefined
+): GameState {
+  if (game.phase !== 'NIGHT') {
+    throw new Error('Evidence votes can only be cast during the night phase');
+  }
+  if (game.evidenceUsed) {
+    throw new Error('False Evidence has already been planted this game');
+  }
+  const voter = game.players.find((p) => p.id === voterId);
+  if (!voter || !voter.isAlive || voter.role !== 'TRAITOR') {
+    throw new Error('Only alive Traitors can vote on false evidence');
+  }
+
+  const sanitised = sanitiseEvidenceContent(rawContent);
+
+  if (voteType !== 'SKIP') {
+    if (!targetId) {
+      throw new Error('A target is required for non-SKIP evidence votes');
+    }
+    const target = game.players.find((p) => p.id === targetId);
+    if (!target || !target.isAlive) {
+      throw new Error('Evidence target must be an alive player');
+    }
+    if (target.id === voterId) {
+      throw new Error('Cannot frame yourself');
+    }
+    if (
+      (voteType === 'WHISPER_FABRICATION' || voteType === 'ANONYMOUS_TIP') &&
+      sanitised === undefined
+    ) {
+      throw new Error('This evidence type requires a written body');
+    }
+  }
+
+  const newVote: EvidenceVote = {
+    voterId,
+    type: voteType,
+    ...(voteType !== 'SKIP' && targetId ? { targetId } : {}),
+    ...(sanitised !== undefined ? { content: sanitised } : {}),
+  };
+
+  const filtered = (game.evidenceVotes ?? []).filter((v) => v.voterId !== voterId);
+  return {
+    ...game,
+    evidenceVotes: [...filtered, newVote],
+  };
+}
+
+export interface EvidenceResolution {
+  game: GameState;
+  outcome: 'PLANTED' | 'SKIPPED' | 'NO_AGREEMENT' | 'PENDING';
+  evidence?: FalseEvidence;
+}
+
+/**
+ * Inspect the current evidence vote tally and resolve it if every alive
+ * Traitor has cast a ballot:
+ *  - All SKIP        → outcome 'SKIPPED', votes cleared.
+ *  - All same type+target → outcome 'PLANTED', the FalseEvidence is
+ *                       attached to game.falseEvidence (status PENDING),
+ *                       evidenceUsed=true, votes cleared. Content is the
+ *                       FIRST non-empty content among the matching votes.
+ *  - Mismatch        → outcome 'NO_AGREEMENT', votes cleared so the
+ *                       Traitors can negotiate again next night.
+ *  - Missing votes   → outcome 'PENDING', game unchanged.
+ */
+export function resolveEvidenceVotes(game: GameState): EvidenceResolution {
+  if (game.phase !== 'NIGHT') {
+    return { game, outcome: 'PENDING' };
+  }
+  if (game.evidenceUsed) {
+    return { game, outcome: 'PENDING' };
+  }
+
+  const aliveTraitors = game.players.filter(
+    (p) => p.isAlive && p.role === 'TRAITOR'
+  );
+  const votes = game.evidenceVotes ?? [];
+  if (votes.length < aliveTraitors.length || aliveTraitors.length === 0) {
+    return { game, outcome: 'PENDING' };
+  }
+
+  const allSkip = votes.every((v) => v.type === 'SKIP');
+  if (allSkip) {
+    return {
+      game: omit(game, 'evidenceVotes'),
+      outcome: 'SKIPPED',
+    };
+  }
+
+  const first = votes[0]!;
+  const unanimous = votes.every(
+    (v) => v.type === first.type && v.targetId === first.targetId
+  );
+  if (!unanimous || first.type === 'SKIP' || !first.targetId) {
+    return {
+      game: omit(game, 'evidenceVotes'),
+      outcome: 'NO_AGREEMENT',
+    };
+  }
+
+  const target = game.players.find((p) => p.id === first.targetId);
+  if (!target) {
+    return {
+      game: omit(game, 'evidenceVotes'),
+      outcome: 'NO_AGREEMENT',
+    };
+  }
+
+  // Take the first non-empty content from the matching votes (traitors
+  // typically agree on body text via chat before everyone re-submits).
+  const contentVote = votes.find((v) => v.content && v.content.length > 0);
+  const evidence: FalseEvidence = {
+    type: first.type as EvidenceType,
+    targetId: target.id,
+    targetName: target.name,
+    plantedAtRound: game.currentRound,
+    ...(contentVote?.content ? { content: contentVote.content } : {}),
+  };
+
+  return {
+    game: {
+      ...omit(game, 'evidenceVotes'),
+      falseEvidence: evidence,
+      evidenceUsed: true,
+    },
+    outcome: 'PLANTED',
+    evidence,
+  };
+}
+
+export interface EvidenceActivation {
+  game: GameState;
+  evidence?: FalseEvidence;
+  /**
+   * For WHISPER_FABRICATION — a fully-formed Whisper the router must
+   * fan out (S2C_WHISPER_SENT only, never S2C_WHISPER_RECEIVED). Sender
+   * is the framed player; recipient is a randomly chosen alive non-traitor
+   * non-sender player so the lie has a plausible audience.
+   */
+  fabricatedWhisper?: Whisper;
+}
+
+/**
+ * Consume any pending FalseEvidence at the start of a Roundtable.
+ *  - FRAME → push targetId into forceSuspiciousIds for the next Sheriff
+ *    investigation to corrupt.
+ *  - WHISPER_FABRICATION → emit a Whisper from the framed player; persist
+ *    on game.whispers so the post-game replay shows it. The router only
+ *    broadcasts the public meta (no S2C_WHISPER_RECEIVED).
+ *  - ANONYMOUS_TIP → leave the body on game.falseEvidence for Task #33's
+ *    Confession Booth to consume (TODO seam).
+ *
+ * In all cases the FalseEvidence record is stamped with `activatedAtRound`
+ * so the post-game replay can surface it.
+ *
+ * Idempotent: returns the game unchanged if there is no pending plant
+ * (i.e. !falseEvidence or already activated).
+ */
+export function activateFalseEvidence(game: GameState): EvidenceActivation {
+  const ev = game.falseEvidence;
+  if (!ev || ev.activatedAtRound !== undefined) {
+    return { game };
+  }
+  if (game.phase !== 'ROUNDTABLE') {
+    return { game };
+  }
+
+  const activated: FalseEvidence = { ...ev, activatedAtRound: game.currentRound };
+
+  if (ev.type === 'FRAME') {
+    const force = [...(game.forceSuspiciousIds ?? [])];
+    if (!force.includes(ev.targetId)) force.push(ev.targetId);
+    return {
+      game: { ...game, falseEvidence: activated, forceSuspiciousIds: force },
+      evidence: activated,
+    };
+  }
+
+  if (ev.type === 'WHISPER_FABRICATION') {
+    const sender = game.players.find((p) => p.id === ev.targetId);
+    const candidates = game.players.filter(
+      (p) => p.isAlive && p.id !== ev.targetId && p.role !== 'TRAITOR'
+    );
+    // Fall back to any alive non-sender if no Faithful candidates remain.
+    const pool = candidates.length > 0
+      ? candidates
+      : game.players.filter((p) => p.isAlive && p.id !== ev.targetId);
+    if (!sender || pool.length === 0) {
+      // Cannot stage the lie — drop the activation but still mark consumed.
+      return {
+        game: { ...game, falseEvidence: activated },
+        evidence: activated,
+      };
+    }
+    const recipient = pool[Math.floor(Math.random() * pool.length)]!;
+    const whisper: Whisper = {
+      id: `whisper_fake_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`,
+      senderId: sender.id,
+      senderName: sender.name,
+      recipientId: recipient.id,
+      recipientName: recipient.name,
+      round: game.currentRound,
+      timestamp: Date.now(),
+      ...(ev.content ? { content: ev.content } : {}),
+    };
+    return {
+      game: {
+        ...game,
+        falseEvidence: activated,
+        whispers: [...(game.whispers ?? []), whisper],
+      },
+      evidence: activated,
+      fabricatedWhisper: whisper,
+    };
+  }
+
+  // ANONYMOUS_TIP — TODO seam for Task #33 (Confession Booth). The body
+  // stays on game.falseEvidence so the booth can read it.
+  return {
+    game: { ...game, falseEvidence: activated },
+    evidence: activated,
+  };
+}
+
+export function getEvidenceVoteProgress(game: GameState): { received: number; needed: number } {
+  const aliveTraitors = game.players.filter((p) => p.isAlive && p.role === 'TRAITOR');
+  return {
+    received: (game.evidenceVotes ?? []).length,
+    needed: aliveTraitors.length,
   };
 }
 

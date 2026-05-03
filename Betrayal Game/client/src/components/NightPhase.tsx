@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
-import type { Player, C2SEvent, Role } from '../types';
+import type { Player, C2SEvent, Role, EvidenceType, EvidenceVote, FalseEvidence } from '../types';
+import { FALSE_EVIDENCE_CONTENT_MAX } from '../types';
 import { getColorHex, getAvatarEmoji } from '../avatarConstants';
 import styles from './NightPhase.module.css';
 import { useSoundContext } from '../contexts/SoundContext';
@@ -22,6 +23,11 @@ interface NightPhaseProps {
   justRecruited?: boolean;
   recruitedPlayer?: { id: string; name: string };
   nightRecruitmentSubmittedBy?: string;
+  /** Wave 4 / 3 — False Evidence (traitor-only state). */
+  evidenceUsed?: boolean;
+  falseEvidence?: FalseEvidence;
+  evidenceVotes?: EvidenceVote[];
+  evidenceVoteProgress?: { received: number; needed: number };
   onSend: (event: C2SEvent) => void;
 }
 
@@ -41,8 +47,16 @@ export function NightPhase({
   justRecruited,
   recruitedPlayer,
   nightRecruitmentSubmittedBy,
+  evidenceUsed,
+  falseEvidence,
+  evidenceVotes,
+  evidenceVoteProgress,
   onSend,
 }: NightPhaseProps) {
+  // Wave 4 / 3 — False Evidence local UI state.
+  const [evidenceType, setEvidenceType] = useState<EvidenceType | 'SKIP' | null>(null);
+  const [evidenceTarget, setEvidenceTarget] = useState<string | null>(null);
+  const [evidenceContent, setEvidenceContent] = useState('');
   const [selectedTarget, setSelectedTarget] = useState<string | null>(null);
   const [hasVoted, setHasVoted] = useState(false);
   const [selectedRecruitTarget, setSelectedRecruitTarget] = useState<string | null>(null);
@@ -291,6 +305,135 @@ export function NightPhase({
                 </div>
               );
             })()}
+
+            {/* Wave 4 / 3 — Plant False Evidence (one-time per game). */}
+            {!evidenceUsed && !falseEvidence && (() => {
+              const myVote = (evidenceVotes ?? []).find((v) => v.voterId === myPlayerId);
+              const needsContent =
+                evidenceType === 'WHISPER_FABRICATION' || evidenceType === 'ANONYMOUS_TIP';
+              const targetMissing =
+                evidenceType !== null && evidenceType !== 'SKIP' && !evidenceTarget;
+              const contentMissing = needsContent && evidenceContent.trim().length === 0;
+              const canSubmit = evidenceType !== null && !targetMissing && !contentMissing;
+              const submit = () => {
+                if (!canSubmit || !evidenceType) return;
+                onSend({
+                  type: 'C2S_CAST_EVIDENCE_VOTE',
+                  payload: {
+                    voteType: evidenceType,
+                    ...(evidenceType !== 'SKIP' && evidenceTarget ? { targetId: evidenceTarget } : {}),
+                    ...(needsContent && evidenceContent.trim() ? { content: evidenceContent.trim() } : {}),
+                  },
+                });
+              };
+              const aliveOthers = players.filter(
+                (p) => p.isAlive && p.id !== myPlayerId
+              );
+              return (
+                <div className={styles.recruitSection}>
+                  <h2 className={styles.sectionTitle}>📜 Plant False Evidence</h2>
+                  <p className={styles.recruitSubtitle}>
+                    One-time ability — all traitors must agree (target + type).
+                  </p>
+
+                  <div className={styles.evidenceTypeRow}>
+                    {(['FRAME', 'WHISPER_FABRICATION', 'ANONYMOUS_TIP', 'SKIP'] as const).map((t) => (
+                      <button
+                        key={t}
+                        type="button"
+                        className={`${styles.evidenceTypeBtn} ${evidenceType === t ? styles.evidenceTypeBtnActive : ''}`}
+                        onClick={() => {
+                          setEvidenceType(t);
+                          if (t === 'SKIP') {
+                            setEvidenceTarget(null);
+                            setEvidenceContent('');
+                          }
+                        }}
+                      >
+                        {t === 'FRAME' && 'Frame'}
+                        {t === 'WHISPER_FABRICATION' && 'Fake Whisper'}
+                        {t === 'ANONYMOUS_TIP' && 'Anonymous Tip'}
+                        {t === 'SKIP' && 'Skip'}
+                      </button>
+                    ))}
+                  </div>
+
+                  {evidenceType && evidenceType !== 'SKIP' && (
+                    <div className={styles.targetGrid}>
+                      {aliveOthers.map((player) => {
+                        const colorHex = getColorHex(player.color);
+                        const avatarEmoji = getAvatarEmoji(player.avatar);
+                        const selected = evidenceTarget === player.id;
+                        return (
+                          <div
+                            key={player.id}
+                            className={`${styles.targetCard} ${selected ? styles.recruitSelected : ''}`}
+                            style={{ borderColor: selected ? colorHex : undefined }}
+                            onClick={() => setEvidenceTarget(player.id)}
+                          >
+                            <div className={styles.avatar} style={{ background: colorHex, color: '#000' }}>
+                              {avatarEmoji}
+                            </div>
+                            <span className={styles.name}>{player.name}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {needsContent && (
+                    <div className={styles.evidenceContentWrap}>
+                      <textarea
+                        className={styles.evidenceTextarea}
+                        value={evidenceContent}
+                        onChange={(e) =>
+                          setEvidenceContent(e.target.value.slice(0, FALSE_EVIDENCE_CONTENT_MAX))
+                        }
+                        placeholder={
+                          evidenceType === 'WHISPER_FABRICATION'
+                            ? 'What did the framed player "whisper"?'
+                            : 'Anonymous tip text…'
+                        }
+                        maxLength={FALSE_EVIDENCE_CONTENT_MAX}
+                        rows={3}
+                      />
+                      <div className={styles.evidenceCharCount}>
+                        {evidenceContent.length} / {FALSE_EVIDENCE_CONTENT_MAX}
+                      </div>
+                    </div>
+                  )}
+
+                  {evidenceVoteProgress && (
+                    <p className={styles.waiting}>
+                      Traitor votes: {evidenceVoteProgress.received} / {evidenceVoteProgress.needed}
+                      {myVote && <> · You: {myVote.type === 'SKIP' ? 'Skip' : myVote.type}</>}
+                    </p>
+                  )}
+
+                  <button
+                    type="button"
+                    className={styles.recruitBtn}
+                    onClick={submit}
+                    disabled={!canSubmit}
+                  >
+                    {myVote ? 'Update Vote' : 'Cast Evidence Vote'}
+                  </button>
+                </div>
+              );
+            })()}
+
+            {!!falseEvidence && (
+              <div className={styles.recruitUsed}>
+                <span>
+                  📜 False evidence planted ({falseEvidence.type === 'FRAME'
+                    ? 'Frame'
+                    : falseEvidence.type === 'WHISPER_FABRICATION'
+                      ? 'Fake Whisper'
+                      : 'Anonymous Tip'}
+                  ) — target: <strong>{falseEvidence.targetName}</strong>
+                </span>
+              </div>
+            )}
           </div>
         </div>
       );

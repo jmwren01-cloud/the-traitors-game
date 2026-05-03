@@ -44,11 +44,17 @@ function countEligibleAnswerers(state: GameState): number {
 function broadcastSheriffResults(
   sessionId: string,
   games: Map<string, GameState>,
-  playerConnections: Map<string, WebSocket>
+  playerConnections: Map<string, WebSocket>,
+  setGame?: (state: GameState) => void
 ): void {
   const state = games.get(sessionId);
   if (!state) return;
-  const investigations = game.runSheriffInvestigations(state);
+  const { game: updated, investigations } = game.runSheriffInvestigations(state);
+  // Persist any consumed forceSuspiciousIds so the override fires only once.
+  if (updated !== state) {
+    if (setGame) setGame(updated);
+    else games.set(sessionId, updated);
+  }
   for (const inv of investigations) {
     const socket = playerConnections.get(inv.sheriffId);
     if (!socket || socket.readyState !== WebSocket.OPEN) continue;
@@ -487,7 +493,14 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
       }
 
       if (event.type === 'C2S_START_ROUNDTABLE') {
-        const updatedGame = game.startRoundtable(gameState);
+        const roundtableGame = game.startRoundtable(gameState);
+
+        // Wave 4 / 3 — consume any pending FalseEvidence at the start of
+        // the new Roundtable. FRAME -> forceSuspiciousIds; WHISPER_FAB ->
+        // public-meta whisper broadcast (no recipient delivery, content
+        // stays on the persisted whisper for post-game replay).
+        const activation = game.activateFalseEvidence(roundtableGame);
+        let updatedGame = activation.game;
         setGame(updatedGame);
 
         broadcast(currentSessionId, {
@@ -495,14 +508,80 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
           payload: { phase: 'ROUNDTABLE', currentRound: updatedGame.currentRound }
         });
 
+        if (activation.fabricatedWhisper) {
+          // Public meta only — never send S2C_WHISPER_RECEIVED (which would
+          // tip the framed "recipient" off that they're being framed).
+          const fanout = game.buildWhisperFanout(activation.fabricatedWhisper);
+          broadcast(currentSessionId, {
+            type: 'S2C_WHISPER_SENT',
+            payload: fanout.broadcast,
+          });
+        }
+
         const timer = game.createTimer('ROUNDTABLE', updatedGame.settings);
         if (timer) {
           const gameWithTimer = { ...updatedGame, timer };
           setGame(gameWithTimer);
+          updatedGame = gameWithTimer;
           broadcast(currentSessionId, {
             type: 'S2C_TIMER_UPDATE',
             payload: { endTime: timer.endTime, duration: timer.duration, phase: 'ROUNDTABLE' }
           });
+        }
+        return;
+      }
+
+      if (event.type === 'C2S_CAST_EVIDENCE_VOTE') {
+        // Wave 4 / 3 — only alive Traitors can plant during NIGHT.
+        let voted: GameState;
+        try {
+          voted = game.castEvidenceVote(
+            gameState,
+            currentPlayerId,
+            event.payload.voteType,
+            event.payload.targetId,
+            event.payload.content,
+          );
+        } catch (err) {
+          sendError(ws, (err as Error).message);
+          return;
+        }
+
+        const resolution = game.resolveEvidenceVotes(voted);
+        const finalState = resolution.game;
+        setGame(finalState);
+
+        // Fan out tally + outcome to alive Traitors only.
+        const traitorSockets = finalState.players
+          .filter((p) => p.isAlive && p.role === 'TRAITOR')
+          .map((p) => playerConnections.get(p.id))
+          .filter((s): s is WebSocket => !!s && s.readyState === WebSocket.OPEN);
+
+        const progress = game.getEvidenceVoteProgress(
+          resolution.outcome === 'PENDING' ? finalState : voted
+        );
+        const tallyMsg: S2CEvent = {
+          type: 'S2C_EVIDENCE_VOTE_CAST',
+          payload: {
+            votes: (resolution.outcome === 'PENDING' ? finalState.evidenceVotes : voted.evidenceVotes) ?? [],
+            received: progress.received,
+            needed: progress.needed,
+          },
+        };
+        for (const sock of traitorSockets) sock.send(JSON.stringify(tallyMsg));
+
+        if (resolution.outcome === 'PLANTED' && resolution.evidence) {
+          const msg: S2CEvent = {
+            type: 'S2C_EVIDENCE_PLANTED',
+            payload: { evidence: resolution.evidence },
+          };
+          for (const sock of traitorSockets) sock.send(JSON.stringify(msg));
+        } else if (resolution.outcome === 'SKIPPED' || resolution.outcome === 'NO_AGREEMENT') {
+          const msg: S2CEvent = {
+            type: 'S2C_EVIDENCE_FAILED',
+            payload: { reason: resolution.outcome },
+          };
+          for (const sock of traitorSockets) sock.send(JSON.stringify(msg));
         }
         return;
       }
@@ -761,7 +840,8 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
               remainingTraitors: aliveTraitors,
               remainingFaithful: aliveFaithful,
               history: updatedGame.history,
-              whispers: updatedGame.whispers ?? []
+              whispers: updatedGame.whispers ?? [],
+              ...(updatedGame.falseEvidence ? { falseEvidence: updatedGame.falseEvidence } : {}),
             }
           });
         } else {
@@ -868,7 +948,7 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
                 result.game,
                 playerConnections
               );
-              broadcastSheriffResults(currentSessionId, games, playerConnections);
+              broadcastSheriffResults(currentSessionId, games, playerConnections, setGame);
             } else if (result.murderedPlayerId) {
               broadcastMorningEventWithRecruitment(
                 'S2C_MURDER_RESOLVED',
@@ -934,7 +1014,7 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
             playerConnections
           );
         }
-        broadcastSheriffResults(currentSessionId, games, playerConnections);
+        broadcastSheriffResults(currentSessionId, games, playerConnections, setGame);
         return;
       }
 
@@ -968,7 +1048,7 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
             playerConnections
           );
         }
-        broadcastSheriffResults(currentSessionId, games, playerConnections);
+        broadcastSheriffResults(currentSessionId, games, playerConnections, setGame);
         return;
       }
 
@@ -1045,7 +1125,8 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
               remainingTraitors: aliveTraitors,
               remainingFaithful: aliveFaithful,
               history: updatedGame.history,
-              whispers: updatedGame.whispers ?? []
+              whispers: updatedGame.whispers ?? [],
+              ...(updatedGame.falseEvidence ? { falseEvidence: updatedGame.falseEvidence } : {}),
             }
           });
         } else if (updatedGame.phase === 'CHALLENGE') {
@@ -1353,6 +1434,7 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
             history: updatedGame.history,
             reason: 'HOST_ENDED',
             whispers: updatedGame.whispers ?? [],
+            ...(updatedGame.falseEvidence ? { falseEvidence: updatedGame.falseEvidence } : {}),
           }
         });
         return;

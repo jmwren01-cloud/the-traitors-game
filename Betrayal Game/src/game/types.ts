@@ -258,6 +258,46 @@ export interface GameState {
    * string array so the state remains JSON-serialisable for SQLite.
    */
   whispersUsedThisRound?: string[];
+  /**
+   * Wave 4 / 3 — False Evidence. Traitors may unanimously plant ONE piece
+   * of fake evidence per game during NIGHT. The pending vote tally lives
+   * in `evidenceVotes`; once unanimity is reached the agreed plant moves
+   * to `falseEvidence` (status PENDING) and `evidenceUsed` becomes true.
+   * The plant is consumed at the next ROUNDTABLE start by
+   * `activateFalseEvidence()`. `forceSuspiciousIds` queues a one-shot
+   * Sheriff override per framed target.
+   */
+  evidenceVotes?: EvidenceVote[];
+  falseEvidence?: FalseEvidence;
+  evidenceUsed?: boolean;
+  forceSuspiciousIds?: string[];
+}
+
+export type EvidenceType = 'FRAME' | 'WHISPER_FABRICATION' | 'ANONYMOUS_TIP';
+
+/** Cap for the optional WHISPER_FABRICATION / ANONYMOUS_TIP body. */
+export const FALSE_EVIDENCE_CONTENT_MAX = 150;
+
+export interface EvidenceVote {
+  voterId: string;
+  /** SKIP means "don't plant anything tonight". */
+  type: EvidenceType | 'SKIP';
+  /** Required for non-SKIP votes; the player being framed. */
+  targetId?: string;
+  /** Required for WHISPER_FABRICATION & ANONYMOUS_TIP. Sanitised, ≤150. */
+  content?: string;
+}
+
+export interface FalseEvidence {
+  type: EvidenceType;
+  targetId: string;
+  targetName: string;
+  /** Body for WHISPER_FABRICATION (fake whisper text) and ANONYMOUS_TIP. */
+  content?: string;
+  /** Round of the NIGHT during which this was planted. */
+  plantedAtRound: number;
+  /** Set once activateFalseEvidence runs the plant at next ROUNDTABLE. */
+  activatedAtRound?: number;
 }
 
 // Client-to-Server Events
@@ -304,7 +344,16 @@ export type C2SEvent =
   | { type: 'C2S_TRANSFER_HOST'; payload: { targetPlayerId: string } }
   | { type: 'C2S_END_GAME_EARLY'; payload: Record<string, never> }
   /** Send a private whisper to another alive player during ROUNDTABLE. */
-  | { type: 'C2S_SEND_WHISPER'; payload: { recipientId: string; content: string } };
+  | { type: 'C2S_SEND_WHISPER'; payload: { recipientId: string; content: string } }
+  /**
+   * Wave 4 / 3 — Traitor casts (or updates) their evidence vote during NIGHT.
+   * `targetId`/`content` are omitted on SKIP. Server enforces unanimity.
+   */
+  | { type: 'C2S_CAST_EVIDENCE_VOTE'; payload: {
+      voteType: EvidenceType | 'SKIP';
+      targetId?: string;
+      content?: string;
+    } };
 
 // Server-to-Client Events
 export type S2CEvent =
@@ -415,6 +464,8 @@ export type S2CEvent =
       reason?: 'HOST_ENDED';
       /** Full whisper log with content, for the post-game reveal. */
       whispers?: Whisper[];
+      /** Wave 4 / 3 — revealed to everyone in the post-game summary. */
+      falseEvidence?: FalseEvidence;
     } }
   | { type: 'S2C_HOST_TRANSFERRED'; payload: { 
       newHostId: string; 
@@ -525,6 +576,24 @@ export type S2CEvent =
   | { type: 'S2C_WHISPER_RECEIVED'; payload: Whisper }
   /** Whisper validation failure routed only to the offending sender. */
   | { type: 'S2C_WHISPER_ERROR'; payload: { code: 'PHASE' | 'DEAD' | 'SELF' | 'ALREADY_USED' | 'EMPTY' | 'TOO_LONG' | 'NOT_FOUND'; message: string } }
+  /**
+   * Wave 4 / 3 — Sent only to alive Traitors during NIGHT. Reports each
+   * traitor's current vote (or that they have not yet voted) plus a
+   * progress counter so the planting UI can render its tally.
+   */
+  | { type: 'S2C_EVIDENCE_VOTE_CAST'; payload: {
+      votes: EvidenceVote[];
+      received: number;
+      needed: number;
+    } }
+  /** Sent to alive Traitors when a unanimous plant succeeds. */
+  | { type: 'S2C_EVIDENCE_PLANTED'; payload: {
+      evidence: FalseEvidence;
+    } }
+  /** Sent to alive Traitors when the vote concluded with no plant (SKIP). */
+  | { type: 'S2C_EVIDENCE_FAILED'; payload: {
+      reason: 'SKIPPED' | 'NO_AGREEMENT';
+    } }
   | { type: 'S2C_AVATAR_UPDATED'; payload: { players: Player[] } }
   | { type: 'S2C_CHAT_MESSAGE'; payload: ChatMessage }
   | { type: 'S2C_TIMER_UPDATE'; payload: { endTime: number; duration: number; phase: GamePhase } }

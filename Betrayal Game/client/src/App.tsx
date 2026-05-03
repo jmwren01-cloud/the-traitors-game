@@ -189,6 +189,7 @@ function App() {
           myRole={gameState?.myRole}
           history={gameState?.history}
           whispers={gameState?.whispers}
+          falseEvidence={gameState?.falseEvidence}
           myPlayerId={gameState?.myPlayerId}
           playerStats={playerStats}
           leaderboard={leaderboard}
@@ -259,6 +260,10 @@ function App() {
           justRecruited={gameState?.justRecruited}
           recruitedPlayer={gameState?.recruitedPlayer}
           nightRecruitmentSubmittedBy={gameState?.nightRecruitmentSubmittedBy}
+          evidenceUsed={gameState?.evidenceUsed}
+          falseEvidence={gameState?.falseEvidence}
+          evidenceVotes={gameState?.evidenceVotes}
+          evidenceVoteProgress={gameState?.evidenceVoteProgress}
           onSend={send}
         />
         {specialRoleHud}

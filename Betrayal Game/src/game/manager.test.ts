@@ -130,7 +130,7 @@ describe('runSheriffInvestigations()', () => {
     const t = makePlayer({ role: 'TRAITOR' });
     const f = makePlayer({ role: 'FAITHFUL' });
     const game = makeGame({ players: [sheriff, t, f], phase: 'MORNING' });
-    const reports = runSheriffInvestigations(game);
+    const { investigations: reports } = runSheriffInvestigations(game);
     expect(reports).toHaveLength(1);
     expect(reports[0]!.sheriffId).toBe(sheriff.id);
     expect(reports[0]!.targetId).not.toBe(sheriff.id);
@@ -146,11 +146,11 @@ describe('runSheriffInvestigations()', () => {
       // inversion roll; <0.25 inverts, >=0.25 reports truth.
       const seq = [0, 0.99]; let i = 0;
       Math.random = () => seq[i++ % seq.length]!;
-      const truthful = runSheriffInvestigations(game);
+      const { investigations: truthful } = runSheriffInvestigations(game);
       expect(truthful[0]!.reportedRole).toBe('TRAITOR');
 
       i = 0; Math.random = () => [0, 0.1][i++ % 2]!;
-      const inverted = runSheriffInvestigations(game);
+      const { investigations: inverted } = runSheriffInvestigations(game);
       expect(inverted[0]!.reportedRole).toBe('FAITHFUL');
     } finally {
       Math.random = orig;

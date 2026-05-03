@@ -1,5 +1,6 @@
 export type Role = 'TRAITOR' | 'FAITHFUL' | 'SHERIFF' | 'MEDIC' | 'SEER';
 
+/* re-export FalseEvidence shape used in S2C_GAME_END below */
 /**
  * Wave 4 — Sheriff / Medic / Seer all belong to the Faithful team for win
  * conditions and UI counts. Use this helper anywhere the literal team
@@ -229,6 +230,37 @@ export interface GameState {
   whispersRead?: string[];
   /** Most recent whisper validation error returned for the local player. */
   whisperError?: { code: WhisperErrorCode; message: string };
+  /**
+   * Wave 4 / 3 — False Evidence. Mirrors server fields. `evidenceVotes`,
+   * `falseEvidence`, `evidenceUsed` are populated only on traitors'
+   * clients (never broadcast publicly during play). The post-game
+   * `S2C_GAME_END` reveal exposes `falseEvidence` to everyone.
+   */
+  evidenceVotes?: EvidenceVote[];
+  falseEvidence?: FalseEvidence;
+  evidenceUsed?: boolean;
+  /** Tally progress for the planting UI. */
+  evidenceVoteProgress?: { received: number; needed: number };
+}
+
+export type EvidenceType = 'FRAME' | 'WHISPER_FABRICATION' | 'ANONYMOUS_TIP';
+
+export const FALSE_EVIDENCE_CONTENT_MAX = 150;
+
+export interface EvidenceVote {
+  voterId: string;
+  type: EvidenceType | 'SKIP';
+  targetId?: string;
+  content?: string;
+}
+
+export interface FalseEvidence {
+  type: EvidenceType;
+  targetId: string;
+  targetName: string;
+  content?: string;
+  plantedAtRound: number;
+  activatedAtRound?: number;
 }
 
 export interface SheriffReport {
@@ -277,7 +309,12 @@ export type C2SEvent =
   | { type: 'C2S_TRANSFER_HOST'; payload: { targetPlayerId: string } }
   | { type: 'C2S_END_GAME_EARLY'; payload: Record<string, never> }
   /** Send a private whisper to another alive player during ROUNDTABLE. */
-  | { type: 'C2S_SEND_WHISPER'; payload: { recipientId: string; content: string } };
+  | { type: 'C2S_SEND_WHISPER'; payload: { recipientId: string; content: string } }
+  | { type: 'C2S_CAST_EVIDENCE_VOTE'; payload: {
+      voteType: EvidenceType | 'SKIP';
+      targetId?: string;
+      content?: string;
+    } };
 
 export const WHISPER_MAX_LENGTH = 200;
 

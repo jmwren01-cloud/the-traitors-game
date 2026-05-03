@@ -632,7 +632,7 @@ export function gameStateReducer(state: GameState | null, msg: Msg): GameState |
     }
 
     case 'S2C_GAME_END': {
-      const payload = msg.payload as { winner?: 'TRAITORS' | 'FAITHFUL'; phase: string; remainingTraitors: number; remainingFaithful: number; history: RoundRecord[]; reason?: 'HOST_ENDED'; whispers?: Whisper[] };
+      const payload = msg.payload as { winner?: 'TRAITORS' | 'FAITHFUL'; phase: string; remainingTraitors: number; remainingFaithful: number; history: RoundRecord[]; reason?: 'HOST_ENDED'; whispers?: Whisper[]; falseEvidence?: import('../types').FalseEvidence };
       return state ? {
         ...state,
         phase: payload.phase as GameState['phase'],
@@ -643,6 +643,8 @@ export function gameStateReducer(state: GameState | null, msg: Msg): GameState |
         history: payload.history ?? [],
         // post-game replay reveals every whisper's content.
         whispers: payload.whispers ?? state.whispers ?? [],
+        // Wave 4 / 3 — surfaced to everyone for the post-game reveal.
+        falseEvidence: payload.falseEvidence ?? state.falseEvidence,
       } : null;
     }
 
@@ -764,6 +766,35 @@ export function gameStateReducer(state: GameState | null, msg: Msg): GameState |
           p.id === payload.newTraitorId ? { ...p, role: 'TRAITOR' as Role, recruitmentUsed: true } : p
         ),
       };
+    }
+
+    case 'S2C_EVIDENCE_VOTE_CAST': {
+      const payload = msg.payload as { votes: import('../types').EvidenceVote[]; received: number; needed: number };
+      if (!state) return null;
+      return {
+        ...state,
+        evidenceVotes: payload.votes,
+        evidenceVoteProgress: { received: payload.received, needed: payload.needed },
+      };
+    }
+
+    case 'S2C_EVIDENCE_PLANTED': {
+      const payload = msg.payload as { evidence: import('../types').FalseEvidence };
+      if (!state) return null;
+      const { evidenceVotes: _v, evidenceVoteProgress: _p, ...rest } = state;
+      void _v; void _p;
+      return {
+        ...(rest as GameState),
+        falseEvidence: payload.evidence,
+        evidenceUsed: true,
+      };
+    }
+
+    case 'S2C_EVIDENCE_FAILED': {
+      if (!state) return null;
+      const { evidenceVotes: _v, evidenceVoteProgress: _p, ...rest } = state;
+      void _v; void _p;
+      return rest as GameState;
     }
 
     default:
