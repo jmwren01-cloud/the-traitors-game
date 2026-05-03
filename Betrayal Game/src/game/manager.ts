@@ -13,6 +13,28 @@ const WORD_BANK = [
   'king', 'lord', 'lady', 'duke', 'earl', 'hunt', 'mask', 'clue', 'trap'
 ];
 
+/**
+ * Wave 4 / 4 — Strip server-only confession attribution from a history
+ * snapshot before it leaves the server during live play. `RoundRecord
+ * .confessions[]` carries `playerId` and `isDefault` (used post-game
+ * for the "How It Happened" replay). We MUST never broadcast that
+ * during a live game or reconnects mid-game would deanonymise everyone
+ * who already confessed in earlier rounds.
+ *
+ * Pass `phase` so callers don't have to remember the rule: when the
+ * game has ended we hand back the unmodified history; otherwise we
+ * delete the `confessions` field on every record.
+ */
+export function scrubHistoryForLive(history: RoundRecord[], phase: GamePhase): RoundRecord[] {
+  if (phase === 'GAME_END') return history;
+  return history.map((r) => {
+    if (!r.confessions) return r;
+    const { confessions: _omit, ...rest } = r;
+    void _omit;
+    return rest as RoundRecord;
+  });
+}
+
 // ============= INTERNAL HELPERS =============
 
 /**

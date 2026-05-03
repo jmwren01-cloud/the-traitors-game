@@ -86,7 +86,7 @@ export interface Vote {
   isAutoVote?: boolean;
 }
 
-export type ChatChannel = 'general' | 'traitor';
+export type ChatChannel = 'general' | 'traitor' | 'confessions';
 
 export interface ChatMessage {
   id: string;

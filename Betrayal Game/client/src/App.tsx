@@ -164,6 +164,8 @@ function App() {
       onSend={send}
       disabled={isChatDisabled}
       players={gameState?.players || []}
+      confessions={gameState?.confessionRevealed ?? []}
+      {...(gameState?.confessionRound !== undefined ? { confessionRound: gameState.confessionRound } : {})}
     />
   ) : null;
 

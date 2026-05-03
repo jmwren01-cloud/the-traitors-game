@@ -452,7 +452,7 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
           hostId: updatedGame.hostId,
           totalVotes: updatedGame.votes.length,
           settings: updatedGame.settings,
-          history: updatedGame.history,
+          history: game.scrubHistoryForLive(updatedGame.history, updatedGame.phase),
           aliveTraitorCount: aliveTraitors.length,
           remainingTraitors,
           remainingFaithful,
@@ -533,7 +533,7 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
           }
           const aliveCount = updatedGame.players.filter((p) => p.isAlive).length;
           const submittedCount = (updatedGame.confessionSubmittedIds ?? []).length;
-          reconnectPayload.confessionAliveCount = aliveCount;
+          reconnectPayload.confessionTotalCount = aliveCount;
           reconnectPayload.confessionSubmittedCount = submittedCount;
           reconnectPayload.confessionMySubmitted =
             (updatedGame.confessionSubmittedIds ?? []).includes(currentPlayerId);

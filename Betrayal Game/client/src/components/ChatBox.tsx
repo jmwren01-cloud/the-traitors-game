@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
-import type { ChatMessage, Role, C2SEvent, ChatChannel, Player } from '../types';
+import type { ChatMessage, Role, C2SEvent, ChatChannel, Player, ConfessionReveal } from '../types';
 import { getColorHex, getAvatarEmoji } from '../avatarConstants';
 import styles from './ChatBox.module.css';
 import { vibrateOnce } from '../utils/haptics';
@@ -12,9 +12,15 @@ interface ChatBoxProps {
   onSend: (event: C2SEvent) => void;
   disabled?: boolean;
   players?: Player[];
+  /**
+   * Wave 4 / 4 — Confessions for the current visible round, in the
+   * server-shuffled order. Anonymous (no playerId).
+   */
+  confessions?: ConfessionReveal[];
+  confessionRound?: number;
 }
 
-export function ChatBox({ messages, myPlayerId, myRole, isAlive = true, onSend, disabled, players = [] }: ChatBoxProps) {
+export function ChatBox({ messages, myPlayerId, myRole, isAlive = true, onSend, disabled, players = [], confessions = [], confessionRound }: ChatBoxProps) {
   const [message, setMessage] = useState('');
   const [activeChannel, setActiveChannel] = useState<ChatChannel>('general');
   const [isMinimized, setIsMinimized] = useState(false);
@@ -95,7 +101,10 @@ export function ChatBox({ messages, myPlayerId, myRole, isAlive = true, onSend, 
     if (!canAccessTraitorChat && activeChannel === 'traitor') {
       setActiveChannel('general');
     }
-  }, [canAccessTraitorChat, activeChannel]);
+    if (activeChannel === 'confessions' && confessions.length === 0) {
+      setActiveChannel('general');
+    }
+  }, [canAccessTraitorChat, activeChannel, confessions.length]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -166,6 +175,16 @@ export function ChatBox({ messages, myPlayerId, myRole, isAlive = true, onSend, 
               )}
             </button>
           )}
+          {confessions.length > 0 && (
+            <button
+              className={`${styles.tab} ${activeChannel === 'confessions' ? styles.activeTab : ''}`}
+              onClick={() => handleTabSwitch('confessions')}
+              title="Anonymous confessions from this round"
+            >
+              🕯️ Confessions
+              <span className={styles.unreadBadge}>{confessions.length}</span>
+            </button>
+          )}
         </div>
         <button
           className={styles.minimizeBtn}
@@ -181,6 +200,24 @@ export function ChatBox({ messages, myPlayerId, myRole, isAlive = true, onSend, 
         </div>
       )}
 
+      {activeChannel === 'confessions' ? (
+        <div className={styles.messages} ref={messagesContainerRef}>
+          <p className={styles.emptyText} style={{ fontSize: 11, opacity: 0.7, fontStyle: 'italic', textAlign: 'center' }}>
+            Round {confessionRound ?? '—'} • Anonymous • Server-shuffled order
+          </p>
+          {confessions.map((c, i) => (
+            <div key={c.id} className={styles.message} style={{ borderLeft: '3px solid #d4a550', paddingLeft: 8 }}>
+              <div className={styles.messageHeader}>
+                <span className={styles.playerName} style={{ color: '#f7d896' }}>
+                  Anonymous #{i + 1}
+                </span>
+              </div>
+              <p className={styles.messageText} style={{ fontStyle: 'italic' }}>"{c.text}"</p>
+            </div>
+          ))}
+          <div ref={messagesEndRef} />
+        </div>
+      ) : (
       <div className={styles.messages} ref={messagesContainerRef}>
         {currentMessages.length === 0 ? (
           <p className={styles.emptyText}>
@@ -214,8 +251,9 @@ export function ChatBox({ messages, myPlayerId, myRole, isAlive = true, onSend, 
         )}
         <div ref={messagesEndRef} />
       </div>
+      )}
 
-      <form onSubmit={handleSubmit} className={styles.inputForm}>
+      <form onSubmit={handleSubmit} className={styles.inputForm} style={activeChannel === 'confessions' ? { display: 'none' } : undefined}>
         <input
           ref={inputRef}
           type="text"

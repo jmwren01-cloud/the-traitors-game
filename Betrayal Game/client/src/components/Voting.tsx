@@ -467,7 +467,6 @@ export function Voting({ players, myPlayerId, phase, votes: _votes, banishedPlay
           </div>
         )}
         <p className={styles.subtitle}>Discuss amongst yourselves...</p>
-        {renderConfessionsPanel()}
 
         <div className={styles.playerGrid}>
           {alivePlayers.map((player) => {
@@ -544,7 +543,6 @@ export function Voting({ players, myPlayerId, phase, votes: _votes, banishedPlay
         {renderWhisperInboxButton()}
         <h1 className={styles.title}>Vote to Banish</h1>
         {currentRound !== undefined && renderWhisperFeed(currentRound)}
-        {renderConfessionsPanel()}
         <p className={styles.subtitle}>Who is the traitor among you?</p>
 
         <div className={styles.playerGrid}>

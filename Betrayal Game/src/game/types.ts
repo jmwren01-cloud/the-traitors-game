@@ -502,7 +502,7 @@ export type S2CEvent =
       confessionRevealed?: ConfessionReveal[];
       confessionWindowEndsAt?: number;
       confessionSubmittedCount?: number;
-      confessionAliveCount?: number;
+      confessionTotalCount?: number;
       confessionMySubmitted?: boolean;
     } }
   | { type: 'S2C_PLAYER_RECONNECTED'; payload: { playerId: string; players: Player[] } }
