@@ -580,14 +580,16 @@ describe('gameStateReducer', () => {
       expect(next?.recruitedPlayer?.id).toBe('__occurred__');
     });
 
-    it('S2C_RECRUITMENT_SUBMITTED flags the recruiter and tracks submission', () => {
+    it('S2C_RECRUITMENT_SUBMITTED flags the recruiter and tracks submission + target', () => {
       const start: GameState = { ...baseState, players: [player('r1'), player('p2')] };
       const next = gameStateReducer(start, {
         type: 'S2C_RECRUITMENT_SUBMITTED',
-        payload: { recruiterId: 'r1', recruiterName: 'Name-r1' },
+        payload: { recruiterId: 'r1', recruiterName: 'Name-r1', targetId: 'p2', targetName: 'Name-p2' },
       });
       expect(next?.players.find((p) => p.id === 'r1')?.recruitmentUsed).toBe(true);
       expect(next?.nightRecruitmentSubmittedBy).toBe('r1');
+      expect(next?.nightRecruitmentTargetId).toBe('p2');
+      expect(next?.nightRecruitmentTargetName).toBe('Name-p2');
     });
 
     it('S2C_YOU_WERE_RECRUITED flips myRole and marks justRecruited', () => {
