@@ -1,7 +1,7 @@
 // Game Manager - Core Game Logic
 
 import type { GameState, Player, Role, Vote, TimerState, GamePhase, GameSettings, ChallengeState, ChallengeType, RoundRecord, VoteEntry, Whisper, EvidenceVote, EvidenceType, FalseEvidence } from './types.js';
-import { DEFAULT_SETTINGS, FALSE_EVIDENCE_CONTENT_MAX } from './types.js';
+import { DEFAULT_SETTINGS, FALSE_EVIDENCE_CONTENT_MAX, FALSE_EVIDENCE_WINDOW_MS } from './types.js';
 import { pickAvailableColor, pickRandomAvatar, COLOR_IDS, AVATAR_IDS } from './avatarConstants.js';
 
 // Word bank for Word Scramble challenge (simple 4-5 letter words)
@@ -1113,7 +1113,7 @@ export function startNight(game: GameState): GameState {
   }
 
   return {
-    ...omit(game, 'pendingRecruitmentTargetId', 'lastRecruitedPlayerId', 'medicProtectionTargetId', 'evidenceVotes'),
+    ...omit(game, 'pendingRecruitmentTargetId', 'lastRecruitedPlayerId', 'medicProtectionTargetId', 'evidenceVotes', 'evidenceWindowEndsAt'),
     phase: 'NIGHT',
     murderVotes: [],
   };
@@ -1151,7 +1151,8 @@ export function castEvidenceVote(
   voterId: string,
   voteType: EvidenceType | 'SKIP',
   targetId: string | undefined,
-  rawContent: string | undefined
+  rawContent: string | undefined,
+  now: number = Date.now()
 ): GameState {
   if (game.phase !== 'NIGHT') {
     throw new Error('Evidence votes can only be cast during the night phase');
@@ -1159,12 +1160,21 @@ export function castEvidenceVote(
   if (game.evidenceUsed) {
     throw new Error('False Evidence has already been planted this game');
   }
+  // Wave 4 / 3 — once the 60s window opens, late votes are rejected so the
+  // server-side timeout can deterministically fail the round.
+  if (game.evidenceWindowEndsAt !== undefined && now > game.evidenceWindowEndsAt) {
+    throw new Error('The evidence-vote window has closed');
+  }
   const voter = game.players.find((p) => p.id === voterId);
   if (!voter || !voter.isAlive || voter.role !== 'TRAITOR') {
     throw new Error('Only alive Traitors can vote on false evidence');
   }
 
-  const sanitised = sanitiseEvidenceContent(rawContent);
+  // WHISPER_FABRICATION never carries content — the lie is the meta-only
+  // "X whispered to Y" feed entry, not a body. Drop any submitted text so
+  // it cannot leak via post-game replay or scrubWhispersForRecipient.
+  const sanitised =
+    voteType === 'ANONYMOUS_TIP' ? sanitiseEvidenceContent(rawContent) : undefined;
 
   if (voteType !== 'SKIP') {
     if (!targetId) {
@@ -1177,11 +1187,14 @@ export function castEvidenceVote(
     if (target.id === voterId) {
       throw new Error('Cannot frame yourself');
     }
-    if (
-      (voteType === 'WHISPER_FABRICATION' || voteType === 'ANONYMOUS_TIP') &&
-      sanitised === undefined
-    ) {
-      throw new Error('This evidence type requires a written body');
+    // Spec: Traitors may only frame Faithful-aligned players. This also
+    // makes FRAME / WHISPER_FABRICATION semantically meaningful (you don't
+    // "frame" a fellow Traitor as a Traitor).
+    if (target.role === 'TRAITOR') {
+      throw new Error('Evidence target must be a Faithful-aligned player');
+    }
+    if (voteType === 'ANONYMOUS_TIP' && sanitised === undefined) {
+      throw new Error('Anonymous tip requires a written body');
     }
   }
 
@@ -1193,16 +1206,39 @@ export function castEvidenceVote(
   };
 
   const filtered = (game.evidenceVotes ?? []).filter((v) => v.voterId !== voterId);
+  // Open the 60s unanimity window the first time anyone votes this game.
+  const windowEndsAt =
+    game.evidenceWindowEndsAt ?? now + FALSE_EVIDENCE_WINDOW_MS;
   return {
     ...game,
     evidenceVotes: [...filtered, newVote],
+    evidenceWindowEndsAt: windowEndsAt,
   };
 }
 
 export interface EvidenceResolution {
   game: GameState;
-  outcome: 'PLANTED' | 'SKIPPED' | 'NO_AGREEMENT' | 'PENDING';
+  outcome: 'PLANTED' | 'SKIPPED' | 'NO_AGREEMENT' | 'TIMEOUT' | 'PENDING';
   evidence?: FalseEvidence;
+}
+
+/**
+ * Wave 4 / 3 — Force-fail the current evidence vote round when the 60s
+ * unanimity window has elapsed without unanimity. Idempotent: if there is
+ * no open window (or evidence has already been used) the game is returned
+ * untouched. Clears `evidenceVotes` and `evidenceWindowEndsAt`.
+ */
+export function forceFailEvidenceWindow(
+  game: GameState,
+  now: number = Date.now()
+): EvidenceResolution {
+  if (game.evidenceUsed) return { game, outcome: 'PENDING' };
+  if (game.evidenceWindowEndsAt === undefined) return { game, outcome: 'PENDING' };
+  if (now < game.evidenceWindowEndsAt) return { game, outcome: 'PENDING' };
+  return {
+    game: omit(game, 'evidenceVotes', 'evidenceWindowEndsAt'),
+    outcome: 'TIMEOUT',
+  };
 }
 
 /**
@@ -1236,7 +1272,7 @@ export function resolveEvidenceVotes(game: GameState): EvidenceResolution {
   const allSkip = votes.every((v) => v.type === 'SKIP');
   if (allSkip) {
     return {
-      game: omit(game, 'evidenceVotes'),
+      game: omit(game, 'evidenceVotes', 'evidenceWindowEndsAt'),
       outcome: 'SKIPPED',
     };
   }
@@ -1247,7 +1283,7 @@ export function resolveEvidenceVotes(game: GameState): EvidenceResolution {
   );
   if (!unanimous || first.type === 'SKIP' || !first.targetId) {
     return {
-      game: omit(game, 'evidenceVotes'),
+      game: omit(game, 'evidenceVotes', 'evidenceWindowEndsAt'),
       outcome: 'NO_AGREEMENT',
     };
   }
@@ -1255,14 +1291,17 @@ export function resolveEvidenceVotes(game: GameState): EvidenceResolution {
   const target = game.players.find((p) => p.id === first.targetId);
   if (!target) {
     return {
-      game: omit(game, 'evidenceVotes'),
+      game: omit(game, 'evidenceVotes', 'evidenceWindowEndsAt'),
       outcome: 'NO_AGREEMENT',
     };
   }
 
-  // Take the first non-empty content from the matching votes (traitors
-  // typically agree on body text via chat before everyone re-submits).
-  const contentVote = votes.find((v) => v.content && v.content.length > 0);
+  // ANONYMOUS_TIP body is the only persisted content (Confession Booth
+  // seam, Task #33). FRAME / WHISPER_FABRICATION never store content.
+  const contentVote =
+    first.type === 'ANONYMOUS_TIP'
+      ? votes.find((v) => v.content && v.content.length > 0)
+      : undefined;
   const evidence: FalseEvidence = {
     type: first.type as EvidenceType,
     targetId: target.id,
@@ -1271,12 +1310,25 @@ export function resolveEvidenceVotes(game: GameState): EvidenceResolution {
     ...(contentVote?.content ? { content: contentVote.content } : {}),
   };
 
+  // Wave 4 / 3 — FRAME activates IMMEDIATELY on unanimity so the same
+  // night's Sheriff investigation (resolved during NIGHT→MORNING, before
+  // the next ROUNDTABLE) is corrupted. Other types still wait for
+  // activateFalseEvidence() at the next ROUNDTABLE start.
+  const force = [...(game.forceSuspiciousIds ?? [])];
+  if (evidence.type === 'FRAME' && !force.includes(target.id)) {
+    force.push(target.id);
+  }
+
+  const baseGame: GameState = {
+    ...omit(game, 'evidenceVotes', 'evidenceWindowEndsAt'),
+    falseEvidence: evidence,
+    evidenceUsed: true,
+  };
+  const updatedGame: GameState =
+    force.length > 0 ? { ...baseGame, forceSuspiciousIds: force } : baseGame;
+
   return {
-    game: {
-      ...omit(game, 'evidenceVotes'),
-      falseEvidence: evidence,
-      evidenceUsed: true,
-    },
+    game: updatedGame,
     outcome: 'PLANTED',
     evidence,
   };
@@ -1322,10 +1374,10 @@ export function activateFalseEvidence(game: GameState): EvidenceActivation {
   const activated: FalseEvidence = { ...ev, activatedAtRound: game.currentRound };
 
   if (ev.type === 'FRAME') {
-    const force = [...(game.forceSuspiciousIds ?? [])];
-    if (!force.includes(ev.targetId)) force.push(ev.targetId);
+    // Already wired into forceSuspiciousIds at PLANTED time so the same
+    // night's Sheriff result is corrupted. Just stamp the activation.
     return {
-      game: { ...game, falseEvidence: activated, forceSuspiciousIds: force },
+      game: { ...game, falseEvidence: activated },
       evidence: activated,
     };
   }
@@ -1347,6 +1399,9 @@ export function activateFalseEvidence(game: GameState): EvidenceActivation {
       };
     }
     const recipient = pool[Math.floor(Math.random() * pool.length)]!;
+    // CRITICAL: no `content` on the persisted whisper. The fabricated
+    // whisper is a meta-only "X whispered to Y" entry; persisting content
+    // would leak through scrubWhispersForRecipient on reconnect / replay.
     const whisper: Whisper = {
       id: `whisper_fake_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`,
       senderId: sender.id,
@@ -1355,7 +1410,6 @@ export function activateFalseEvidence(game: GameState): EvidenceActivation {
       recipientName: recipient.name,
       round: game.currentRound,
       timestamp: Date.now(),
-      ...(ev.content ? { content: ev.content } : {}),
     };
     return {
       game: {

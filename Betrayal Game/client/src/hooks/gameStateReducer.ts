@@ -769,20 +769,23 @@ export function gameStateReducer(state: GameState | null, msg: Msg): GameState |
     }
 
     case 'S2C_EVIDENCE_VOTE_CAST': {
-      const payload = msg.payload as { votes: import('../types').EvidenceVote[]; received: number; needed: number };
+      const payload = msg.payload as { votes: import('../types').EvidenceVote[]; received: number; needed: number; windowEndsAt?: number };
       if (!state) return null;
+      const { evidenceLastFailure: _lf, ...restState } = state;
+      void _lf;
       return {
-        ...state,
+        ...(restState as GameState),
         evidenceVotes: payload.votes,
         evidenceVoteProgress: { received: payload.received, needed: payload.needed },
+        ...(payload.windowEndsAt !== undefined ? { evidenceWindowEndsAt: payload.windowEndsAt } : {}),
       };
     }
 
     case 'S2C_EVIDENCE_PLANTED': {
       const payload = msg.payload as { evidence: import('../types').FalseEvidence };
       if (!state) return null;
-      const { evidenceVotes: _v, evidenceVoteProgress: _p, ...rest } = state;
-      void _v; void _p;
+      const { evidenceVotes: _v, evidenceVoteProgress: _p, evidenceWindowEndsAt: _w, evidenceLastFailure: _f, ...rest } = state;
+      void _v; void _p; void _w; void _f;
       return {
         ...(rest as GameState),
         falseEvidence: payload.evidence,
@@ -791,10 +794,14 @@ export function gameStateReducer(state: GameState | null, msg: Msg): GameState |
     }
 
     case 'S2C_EVIDENCE_FAILED': {
+      const payload = msg.payload as { reason: 'SKIPPED' | 'NO_AGREEMENT' | 'TIMEOUT' };
       if (!state) return null;
-      const { evidenceVotes: _v, evidenceVoteProgress: _p, ...rest } = state;
-      void _v; void _p;
-      return rest as GameState;
+      const { evidenceVotes: _v, evidenceVoteProgress: _p, evidenceWindowEndsAt: _w, ...rest } = state;
+      void _v; void _p; void _w;
+      return {
+        ...(rest as GameState),
+        evidenceLastFailure: payload.reason,
+      };
     }
 
     default:

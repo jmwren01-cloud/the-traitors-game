@@ -264,6 +264,8 @@ function App() {
           falseEvidence={gameState?.falseEvidence}
           evidenceVotes={gameState?.evidenceVotes}
           evidenceVoteProgress={gameState?.evidenceVoteProgress}
+          evidenceWindowEndsAt={gameState?.evidenceWindowEndsAt}
+          evidenceLastFailure={gameState?.evidenceLastFailure}
           onSend={send}
         />
         {specialRoleHud}

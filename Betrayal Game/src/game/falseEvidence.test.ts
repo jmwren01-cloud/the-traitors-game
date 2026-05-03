@@ -3,10 +3,11 @@ import {
   castEvidenceVote,
   resolveEvidenceVotes,
   activateFalseEvidence,
+  forceFailEvidenceWindow,
   runSheriffInvestigations,
   startRoundtable,
 } from './manager.js';
-import { DEFAULT_SETTINGS, FALSE_EVIDENCE_CONTENT_MAX } from './types.js';
+import { DEFAULT_SETTINGS, FALSE_EVIDENCE_CONTENT_MAX, FALSE_EVIDENCE_WINDOW_MS } from './types.js';
 import type { GameState, Player } from './types.js';
 
 function makePlayer(over: Partial<Player> = {}): Player {
@@ -64,9 +65,39 @@ describe('castEvidenceVote', () => {
     expect(() => castEvidenceVote(g, 't1', 'FRAME', 't1', undefined)).toThrow(/yourself/i);
   });
 
-  it('rejects WHISPER_FABRICATION without content', () => {
+  it('rejects framing a fellow Traitor (Faithful-only target)', () => {
     const g = makeNightGame();
-    expect(() => castEvidenceVote(g, 't1', 'WHISPER_FABRICATION', 'f1', '   ')).toThrow(/written body/i);
+    expect(() => castEvidenceVote(g, 't1', 'FRAME', 't2', undefined)).toThrow(/Faithful/i);
+  });
+
+  it('silently drops content for WHISPER_FABRICATION (no body persisted)', () => {
+    let g = makeNightGame();
+    g = castEvidenceVote(g, 't1', 'WHISPER_FABRICATION', 'f1', 'leak this');
+    expect(g.evidenceVotes![0]!.content).toBeUndefined();
+  });
+
+  it('rejects ANONYMOUS_TIP without content', () => {
+    const g = makeNightGame();
+    expect(() => castEvidenceVote(g, 't1', 'ANONYMOUS_TIP', 'f1', '   ')).toThrow(/written body/i);
+  });
+
+  it('opens the 60s unanimity window on first vote and rejects late votes', () => {
+    const start = 1_000_000;
+    let g = makeNightGame();
+    g = castEvidenceVote(g, 't1', 'FRAME', 'f1', undefined, start);
+    expect(g.evidenceWindowEndsAt).toBe(start + FALSE_EVIDENCE_WINDOW_MS);
+    // A second vote within the window keeps the original deadline.
+    g = castEvidenceVote(g, 't2', 'FRAME', 'f1', undefined, start + 5_000);
+    expect(g.evidenceWindowEndsAt).toBe(start + FALSE_EVIDENCE_WINDOW_MS);
+  });
+
+  it('rejects votes cast after the window has closed', () => {
+    const start = 1_000_000;
+    let g = makeNightGame();
+    g = castEvidenceVote(g, 't1', 'FRAME', 'f1', undefined, start);
+    expect(() =>
+      castEvidenceVote(g, 't2', 'FRAME', 'f1', undefined, start + FALSE_EVIDENCE_WINDOW_MS + 1)
+    ).toThrow(/window has closed/i);
   });
 
   it('overwrites a traitor\'s previous vote (idempotent)', () => {
@@ -134,6 +165,24 @@ describe('resolveEvidenceVotes — unanimity', () => {
   });
 });
 
+describe('FRAME activates immediately on PLANTED (same-night Sheriff)', () => {
+  it('PLANTED+FRAME pushes the target into forceSuspiciousIds during NIGHT', () => {
+    let g = makeNightGame();
+    g = castEvidenceVote(g, 't1', 'FRAME', 'f1', undefined);
+    g = castEvidenceVote(g, 't2', 'FRAME', 'f1', undefined);
+    const r = resolveEvidenceVotes(g);
+    expect(r.outcome).toBe('PLANTED');
+    expect(r.game.forceSuspiciousIds).toEqual(['f1']);
+
+    // Sheriff investigation in the same NIGHT→MORNING transition is corrupted.
+    const morning: GameState = { ...r.game, phase: 'MORNING' };
+    const { game: after, investigations } = runSheriffInvestigations(morning);
+    expect(investigations[0]!.targetId).toBe('f1');
+    expect(investigations[0]!.reportedRole).toBe('TRAITOR');
+    expect(after.forceSuspiciousIds).toBeUndefined();
+  });
+});
+
 describe('activateFalseEvidence', () => {
   function plantedGame(extra: Partial<GameState> = {}): GameState {
     let g = makeNightGame(extra);
@@ -144,38 +193,35 @@ describe('activateFalseEvidence', () => {
     return startRoundtable({ ...g, phase: 'MORNING' });
   }
 
-  it('FRAME → forces forceSuspiciousIds and Sheriff reports TRAITOR for that target', () => {
+  it('FRAME activation is just a stamp at Roundtable (override already applied at NIGHT)', () => {
     const g = plantedGame();
+    // forceSuspiciousIds was consumed during the simulated Sheriff run inside
+    // the prior describe; here we check the activation stamps the round.
     const act = activateFalseEvidence(g);
     expect(act.evidence?.activatedAtRound).toBe(g.currentRound);
-    expect(act.game.forceSuspiciousIds).toEqual(['f1']);
-
-    // The Sheriff investigation should hit f1 with reportedRole TRAITOR.
-    const { game: afterSheriff, investigations } = runSheriffInvestigations(act.game);
-    expect(investigations).toHaveLength(1);
-    expect(investigations[0]!.targetId).toBe('f1');
-    expect(investigations[0]!.reportedRole).toBe('TRAITOR');
-    // override is consumed (one-shot).
-    expect(afterSheriff.forceSuspiciousIds).toBeUndefined();
   });
 
-  it('WHISPER_FABRICATION returns a fabricatedWhisper and persists it; never delivers content', () => {
+  it('WHISPER_FABRICATION emits a meta-only fabricatedWhisper with NO content', () => {
     let g = makeNightGame();
-    g = castEvidenceVote(g, 't1', 'WHISPER_FABRICATION', 'f1', 'I am the traitor');
-    g = castEvidenceVote(g, 't2', 'WHISPER_FABRICATION', 'f1', 'I am the traitor');
+    g = castEvidenceVote(g, 't1', 'WHISPER_FABRICATION', 'f1', undefined);
+    g = castEvidenceVote(g, 't2', 'WHISPER_FABRICATION', 'f1', undefined);
     g = resolveEvidenceVotes(g).game;
     g = startRoundtable({ ...g, phase: 'MORNING' });
 
     const act = activateFalseEvidence(g);
     expect(act.fabricatedWhisper).toBeDefined();
     expect(act.fabricatedWhisper!.senderId).toBe('f1');
-    expect(act.fabricatedWhisper!.content).toBe('I am the traitor');
-    // Whisper persisted on game.whispers for post-game replay.
-    expect(act.game.whispers?.some((w) => w.id === act.fabricatedWhisper!.id)).toBe(true);
-    // Recipient is alive and not the framed sender.
+    // CRITICAL: the persisted whisper has no body — prevents leakage to
+    // the framed "recipient" via scrubWhispersForRecipient.
+    expect(act.fabricatedWhisper!.content).toBeUndefined();
+    const persisted = act.game.whispers?.find((w) => w.id === act.fabricatedWhisper!.id);
+    expect(persisted).toBeDefined();
+    expect(persisted!.content).toBeUndefined();
+    // Recipient is alive and not the framed sender or a Traitor.
     expect(act.fabricatedWhisper!.recipientId).not.toBe('f1');
     const recipient = act.game.players.find((p) => p.id === act.fabricatedWhisper!.recipientId);
     expect(recipient?.isAlive).toBe(true);
+    expect(recipient?.role).not.toBe('TRAITOR');
   });
 
   it('ANONYMOUS_TIP keeps body on falseEvidence (Confession Booth seam)', () => {
@@ -204,6 +250,33 @@ describe('activateFalseEvidence', () => {
     const second = activateFalseEvidence(first.game);
     expect(second.game).toBe(first.game);
     expect(second.fabricatedWhisper).toBeUndefined();
+  });
+});
+
+describe('forceFailEvidenceWindow', () => {
+  it('returns PENDING when window is still open', () => {
+    const start = 1_000_000;
+    let g = makeNightGame();
+    g = castEvidenceVote(g, 't1', 'FRAME', 'f1', undefined, start);
+    const r = forceFailEvidenceWindow(g, start + 1_000);
+    expect(r.outcome).toBe('PENDING');
+    expect(r.game.evidenceVotes).toBeDefined();
+  });
+
+  it('returns TIMEOUT and clears state once the deadline elapses', () => {
+    const start = 1_000_000;
+    let g = makeNightGame();
+    g = castEvidenceVote(g, 't1', 'FRAME', 'f1', undefined, start);
+    const r = forceFailEvidenceWindow(g, start + FALSE_EVIDENCE_WINDOW_MS + 1);
+    expect(r.outcome).toBe('TIMEOUT');
+    expect(r.game.evidenceVotes).toBeUndefined();
+    expect(r.game.evidenceWindowEndsAt).toBeUndefined();
+    expect(r.game.evidenceUsed).toBeUndefined();
+  });
+
+  it('is a no-op when no window is open', () => {
+    const g = makeNightGame();
+    expect(forceFailEvidenceWindow(g).outcome).toBe('PENDING');
   });
 });
 

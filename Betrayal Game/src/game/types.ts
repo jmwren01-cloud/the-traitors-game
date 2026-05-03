@@ -271,12 +271,23 @@ export interface GameState {
   falseEvidence?: FalseEvidence;
   evidenceUsed?: boolean;
   forceSuspiciousIds?: string[];
+  /**
+   * Wave 4 / 3 — Unix-ms deadline by which all alive Traitors must agree.
+   * Set the moment the FIRST evidence vote of the game is cast; cleared on
+   * any terminal outcome (PLANTED / SKIPPED / NO_AGREEMENT / TIMEOUT) or
+   * on the next NIGHT start. Drives the client countdown and the server
+   * timeout that auto-fails an unfinished round.
+   */
+  evidenceWindowEndsAt?: number;
 }
 
 export type EvidenceType = 'FRAME' | 'WHISPER_FABRICATION' | 'ANONYMOUS_TIP';
 
-/** Cap for the optional WHISPER_FABRICATION / ANONYMOUS_TIP body. */
+/** Cap for the optional ANONYMOUS_TIP body. WHISPER_FABRICATION never carries content. */
 export const FALSE_EVIDENCE_CONTENT_MAX = 150;
+
+/** Server-enforced unanimity window for false-evidence voting (60 s). */
+export const FALSE_EVIDENCE_WINDOW_MS = 60_000;
 
 export interface EvidenceVote {
   voterId: string;
@@ -292,7 +303,12 @@ export interface FalseEvidence {
   type: EvidenceType;
   targetId: string;
   targetName: string;
-  /** Body for WHISPER_FABRICATION (fake whisper text) and ANONYMOUS_TIP. */
+  /**
+   * Body for ANONYMOUS_TIP only (Confession Booth seam, Task #33).
+   * WHISPER_FABRICATION deliberately stores no body — the lie is the
+   * meta-only "X whispered to Y" feed entry; persisting content would
+   * leak through `scrubWhispersForRecipient` to the framed "recipient".
+   */
   content?: string;
   /** Round of the NIGHT during which this was planted. */
   plantedAtRound: number;
@@ -585,14 +601,16 @@ export type S2CEvent =
       votes: EvidenceVote[];
       received: number;
       needed: number;
+      /** Unix-ms deadline for all traitors to agree. */
+      windowEndsAt?: number;
     } }
   /** Sent to alive Traitors when a unanimous plant succeeds. */
   | { type: 'S2C_EVIDENCE_PLANTED'; payload: {
       evidence: FalseEvidence;
     } }
-  /** Sent to alive Traitors when the vote concluded with no plant (SKIP). */
+  /** Sent to alive Traitors when the vote concluded with no plant. */
   | { type: 'S2C_EVIDENCE_FAILED'; payload: {
-      reason: 'SKIPPED' | 'NO_AGREEMENT';
+      reason: 'SKIPPED' | 'NO_AGREEMENT' | 'TIMEOUT';
     } }
   | { type: 'S2C_AVATAR_UPDATED'; payload: { players: Player[] } }
   | { type: 'S2C_CHAT_MESSAGE'; payload: ChatMessage }

@@ -28,6 +28,8 @@ interface NightPhaseProps {
   falseEvidence?: FalseEvidence;
   evidenceVotes?: EvidenceVote[];
   evidenceVoteProgress?: { received: number; needed: number };
+  evidenceWindowEndsAt?: number;
+  evidenceLastFailure?: 'SKIPPED' | 'NO_AGREEMENT' | 'TIMEOUT';
   onSend: (event: C2SEvent) => void;
 }
 
@@ -51,8 +53,17 @@ export function NightPhase({
   falseEvidence,
   evidenceVotes,
   evidenceVoteProgress,
+  evidenceWindowEndsAt,
+  evidenceLastFailure,
   onSend,
 }: NightPhaseProps) {
+  // Wave 4 / 3 — 1Hz countdown for the 60s unanimity window.
+  const [nowTick, setNowTick] = useState<number>(Date.now());
+  useEffect(() => {
+    if (evidenceWindowEndsAt === undefined) return;
+    const id = window.setInterval(() => setNowTick(Date.now()), 1000);
+    return () => window.clearInterval(id);
+  }, [evidenceWindowEndsAt]);
   // Wave 4 / 3 — False Evidence local UI state.
   const [evidenceType, setEvidenceType] = useState<EvidenceType | 'SKIP' | null>(null);
   const [evidenceTarget, setEvidenceTarget] = useState<string | null>(null);
@@ -309,12 +320,16 @@ export function NightPhase({
             {/* Wave 4 / 3 — Plant False Evidence (one-time per game). */}
             {!evidenceUsed && !falseEvidence && (() => {
               const myVote = (evidenceVotes ?? []).find((v) => v.voterId === myPlayerId);
-              const needsContent =
-                evidenceType === 'WHISPER_FABRICATION' || evidenceType === 'ANONYMOUS_TIP';
+              // Only ANONYMOUS_TIP carries a body. WHISPER_FABRICATION is a
+              // meta-only "X whispered to Y" lie — no content per spec.
+              const needsContent = evidenceType === 'ANONYMOUS_TIP';
               const targetMissing =
                 evidenceType !== null && evidenceType !== 'SKIP' && !evidenceTarget;
               const contentMissing = needsContent && evidenceContent.trim().length === 0;
-              const canSubmit = evidenceType !== null && !targetMissing && !contentMissing;
+              const windowExpired =
+                evidenceWindowEndsAt !== undefined && nowTick > evidenceWindowEndsAt;
+              const canSubmit =
+                evidenceType !== null && !targetMissing && !contentMissing && !windowExpired;
               const submit = () => {
                 if (!canSubmit || !evidenceType) return;
                 onSend({
@@ -326,15 +341,39 @@ export function NightPhase({
                   },
                 });
               };
+              // Spec: Traitors may only frame Faithful-aligned players. We
+              // exclude any teammate whose id appears in `traitorIds` so the
+              // UI matches the server-side enforcement.
+              const traitorIdSet = new Set(traitorIds ?? []);
               const aliveOthers = players.filter(
-                (p) => p.isAlive && p.id !== myPlayerId
+                (p) => p.isAlive && p.id !== myPlayerId && !traitorIdSet.has(p.id)
               );
+              const secondsLeft =
+                evidenceWindowEndsAt !== undefined
+                  ? Math.max(0, Math.ceil((evidenceWindowEndsAt - nowTick) / 1000))
+                  : null;
+              const failureCopy =
+                evidenceLastFailure === 'TIMEOUT'
+                  ? 'Time ran out — the plant failed.'
+                  : evidenceLastFailure === 'NO_AGREEMENT'
+                    ? 'Traitors disagreed — the plant failed.'
+                    : evidenceLastFailure === 'SKIPPED'
+                      ? 'All traitors chose to skip this round.'
+                      : null;
               return (
                 <div className={styles.recruitSection}>
                   <h2 className={styles.sectionTitle}>📜 Plant False Evidence</h2>
                   <p className={styles.recruitSubtitle}>
-                    One-time ability — all traitors must agree (target + type).
+                    One-time ability — all traitors must agree on type + target within 60 seconds.
                   </p>
+                  {secondsLeft !== null && (
+                    <p className={styles.waiting}>
+                      ⏱ {secondsLeft}s left to reach unanimity
+                    </p>
+                  )}
+                  {failureCopy && (
+                    <p className={styles.waiting} role="status">{failureCopy}</p>
+                  )}
 
                   <div className={styles.evidenceTypeRow}>
                     {(['FRAME', 'WHISPER_FABRICATION', 'ANONYMOUS_TIP', 'SKIP'] as const).map((t) => (
@@ -389,11 +428,7 @@ export function NightPhase({
                         onChange={(e) =>
                           setEvidenceContent(e.target.value.slice(0, FALSE_EVIDENCE_CONTENT_MAX))
                         }
-                        placeholder={
-                          evidenceType === 'WHISPER_FABRICATION'
-                            ? 'What did the framed player "whisper"?'
-                            : 'Anonymous tip text…'
-                        }
+                        placeholder="Anonymous tip text…"
                         maxLength={FALSE_EVIDENCE_CONTENT_MAX}
                         rows={3}
                       />

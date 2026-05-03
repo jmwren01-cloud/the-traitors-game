@@ -13,6 +13,8 @@ import {
 import { startVoteRevealSequence } from './voteReveal.js';
 
 const activeChallengeTimers = new Map<string, NodeJS.Timeout>();
+// Wave 4 / 3 — server-side 60s false-evidence unanimity timer.
+const evidenceWindowTimers = new Map<string, NodeJS.Timeout>();
 
 function clearChallengeTimer(sessionId: string): void {
   const t = activeChallengeTimers.get(sessionId);
@@ -22,12 +24,21 @@ function clearChallengeTimer(sessionId: string): void {
   }
 }
 
+function clearEvidenceTimer(sessionId: string): void {
+  const t = evidenceWindowTimers.get(sessionId);
+  if (t) {
+    clearTimeout(t);
+    evidenceWindowTimers.delete(sessionId);
+  }
+}
+
 /**
  * Clean up all in-memory timers/intervals associated with a session.
  * Call this when a game session is destroyed (e.g. all players gone, manual cleanup).
  */
 export function cleanupSessionTimers(sessionId: string): void {
   clearChallengeTimer(sessionId);
+  clearEvidenceTimer(sessionId);
 }
 
 function countEligibleAnswerers(state: GameState): number {
@@ -551,37 +562,69 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
         const finalState = resolution.game;
         setGame(finalState);
 
-        // Fan out tally + outcome to alive Traitors only.
-        const traitorSockets = finalState.players
-          .filter((p) => p.isAlive && p.role === 'TRAITOR')
-          .map((p) => playerConnections.get(p.id))
-          .filter((s): s is WebSocket => !!s && s.readyState === WebSocket.OPEN);
+        const traitorSocketsFor = (state: GameState): WebSocket[] =>
+          state.players
+            .filter((p) => p.isAlive && p.role === 'TRAITOR')
+            .map((p) => playerConnections.get(p.id))
+            .filter((s): s is WebSocket => !!s && s.readyState === WebSocket.OPEN);
+
+        const traitorSockets = traitorSocketsFor(finalState);
 
         const progress = game.getEvidenceVoteProgress(
           resolution.outcome === 'PENDING' ? finalState : voted
         );
+        const stateForVotes = resolution.outcome === 'PENDING' ? finalState : voted;
         const tallyMsg: S2CEvent = {
           type: 'S2C_EVIDENCE_VOTE_CAST',
           payload: {
-            votes: (resolution.outcome === 'PENDING' ? finalState.evidenceVotes : voted.evidenceVotes) ?? [],
+            votes: stateForVotes.evidenceVotes ?? [],
             received: progress.received,
             needed: progress.needed,
+            ...(stateForVotes.evidenceWindowEndsAt !== undefined
+              ? { windowEndsAt: stateForVotes.evidenceWindowEndsAt }
+              : {}),
           },
         };
         for (const sock of traitorSockets) sock.send(JSON.stringify(tallyMsg));
 
         if (resolution.outcome === 'PLANTED' && resolution.evidence) {
+          clearEvidenceTimer(currentSessionId);
           const msg: S2CEvent = {
             type: 'S2C_EVIDENCE_PLANTED',
             payload: { evidence: resolution.evidence },
           };
           for (const sock of traitorSockets) sock.send(JSON.stringify(msg));
         } else if (resolution.outcome === 'SKIPPED' || resolution.outcome === 'NO_AGREEMENT') {
+          clearEvidenceTimer(currentSessionId);
           const msg: S2CEvent = {
             type: 'S2C_EVIDENCE_FAILED',
             payload: { reason: resolution.outcome },
           };
           for (const sock of traitorSockets) sock.send(JSON.stringify(msg));
+        } else if (
+          resolution.outcome === 'PENDING' &&
+          finalState.evidenceWindowEndsAt !== undefined &&
+          currentSessionId !== undefined &&
+          !evidenceWindowTimers.has(currentSessionId)
+        ) {
+          // Schedule the one-shot timeout the first time the window opens.
+          const sessionId = currentSessionId;
+          const fireIn = Math.max(0, finalState.evidenceWindowEndsAt - Date.now());
+          const handle = setTimeout(() => {
+            evidenceWindowTimers.delete(sessionId);
+            const current = games.get(sessionId);
+            if (!current) return;
+            const failed = game.forceFailEvidenceWindow(current);
+            if (failed.outcome !== 'TIMEOUT') return;
+            setGame(failed.game);
+            const sockets = traitorSocketsFor(failed.game);
+            const failMsg: S2CEvent = {
+              type: 'S2C_EVIDENCE_FAILED',
+              payload: { reason: 'TIMEOUT' },
+            };
+            for (const sock of sockets) sock.send(JSON.stringify(failMsg));
+          }, fireIn);
+          evidenceWindowTimers.set(sessionId, handle);
         }
         return;
       }
@@ -866,6 +909,9 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
       }
 
       if (event.type === 'C2S_START_NIGHT') {
+        // Wave 4 / 3 — drop any stale evidence-window timer from a prior
+        // night so we never fire after the round has rolled over.
+        clearEvidenceTimer(currentSessionId);
         const updatedGame = game.startNight(gameState);
         setGame(updatedGame);
 
@@ -1107,7 +1153,21 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
       }
 
       if (event.type === 'C2S_CONTINUE_TO_DAY') {
-        const updatedGame = game.continueToDayPhase(gameState);
+        let updatedGame = game.continueToDayPhase(gameState);
+        // Wave 4 / 3 — when challenges are disabled, MORNING flows directly
+        // into ROUNDTABLE. Activate any planted FalseEvidence here so
+        // ANONYMOUS_TIP/WHISPER_FABRICATION fire for this loop too.
+        if (updatedGame.phase === 'ROUNDTABLE') {
+          const activation = game.activateFalseEvidence(updatedGame);
+          updatedGame = activation.game;
+          if (activation.fabricatedWhisper) {
+            const fanout = game.buildWhisperFanout(activation.fabricatedWhisper);
+            broadcast(currentSessionId, {
+              type: 'S2C_WHISPER_SENT',
+              payload: fanout.broadcast,
+            });
+          }
+        }
         setGame(updatedGame);
 
         if (updatedGame.phase === 'GAME_END' && updatedGame.winner) {
@@ -1257,13 +1317,25 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
         }
 
         clearChallengeTimer(currentSessionId);
-        const updatedGame = game.continueToRoundtable(gameState);
+        const continueGame = game.continueToRoundtable(gameState);
+        // Wave 4 / 3 — Roundtable entered via the CHALLENGE branch must
+        // also consume any planted FalseEvidence.
+        const activation = game.activateFalseEvidence(continueGame);
+        const updatedGame = activation.game;
         setGame(updatedGame);
 
         broadcast(currentSessionId, {
           type: 'S2C_ROUNDTABLE_STARTED',
           payload: { phase: 'ROUNDTABLE', currentRound: updatedGame.currentRound }
         });
+
+        if (activation.fabricatedWhisper) {
+          const fanout = game.buildWhisperFanout(activation.fabricatedWhisper);
+          broadcast(currentSessionId, {
+            type: 'S2C_WHISPER_SENT',
+            payload: fanout.broadcast,
+          });
+        }
 
         const timer = game.createTimer('ROUNDTABLE', updatedGame.settings);
         if (timer) {
@@ -1588,6 +1660,10 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
         }
 
         if (game.isGameEmpty(updatedGame)) {
+          // Wave 4 / 3 — drop the evidence-window timer along with any
+          // other per-session timers so a stale callback can't fire after
+          // the game record is gone.
+          cleanupSessionTimers(currentSessionId);
           removeGame(currentSessionId);
           console.log(`Game ${currentSessionId} deleted - all players disconnected`);
           return;

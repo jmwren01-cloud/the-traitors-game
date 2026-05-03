@@ -241,11 +241,16 @@ export interface GameState {
   evidenceUsed?: boolean;
   /** Tally progress for the planting UI. */
   evidenceVoteProgress?: { received: number; needed: number };
+  /** Wave 4 / 3 — Unix-ms deadline for the 60s unanimity window. */
+  evidenceWindowEndsAt?: number;
+  /** Last terminal evidence outcome — drives the inline failure banner. */
+  evidenceLastFailure?: 'SKIPPED' | 'NO_AGREEMENT' | 'TIMEOUT';
 }
 
 export type EvidenceType = 'FRAME' | 'WHISPER_FABRICATION' | 'ANONYMOUS_TIP';
 
 export const FALSE_EVIDENCE_CONTENT_MAX = 150;
+export const FALSE_EVIDENCE_WINDOW_MS = 60_000;
 
 export interface EvidenceVote {
   voterId: string;
