@@ -14,6 +14,8 @@ import { Spectator } from './components/Spectator';
 import { HostPanel } from './components/HostPanel';
 import { PhaseIntroCard } from './components/PhaseIntroCard';
 import { HUD } from './components/HUD';
+import { SheriffOverlay } from './components/SheriffOverlay';
+import { SeerControl } from './components/SeerControl';
 import hudStyles from './components/HUD.module.css';
 import { useSoundContext } from './contexts/SoundContext';
 import './App.css';
@@ -242,6 +244,22 @@ function App() {
           justRecruited={gameState?.justRecruited}
           recruitedPlayer={gameState?.recruitedPlayer}
           nightRecruitmentSubmittedBy={gameState?.nightRecruitmentSubmittedBy}
+          medicProtection={gameState?.medicProtection}
+          onSend={send}
+        />
+        <SheriffOverlay
+          myRole={gameState?.myRole}
+          sheriffResult={gameState?.sheriffResult}
+          sheriffHistory={gameState?.sheriffHistory}
+        />
+        <SeerControl
+          myRole={gameState?.myRole}
+          myPlayerId={gameState?.myPlayerId}
+          players={gameState?.players || []}
+          phase={phase}
+          currentRound={gameState?.currentRound}
+          seerResult={gameState?.seerResult}
+          seerActivatedRounds={gameState?.seerActivatedRounds}
           onSend={send}
         />
         {chatBox}
@@ -277,6 +295,21 @@ function App() {
           currentReveal={gameState?.currentReveal}
           shieldBlockedBanishment={gameState?.shieldBlockedBanishment}
           shieldBlockedBanishmentName={gameState?.shieldBlockedBanishmentName}
+          onSend={send}
+        />
+        <SheriffOverlay
+          myRole={gameState?.myRole}
+          sheriffResult={gameState?.sheriffResult}
+          sheriffHistory={gameState?.sheriffHistory}
+        />
+        <SeerControl
+          myRole={gameState?.myRole}
+          myPlayerId={gameState?.myPlayerId}
+          players={gameState?.players || []}
+          phase={phase}
+          currentRound={gameState?.currentRound}
+          seerResult={gameState?.seerResult}
+          seerActivatedRounds={gameState?.seerActivatedRounds}
           onSend={send}
         />
         {chatBox}

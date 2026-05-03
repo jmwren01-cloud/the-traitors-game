@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type {
-  Player, RoundRecord, C2SEvent,
+  Player, Role, RoundRecord, C2SEvent,
   PlayerStatsPayload, LeaderboardEntryPayload, GlobalStatsPayload
 } from '../types';
 import { getColorHex, getAvatarEmoji } from '../avatarConstants';
@@ -38,10 +38,21 @@ interface GameEndProps {
 
 const STAGE_TIMINGS_MS = [0, 1500, 4000, 6000, 9000];
 
-function RolePill({ role }: { role: 'TRAITOR' | 'FAITHFUL' }) {
+function RolePill({ role }: { role: Role }) {
+  const isTraitor = role === 'TRAITOR';
+  const label =
+    role === 'TRAITOR'
+      ? 'Traitor'
+      : role === 'SHERIFF'
+        ? 'Sheriff'
+        : role === 'MEDIC'
+          ? 'Medic'
+          : role === 'SEER'
+            ? 'Seer'
+            : 'Faithful';
   return (
-    <span className={role === 'TRAITOR' ? styles.pillTraitor : styles.pillFaithful}>
-      {role === 'TRAITOR' ? 'Traitor' : 'Faithful'}
+    <span className={isTraitor ? styles.pillTraitor : styles.pillFaithful}>
+      {label}
     </span>
   );
 }

@@ -15,6 +15,7 @@ const baseState: GameState = {
     round1DiscussionOnly: true,
     challengesEnabled: true,
     challengeTimerSeconds: 60,
+    enableSpecialRoles: true,
   },
 };
 

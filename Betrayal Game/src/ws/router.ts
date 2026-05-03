@@ -8,7 +8,8 @@ import {
   generateSessionToken,
   broadcastRecruitmentEvents,
   broadcastMorningEventWithRecruitment,
-  scrubPlayersForRecipient
+  scrubPlayersForRecipient,
+  runSheriffInvestigation
 } from './utils.js';
 import { startVoteRevealSequence } from './voteReveal.js';
 
@@ -314,7 +315,7 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
           : undefined;
 
         const remainingTraitors = updatedGame.players.filter((p) => p.isAlive && p.role === 'TRAITOR').length;
-        const remainingFaithful = updatedGame.players.filter((p) => p.isAlive && p.role === 'FAITHFUL').length;
+        const remainingFaithful = updatedGame.players.filter((p) => p.isAlive && p.role && p.role !== 'TRAITOR').length;
 
         const reconnectPayload: ReconnectPayload = {
           sessionId: currentSessionId,
@@ -714,7 +715,7 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
           writeGameRecordIfNeeded(updatedGame);
 
           const aliveTraitors = updatedGame.players.filter((p) => p.isAlive && p.role === 'TRAITOR').length;
-          const aliveFaithful = updatedGame.players.filter((p) => p.isAlive && p.role === 'FAITHFUL').length;
+          const aliveFaithful = updatedGame.players.filter((p) => p.isAlive && p.role && p.role !== 'TRAITOR').length;
 
           broadcast(currentSessionId, {
             type: 'S2C_GAME_END',
@@ -800,22 +801,27 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
         if (progress.received >= progress.needed && updatedGame.phase === 'NIGHT') {
           try {
             const result = game.resolveMurder(updatedGame);
-            setGame(result.game);
+            // Sheriff investigates BEFORE morning broadcast so the private
+            // result lands first and the broadcast carries the appended history.
+            const gameAfterSheriff = runSheriffInvestigation(result.game, playerConnections);
+            setGame(gameAfterSheriff);
 
-            broadcastRecruitmentEvents(result, result.game, playerConnections);
+            broadcastRecruitmentEvents(result, gameAfterSheriff, playerConnections);
 
             if (result.blocked) {
               broadcastMorningEventWithRecruitment(
                 'S2C_MORNING_STARTED',
-                {
-                  phase: 'MORNING',
-                  murderBlocked: true,
-                  shieldedPlayerId: result.shieldedPlayerId,
-                  shieldedPlayerName: result.shieldedPlayerName,
-                },
+                result.medicBlocked
+                  ? { phase: 'MORNING', murderBlocked: true }
+                  : {
+                      phase: 'MORNING',
+                      murderBlocked: true,
+                      shieldedPlayerId: result.shieldedPlayerId,
+                      shieldedPlayerName: result.shieldedPlayerName,
+                    },
                 result.recruitedPlayerId,
                 result.recruitedPlayerName,
-                result.game,
+                gameAfterSheriff,
                 playerConnections
               );
             } else if (result.murderedPlayerId) {
@@ -828,7 +834,7 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
                 },
                 result.recruitedPlayerId,
                 result.recruitedPlayerName,
-                result.game,
+                gameAfterSheriff,
                 playerConnections
               );
             }
@@ -841,22 +847,25 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
 
       if (event.type === 'C2S_RESOLVE_MURDER') {
         const result = game.resolveMurder(gameState);
-        setGame(result.game);
+        const gameAfterSheriff = runSheriffInvestigation(result.game, playerConnections);
+        setGame(gameAfterSheriff);
 
-        broadcastRecruitmentEvents(result, result.game, playerConnections);
+        broadcastRecruitmentEvents(result, gameAfterSheriff, playerConnections);
 
         if (result.blocked) {
           broadcastMorningEventWithRecruitment(
             'S2C_MORNING_STARTED',
-            {
-              phase: 'MORNING',
-              murderBlocked: true,
-              shieldedPlayerId: result.shieldedPlayerId,
-              shieldedPlayerName: result.shieldedPlayerName,
-            },
+            result.medicBlocked
+              ? { phase: 'MORNING', murderBlocked: true }
+              : {
+                  phase: 'MORNING',
+                  murderBlocked: true,
+                  shieldedPlayerId: result.shieldedPlayerId,
+                  shieldedPlayerName: result.shieldedPlayerName,
+                },
             result.recruitedPlayerId,
             result.recruitedPlayerName,
-            result.game,
+            gameAfterSheriff,
             playerConnections
           );
         } else if (result.murderedPlayerId) {
@@ -869,7 +878,7 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
             },
             result.recruitedPlayerId,
             result.recruitedPlayerName,
-            result.game,
+            gameAfterSheriff,
             playerConnections
           );
         }
@@ -918,7 +927,7 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
           writeGameRecordIfNeeded(updatedGame);
 
           const aliveTraitors = updatedGame.players.filter((p) => p.isAlive && p.role === 'TRAITOR').length;
-          const aliveFaithful = updatedGame.players.filter((p) => p.isAlive && p.role === 'FAITHFUL').length;
+          const aliveFaithful = updatedGame.players.filter((p) => p.isAlive && p.role && p.role !== 'TRAITOR').length;
 
           broadcast(currentSessionId, {
             type: 'S2C_GAME_END',
@@ -1160,6 +1169,55 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
         return;
       }
 
+      if (event.type === 'C2S_MEDIC_PROTECT') {
+        try {
+          const { game: updatedGame, targetName } = game.medicProtect(
+            gameState,
+            currentPlayerId,
+            event.payload.targetId
+          );
+          setGame(updatedGame);
+          ws.send(JSON.stringify({
+            type: 'S2C_MEDIC_PROTECT_CONFIRMED',
+            payload: { targetId: event.payload.targetId, targetName },
+          }));
+        } catch (err) {
+          sendError(ws, (err as Error).message);
+        }
+        return;
+      }
+
+      if (event.type === 'C2S_ACTIVATE_SEER') {
+        try {
+          const result = game.activateSeer(gameState, currentPlayerId);
+          setGame(result.game);
+          ws.send(JSON.stringify({
+            type: 'S2C_SEER_RESULT',
+            payload: {
+              round: result.round,
+              targetId: result.targetId,
+              targetName: result.targetName,
+              role: result.targetRole,
+            },
+          }));
+          // Notify alive Traitors that the Seer's gift was used (round only, no name).
+          result.game.players.forEach((p) => {
+            if (p.isAlive && p.role === 'TRAITOR') {
+              const sock = playerConnections.get(p.id);
+              if (sock && sock.readyState === WebSocket.OPEN) {
+                sock.send(JSON.stringify({
+                  type: 'S2C_SEER_ACTIVATED',
+                  payload: { round: result.round },
+                }));
+              }
+            }
+          });
+        } catch (err) {
+          sendError(ws, (err as Error).message);
+        }
+        return;
+      }
+
       if (event.type === 'C2S_SUBMIT_RECRUITMENT') {
         const updatedGame = game.submitRecruitment(gameState, currentPlayerId, event.payload.targetId);
         setGame(updatedGame);
@@ -1225,7 +1283,7 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
         const updatedGame = game.endGameEarly(gameState);
         setGame(updatedGame);
         const aliveTraitors = updatedGame.players.filter((p) => p.isAlive && p.role === 'TRAITOR').length;
-        const aliveFaithful = updatedGame.players.filter((p) => p.isAlive && p.role === 'FAITHFUL').length;
+        const aliveFaithful = updatedGame.players.filter((p) => p.isAlive && p.role && p.role !== 'TRAITOR').length;
         broadcast(currentSessionId, {
           type: 'S2C_GAME_END',
           payload: {

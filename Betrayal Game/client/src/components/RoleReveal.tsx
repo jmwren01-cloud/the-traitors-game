@@ -73,11 +73,27 @@ export function RoleReveal({ myRole, traitorIds, players, myPlayerId, phase }: R
             <span>?</span>
           </div>
           <div className={`${styles.cardFront} ${myRole === 'TRAITOR' ? styles.traitor : styles.faithful}`}>
-            <h2>{myRole === 'TRAITOR' ? 'TRAITOR' : 'FAITHFUL'}</h2>
+            <h2>
+              {myRole === 'TRAITOR'
+                ? 'TRAITOR'
+                : myRole === 'SHERIFF'
+                  ? 'SHERIFF'
+                  : myRole === 'MEDIC'
+                    ? 'MEDIC'
+                    : myRole === 'SEER'
+                      ? 'SEER'
+                      : 'FAITHFUL'}
+            </h2>
             <p>
               {myRole === 'TRAITOR'
                 ? 'Eliminate the Faithful. Stay hidden.'
-                : 'Find the Traitors. Survive.'}
+                : myRole === 'SHERIFF'
+                  ? 'Each morning you secretly investigate one player.'
+                  : myRole === 'MEDIC'
+                    ? 'Each night you secretly protect one player from murder.'
+                    : myRole === 'SEER'
+                      ? 'Once per game, peer into a player\'s true allegiance.'
+                      : 'Find the Traitors. Survive.'}
             </p>
           </div>
         </div>
@@ -112,6 +128,36 @@ export function RoleReveal({ myRole, traitorIds, players, myPlayerId, phase }: R
                 fellow Traitors choose one Faithful to silence.
               </p>
               <p className={styles.briefingTip}>If you survive long enough, you win.</p>
+            </>
+          ) : myRole === 'SHERIFF' ? (
+            <>
+              <h3 className={styles.briefingTitle}>Your charge as the Sheriff</h3>
+              <p className={styles.briefingBody}>
+                You side with the Faithful. Each morning you secretly investigate a random alive
+                player and learn whether they read as <strong>Suspicious</strong> or
+                <strong> Clear</strong>. Your readings are mostly accurate — but never certain.
+              </p>
+              <p className={styles.briefingTip}>Reveal yourself with care; the Traitors will hunt you.</p>
+            </>
+          ) : myRole === 'MEDIC' ? (
+            <>
+              <h3 className={styles.briefingTitle}>Your charge as the Medic</h3>
+              <p className={styles.briefingBody}>
+                You side with the Faithful. Each night you may secretly choose a player to protect.
+                If the Traitors target them, the murder is silently blocked. You cannot protect the
+                same player two nights in a row, and you cannot protect yourself.
+              </p>
+              <p className={styles.briefingTip}>Save the right people. Keep the secret.</p>
+            </>
+          ) : myRole === 'SEER' ? (
+            <>
+              <h3 className={styles.briefingTitle}>Your charge as the Seer</h3>
+              <p className={styles.briefingBody}>
+                You side with the Faithful. Once per game, during the roundtable, you may activate
+                your gift to learn the true role of a random player. The Traitors will know your
+                gift was used — but not by whom.
+              </p>
+              <p className={styles.briefingTip}>Choose the moment carefully — the gift is one-shot.</p>
             </>
           ) : (
             <>

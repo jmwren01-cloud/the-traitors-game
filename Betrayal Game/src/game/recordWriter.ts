@@ -50,7 +50,7 @@ export function buildGameRecord(state: GameState): GameRecord | null {
     }
 
     const won = (state.winner === 'TRAITORS' && p.role === 'TRAITOR')
-             || (state.winner === 'FAITHFUL' && p.role === 'FAITHFUL');
+             || (state.winner === 'FAITHFUL' && p.role !== undefined && p.role !== 'TRAITOR');
 
     playerRecords.push({
       id: crypto.randomUUID(),

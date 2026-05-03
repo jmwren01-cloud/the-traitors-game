@@ -12,6 +12,7 @@ export interface GameSettings {
   round1DiscussionOnly: boolean; // Skip banishment in round 1
   challengesEnabled: boolean;    // Enable shield challenges
   challengeTimerSeconds: number; // 30-120 seconds, default 60
+  enableSpecialRoles: boolean;   // Enable Sheriff/Medic/Seer at higher player counts
 }
 
 export type ChallengeType = 'TIME_ESTIMATE' | 'MISSING_PLAYER' | 'WORD_SCRAMBLE';
@@ -41,7 +42,8 @@ export const DEFAULT_SETTINGS: GameSettings = {
   minPlayers: 5,
   round1DiscussionOnly: true,
   challengesEnabled: true,
-  challengeTimerSeconds: 60
+  challengeTimerSeconds: 60,
+  enableSpecialRoles: true
 };
 
 export type GamePhase = 
@@ -62,7 +64,16 @@ export type GamePhase =
   | 'MORNING'
   | 'GAME_END';
 
-export type Role = 'TRAITOR' | 'FAITHFUL';
+export type Role = 'TRAITOR' | 'FAITHFUL' | 'SHERIFF' | 'MEDIC' | 'SEER';
+
+export type SheriffResult = 'SUSPICIOUS' | 'CLEAR';
+
+export interface SheriffInvestigation {
+  round: number;
+  targetId: string;
+  targetName: string;
+  displayedResult: SheriffResult;
+}
 
 export interface Player {
   id: string;
@@ -73,6 +84,12 @@ export interface Player {
   isConnected: boolean;
   hasShield: boolean;
   shieldRevealed: boolean;
+  /** Round in which the SEER consumed their one-shot ability. */
+  seerUsedAtRound?: number;
+  /** ID of the player the MEDIC protected last night (cannot repeat next night). */
+  medicLastProtectedId?: string;
+  /** SHERIFF private investigation history (server-side; sent to sheriff only). */
+  sheriffInvestigations?: SheriffInvestigation[];
   /**
    * Round number in which the player explicitly declined to use their
    * shield. Tracked per-player (not per-game) so that revote-tie scenarios
@@ -190,6 +207,8 @@ export interface GameState {
    * skip the kill and proceed straight to the win check.
    */
   shieldBlockedBanishment?: boolean;
+  /** Transient: target the MEDIC chose to protect during the current NIGHT. Cleared after murder resolution. */
+  medicProtectedTargetId?: string;
   /** Game creation time (ms epoch). Used for persisted stats records. */
   startedAt?: number;
   /** Set after writeGameRecord runs so we don't double-record on duplicate end-game broadcasts. */
@@ -226,6 +245,8 @@ export type C2SEvent =
   | { type: 'C2S_DECLINE_SHIELD'; payload: Record<string, never> }
   | { type: 'C2S_SET_AVATAR'; payload: { color?: string; avatar?: string } }
   | { type: 'C2S_SUBMIT_RECRUITMENT'; payload: { targetId: string } }
+  | { type: 'C2S_MEDIC_PROTECT'; payload: { targetId: string } }
+  | { type: 'C2S_ACTIVATE_SEER'; payload: Record<string, never> }
   | { type: 'C2S_IDENTIFY'; payload: { deviceToken: string; playerName: string } }
   | { type: 'C2S_GET_PLAYER_STATS'; payload: Record<string, never> }
   | { type: 'C2S_GET_LEADERBOARD'; payload: { metric: 'winRate' | 'gamesPlayed' | 'traitorWins' } }
@@ -394,6 +415,10 @@ export type S2CEvent =
     } }
   | { type: 'S2C_SHIELD_REVEALED'; payload: { playerId: string; playerName: string; banishmentBlocked?: boolean } }
   | { type: 'S2C_AVATAR_UPDATED'; payload: { players: Player[] } }
+  | { type: 'S2C_SHERIFF_RESULT'; payload: { round: number; targetId: string; targetName: string; result: SheriffResult } }
+  | { type: 'S2C_MEDIC_PROTECT_CONFIRMED'; payload: { targetId: string; targetName: string } }
+  | { type: 'S2C_SEER_RESULT'; payload: { round: number; targetId: string; targetName: string; role: Role } }
+  | { type: 'S2C_SEER_ACTIVATED'; payload: { round: number } }
   | { type: 'S2C_CHAT_MESSAGE'; payload: ChatMessage }
   | { type: 'S2C_TIMER_UPDATE'; payload: { endTime: number; duration: number; phase: GamePhase } }
   | { type: 'S2C_IDENTITY_CONFIRMED'; payload: { deviceToken: string; playerName: string; isReturningPlayer: boolean } }

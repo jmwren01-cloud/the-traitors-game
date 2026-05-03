@@ -1,4 +1,13 @@
-export type Role = 'TRAITOR' | 'FAITHFUL';
+export type Role = 'TRAITOR' | 'FAITHFUL' | 'SHERIFF' | 'MEDIC' | 'SEER';
+
+export type SheriffResult = 'SUSPICIOUS' | 'CLEAR';
+
+export interface SheriffInvestigation {
+  round: number;
+  targetId: string;
+  targetName: string;
+  displayedResult: SheriffResult;
+}
 
 export interface GameSettings {
   timerDurations: {
@@ -12,6 +21,7 @@ export interface GameSettings {
   round1DiscussionOnly: boolean;
   challengesEnabled: boolean;
   challengeTimerSeconds: number;
+  enableSpecialRoles: boolean;
 }
 
 export type ChallengeType = 'TIME_ESTIMATE' | 'MISSING_PLAYER' | 'WORD_SCRAMBLE';
@@ -63,6 +73,9 @@ export interface Player {
   color?: string;
   avatar?: string;
   recruitmentUsed?: boolean;
+  seerUsedAtRound?: number;
+  medicLastProtectedId?: string;
+  sheriffInvestigations?: SheriffInvestigation[];
 }
 
 export interface Vote {
@@ -134,7 +147,10 @@ export interface GameState {
   votes?: Vote[];
   banishedPlayer?: { id: string; name: string; role: Role };
   murderedPlayer?: { id: string; name: string };
-  murderBlocked?: { shieldedPlayerId: string; shieldedPlayerName: string };
+  /** Set when a murder attempt was blocked. Shield-block carries the protected
+   * player's identity; medic-block intentionally omits both fields so the
+   * morning broadcast does not leak the medic's target. */
+  murderBlocked?: { shieldedPlayerId?: string; shieldedPlayerName?: string };
   winner?: 'TRAITORS' | 'FAITHFUL';
   endReason?: 'HOST_ENDED';
   remainingTraitors?: number;
@@ -168,6 +184,18 @@ export interface GameState {
   nightRecruitmentSubmittedBy?: string;
   shieldBlockedBanishment?: boolean;
   shieldBlockedBanishmentName?: string;
+  /** Last sheriff investigation result (private to the sheriff). */
+  sheriffResult?: { round: number; targetId: string; targetName: string; result: SheriffResult };
+  /** All sheriff investigation results received so far. */
+  sheriffHistory?: { round: number; targetId: string; targetName: string; result: SheriffResult }[];
+  /** Local: medic's chosen target this night, after server confirmation. */
+  medicProtection?: { targetId: string; targetName: string };
+  /** Last seer reading the seer received. */
+  seerResult?: { round: number; targetId: string; targetName: string; role: Role };
+  /** All seer readings received so far. */
+  seerHistory?: { round: number; targetId: string; targetName: string; role: Role }[];
+  /** For traitors: round numbers in which a Seer used their gift. */
+  seerActivatedRounds?: number[];
 }
 
 export type C2SEvent =
@@ -199,6 +227,8 @@ export type C2SEvent =
   | { type: 'C2S_DECLINE_SHIELD'; payload: Record<string, never> }
   | { type: 'C2S_SET_AVATAR'; payload: { color?: string; avatar?: string } }
   | { type: 'C2S_SUBMIT_RECRUITMENT'; payload: { targetId: string } }
+  | { type: 'C2S_MEDIC_PROTECT'; payload: { targetId: string } }
+  | { type: 'C2S_ACTIVATE_SEER'; payload: Record<string, never> }
   | { type: 'C2S_IDENTIFY'; payload: { deviceToken: string; playerName: string } }
   | { type: 'C2S_GET_PLAYER_STATS'; payload: Record<string, never> }
   | { type: 'C2S_GET_LEADERBOARD'; payload: { metric: 'winRate' | 'gamesPlayed' | 'traitorWins' } }

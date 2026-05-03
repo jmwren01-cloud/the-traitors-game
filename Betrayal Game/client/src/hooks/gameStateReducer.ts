@@ -1,4 +1,4 @@
-import type { GameState, Player, Role, Vote, ChatMessage, TimerState, VoteTally, GameSettings, RoundRecord } from '../types';
+import type { GameState, Player, Role, Vote, ChatMessage, TimerState, VoteTally, GameSettings, RoundRecord, SheriffResult } from '../types';
 
 type Msg = { type: string; payload: Record<string, unknown> };
 
@@ -365,6 +365,8 @@ export function gameStateReducer(state: GameState | null, msg: Msg): GameState |
         justRecruited: undefined,
         recruitedPlayer: undefined,
         nightRecruitmentSubmittedBy: undefined,
+        // Fresh night: clear medic's pending protection from any prior night.
+        medicProtection: undefined,
       } : null;
     }
 
@@ -421,7 +423,10 @@ export function gameStateReducer(state: GameState | null, msg: Msg): GameState |
           ? { id: payload.lastMurderedPlayerId, name: payload.lastMurderedPlayerName || '' }
           : undefined,
         murderBlocked: payload.murderBlocked
-          ? { shieldedPlayerId: payload.shieldedPlayerId!, shieldedPlayerName: payload.shieldedPlayerName! }
+          ? {
+              ...(payload.shieldedPlayerId !== undefined ? { shieldedPlayerId: payload.shieldedPlayerId } : {}),
+              ...(payload.shieldedPlayerName !== undefined ? { shieldedPlayerName: payload.shieldedPlayerName } : {}),
+            }
           : undefined,
         recruitedPlayer: payload.recruitedPlayerId && payload.recruitedPlayerName
           ? { id: payload.recruitedPlayerId, name: payload.recruitedPlayerName }
@@ -569,6 +574,46 @@ export function gameStateReducer(state: GameState | null, msg: Msg): GameState |
     case 'S2C_AVATAR_UPDATED': {
       const payload = msg.payload as { players: Player[] };
       return state ? { ...state, players: payload.players } : null;
+    }
+
+    case 'S2C_SHERIFF_RESULT': {
+      const payload = msg.payload as { round: number; targetId: string; targetName: string; result: SheriffResult };
+      if (!state) return null;
+      const entry = { round: payload.round, targetId: payload.targetId, targetName: payload.targetName, result: payload.result };
+      return {
+        ...state,
+        sheriffResult: entry,
+        sheriffHistory: [...(state.sheriffHistory ?? []), entry],
+      };
+    }
+
+    case 'S2C_MEDIC_PROTECT_CONFIRMED': {
+      const payload = msg.payload as { targetId: string; targetName: string };
+      if (!state) return null;
+      return { ...state, medicProtection: { targetId: payload.targetId, targetName: payload.targetName } };
+    }
+
+    case 'S2C_SEER_RESULT': {
+      const payload = msg.payload as { round: number; targetId: string; targetName: string; role: Role };
+      if (!state) return null;
+      const entry = { round: payload.round, targetId: payload.targetId, targetName: payload.targetName, role: payload.role };
+      return {
+        ...state,
+        seerResult: entry,
+        seerHistory: [...(state.seerHistory ?? []), entry],
+        // Persist that the seer gift has been spent (server also persists on Player).
+        players: state.players.map((p) =>
+          p.id === state.myPlayerId ? { ...p, seerUsedAtRound: payload.round } : p
+        ),
+      };
+    }
+
+    case 'S2C_SEER_ACTIVATED': {
+      const payload = msg.payload as { round: number };
+      if (!state) return null;
+      const rounds = state.seerActivatedRounds ?? [];
+      if (rounds.includes(payload.round)) return state;
+      return { ...state, seerActivatedRounds: [...rounds, payload.round] };
     }
 
     case 'S2C_GAME_END': {

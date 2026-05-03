@@ -491,6 +491,17 @@ export function Lobby({
                 </label>
               </div>
 
+              <div className={styles.settingGroup}>
+                <label className={styles.checkboxLabel}>
+                  <input
+                    type="checkbox"
+                    checked={settings.enableSpecialRoles ?? true}
+                    onChange={(e) => updateSettings({ enableSpecialRoles: e.target.checked })}
+                  />
+                  Special Roles (Sheriff / Medic / Seer)
+                </label>
+              </div>
+
               {settings.challengesEnabled && (
                 <div className={styles.settingGroup}>
                   <label>Challenge Time</label>

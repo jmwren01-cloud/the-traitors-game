@@ -9,7 +9,7 @@ interface SpectatorProps {
   currentRound?: number;
   banishedPlayer?: { id: string; name: string; role: Role };
   murderedPlayer?: { id: string; name: string };
-  murderBlocked?: { shieldedPlayerId: string; shieldedPlayerName: string };
+  murderBlocked?: { shieldedPlayerId?: string; shieldedPlayerName?: string };
   voteCount?: { received: number; needed: number };
   revealedVotes?: Vote[];
   currentTally?: VoteTally[];
@@ -102,11 +102,19 @@ export function Spectator({
             </div>
           </div>
         )}
-        {isMorning && murderBlocked && (
+        {isMorning && murderBlocked && murderBlocked.shieldedPlayerName && (
           <div className={styles.morningReveal}>
             <div className={styles.morningIcon}>🛡️</div>
             <div className={styles.morningText}>
               The murder was blocked! <strong>{murderBlocked.shieldedPlayerName}</strong>'s shield protected them.
+            </div>
+          </div>
+        )}
+        {isMorning && murderBlocked && !murderBlocked.shieldedPlayerName && (
+          <div className={styles.morningReveal}>
+            <div className={styles.morningIcon}>✨</div>
+            <div className={styles.morningText}>
+              The Traitors struck — but their target survived.
             </div>
           </div>
         )}

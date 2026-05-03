@@ -1,7 +1,7 @@
 import { WebSocket } from 'ws';
 import crypto from 'crypto';
 import type { S2CEvent, GameState, Player } from '../game/types.js';
-import type { MurderResult } from '../game/manager.js';
+import { performSheriffInvestigation, type MurderResult } from '../game/manager.js';
 
 /**
  * Returns a copy of the players list scrubbed for the given recipient:
@@ -22,10 +22,23 @@ export function scrubPlayersForRecipient(
     // Strip server-only fields from every broadcast (deviceToken must never leave the server)
     const { deviceToken: _dt, ...rest } = p;
     const safe = rest as Player;
-    if (!safe.hasShield) return safe;
-    if (recipientId !== undefined && safe.id === recipientId) return safe;
-    if (safe.shieldRevealed) return safe;
-    return { ...safe, hasShield: false };
+    const isSelf = recipientId !== undefined && safe.id === recipientId;
+    // Special-role private fields would leak the player's role to others —
+    // only the recipient themselves should ever see them.
+    let scrubbed: Player = safe;
+    if (!isSelf) {
+      const {
+        sheriffInvestigations: _si,
+        medicLastProtectedId: _mp,
+        seerUsedAtRound: _su,
+        ...sanitized
+      } = safe;
+      scrubbed = sanitized as Player;
+    }
+    if (!scrubbed.hasShield) return scrubbed;
+    if (isSelf) return scrubbed;
+    if (scrubbed.shieldRevealed) return scrubbed;
+    return { ...scrubbed, hasShield: false };
   });
 }
 
@@ -139,6 +152,34 @@ export function broadcastRecruitmentEvents(
       }
     }
   });
+}
+
+/**
+ * Runs the SHERIFF morning investigation (if any) and sends a private
+ * S2C_SHERIFF_RESULT to the sheriff BEFORE the morning broadcast occurs.
+ * Returns the updated game state (with the investigation appended on the
+ * sheriff's player object) — the caller MUST persist it via setGame and use
+ * the returned state for any subsequent broadcasts so scrubbing stays correct.
+ */
+export function runSheriffInvestigation(
+  game: GameState,
+  playerConnections: Map<string, WebSocket>
+): GameState {
+  const result = performSheriffInvestigation(game);
+  if (!result.sheriffId || !result.investigation) return result.game;
+  const socket = playerConnections.get(result.sheriffId);
+  if (socket && socket.readyState === WebSocket.OPEN) {
+    socket.send(JSON.stringify({
+      type: 'S2C_SHERIFF_RESULT',
+      payload: {
+        round: result.investigation.round,
+        targetId: result.investigation.targetId,
+        targetName: result.investigation.targetName,
+        result: result.investigation.displayedResult,
+      },
+    }));
+  }
+  return result.game;
 }
 
 export function broadcastMorningEventWithRecruitment(
