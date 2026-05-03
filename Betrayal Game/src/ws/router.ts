@@ -403,13 +403,21 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
         currentSessionId = tokenData.sessionId;
         playerConnections.set(currentPlayerId, ws);
 
-        const updatedGame = {
+        const reconnectedGame = {
           ...gameState,
           players: gameState.players.map((p) =>
             p.id === currentPlayerId ? { ...p, isConnected: true } : p
           )
         };
+        const slotResult = game.ensureAvatarSlotForReconnect(reconnectedGame, currentPlayerId);
+        const updatedGame = slotResult.game;
         setGame(updatedGame);
+        if (slotResult.changed) {
+          broadcastPerRecipient(currentSessionId, (recipientId) => ({
+            type: 'S2C_AVATAR_UPDATED',
+            payload: { players: scrubPlayersForRecipient(updatedGame.players, recipientId) }
+          }));
+        }
 
         const traitorIds = player.role === 'TRAITOR' ? game.getTraitorIds(updatedGame) : undefined;
 
@@ -1777,12 +1785,18 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
 
       const gameState = games.get(currentSessionId);
       if (gameState) {
-        let updatedGame = {
+        const markedDisconnected = {
           ...gameState,
           players: gameState.players.map((p) =>
             p.id === currentPlayerId ? { ...p, isConnected: false } : p
           )
         };
+        // In the LOBBY, free the disconnecting player's color/avatar so
+        // other lobby members can claim it immediately. Outside the
+        // lobby roles are locked and avatars are cosmetic, so no-op.
+        const freed = game.freeAvatarSlot(markedDisconnected, currentPlayerId);
+        const slotChanged = freed !== markedDisconnected;
+        let updatedGame = freed;
 
         for (const [token, data] of sessionTokens.entries()) {
           if (data.playerId === currentPlayerId && data.sessionId === currentSessionId) {
@@ -1821,6 +1835,12 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
           type: 'S2C_PLAYER_DISCONNECTED',
           payload: { playerId: currentPlayerId!, players: scrubPlayersForRecipient(updatedGame.players, recipientId) }
         }));
+        if (slotChanged) {
+          broadcastPerRecipient(currentSessionId, (recipientId) => ({
+            type: 'S2C_AVATAR_UPDATED',
+            payload: { players: scrubPlayersForRecipient(updatedGame.players, recipientId) }
+          }));
+        }
       }
     }
   });

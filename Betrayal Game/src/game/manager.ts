@@ -220,6 +220,73 @@ export function addPlayer(game: GameState, playerName: string, deviceToken?: str
   };
 }
 
+/**
+ * Clear a player's color/avatar so the slots become free for other
+ * lobby members to claim. Used when a player disconnects from the
+ * LOBBY: we don't want their reservation to keep blocking the picker.
+ * Returns the input unchanged outside the LOBBY phase.
+ */
+export function freeAvatarSlot(game: GameState, playerId: string): GameState {
+  if (game.phase !== 'LOBBY') return game;
+  const player = game.players.find((p) => p.id === playerId);
+  if (!player || (player.color === undefined && player.avatar === undefined)) return game;
+  return {
+    ...game,
+    players: game.players.map((p) => {
+      if (p.id !== playerId) return p;
+      const { color: _c, avatar: _a, ...rest } = p;
+      void _c; void _a;
+      return rest as Player;
+    }),
+  };
+}
+
+/**
+ * On reconnect into the LOBBY, ensure the player has valid + available
+ * color and avatar slots. If their stored color was freed (or somehow
+ * conflicts with another connected player), pick the next available
+ * one. Returns `{ game, changed }` so the caller can decide whether to
+ * broadcast S2C_AVATAR_UPDATED.
+ */
+export function ensureAvatarSlotForReconnect(
+  game: GameState,
+  playerId: string,
+): { game: GameState; changed: boolean } {
+  if (game.phase !== 'LOBBY') return { game, changed: false };
+  const player = game.players.find((p) => p.id === playerId);
+  if (!player) return { game, changed: false };
+
+  const takenColors = game.players
+    .filter((p) => p.id !== playerId && p.color !== undefined)
+    .map((p) => p.color as string);
+  const takenAvatars = game.players
+    .filter((p) => p.id !== playerId && p.avatar !== undefined)
+    .map((p) => p.avatar as string);
+
+  let nextColor = player.color;
+  let nextAvatar = player.avatar;
+  let changed = false;
+  if (nextColor === undefined || takenColors.includes(nextColor)) {
+    nextColor = pickAvailableColor(takenColors);
+    changed = true;
+  }
+  if (nextAvatar === undefined || takenAvatars.includes(nextAvatar)) {
+    nextAvatar = AVATAR_IDS.find((a) => !takenAvatars.includes(a)) ?? pickRandomAvatar();
+    changed = true;
+  }
+  if (!changed) return { game, changed: false };
+
+  return {
+    game: {
+      ...game,
+      players: game.players.map((p) =>
+        p.id === playerId ? { ...p, color: nextColor, avatar: nextAvatar } : p
+      ),
+    },
+    changed: true,
+  };
+}
+
 export function setAvatar(game: GameState, playerId: string, color?: string, avatar?: string): GameState {
   if (game.phase !== 'LOBBY') {
     throw new Error('Can only change avatar in the lobby');
