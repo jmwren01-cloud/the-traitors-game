@@ -14,7 +14,7 @@ const WORD_BANK = [
 ];
 
 /**
- * Wave 4 / 4 — Strip server-only confession attribution from a history
+ * Strip server-only confession attribution from a history
  * snapshot before it leaves the server during live play. `RoundRecord
  * .confessions[]` carries `playerId` and `isDefault` (used post-game
  * for the "How It Happened" replay). We MUST never broadcast that
@@ -518,7 +518,7 @@ export function startRoundtable(game: GameState): GameState {
   // First roundtable after role reveal is Round 1
   const newRound = game.phase === 'ROLE_REVEAL' ? 1 : game.currentRound;
 
-  // Wave 4 / 4 — open the Confession Booth sub-phase. The discussion
+  // open the Confession Booth sub-phase. The discussion
   // timer is NOT started until resolveConfessions runs.
   return {
     ...omit(game, 'confessionRevealed'),
@@ -534,7 +534,7 @@ export function startRoundtable(game: GameState): GameState {
   };
 }
 
-// ============= CONFESSION BOOTH (Wave 4 / 4) =============
+// ============= CONFESSION BOOTH =============
 
 /**
  * Default-statement bank used to backfill confessions for players who fail
@@ -558,7 +558,7 @@ export const DEFAULT_CONFESSIONS: readonly string[] = [
 ];
 
 export class ConfessionError extends Error {
-  constructor(public code: 'PHASE' | 'DEAD' | 'ALREADY_SUBMITTED' | 'TOO_SHORT' | 'TOO_LONG', message: string) {
+  constructor(public code: 'PHASE' | 'EXPIRED' | 'DEAD' | 'ALREADY_SUBMITTED' | 'TOO_SHORT' | 'TOO_LONG', message: string) {
     super(message);
     this.name = 'ConfessionError';
   }
@@ -598,6 +598,9 @@ export function submitConfession(
 ): GameState {
   if (game.phase !== 'ROUNDTABLE' || game.confessionPhase !== 'BOOTH') {
     throw new ConfessionError('PHASE', 'Confession booth is not open');
+  }
+  if (game.confessionWindowEndsAt !== undefined && Date.now() >= game.confessionWindowEndsAt) {
+    throw new ConfessionError('EXPIRED', 'Confession window has closed');
   }
   const player = game.players.find((p) => p.id === playerId);
   if (!player || !player.isAlive) {
@@ -1266,7 +1269,7 @@ function buildRoundRecord(game: GameState): RoundRecord {
     ...(shieldedPlayer?.name !== undefined ? { shieldedName: shieldedPlayer.name } : {}),
     ...(shieldedPlayer?.role !== undefined ? { shieldedRole: shieldedPlayer.role } : {}),
     ...(recruitedPlayer?.name !== undefined ? { recruitedName: recruitedPlayer.name } : {}),
-    // Wave 4 / 4 — full confession attribution for the post-game replay.
+    // full confession attribution for the post-game replay.
     ...(game.confessionEntries && game.confessionEntries.length > 0
       ? { confessions: game.confessionEntries }
       : {}),
@@ -1938,7 +1941,7 @@ export function continueToDayPhase(game: GameState): GameState {
     };
   }
 
-  // Continue directly to roundtable. Wave 4 / 4 — initialise the
+  // Continue directly to roundtable. initialise the
   // Confession Booth sub-phase here too (the router relies on this
   // to broadcast S2C_CONFESSION_PHASE_STARTED).
   return {
@@ -2292,7 +2295,7 @@ export function continueToRoundtable(game: GameState): GameState {
     throw new Error('Not in challenge result phase');
   }
 
-  // Wave 4 / 4 — initialise Confession Booth sub-phase on entry.
+  // initialise Confession Booth sub-phase on entry.
   return {
     ...omit(game, 'challenge', 'confessionRevealed'),
     phase: 'ROUNDTABLE',

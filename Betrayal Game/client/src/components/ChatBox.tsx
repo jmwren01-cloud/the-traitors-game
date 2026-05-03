@@ -13,7 +13,7 @@ interface ChatBoxProps {
   disabled?: boolean;
   players?: Player[];
   /**
-   * Wave 4 / 4 — Confessions for the current visible round, in the
+   * Confessions for the current visible round, in the
    * server-shuffled order. Anonymous (no playerId).
    */
   confessions?: ConfessionReveal[];

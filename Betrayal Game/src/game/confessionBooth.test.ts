@@ -1,4 +1,4 @@
-// Wave 4 / 4 — Confession Booth unit tests.
+// Confession Booth unit tests.
 
 import { describe, it, expect } from 'vitest';
 import {
@@ -46,6 +46,20 @@ function baseGame(overrides: Partial<GameState> = {}): GameState {
 function openBooth(state?: GameState): GameState {
   return startRoundtable(state ?? baseGame());
 }
+
+describe('Confession Booth — deadline enforcement', () => {
+  it('rejects submissions after confessionWindowEndsAt has passed', () => {
+    const opened = openBooth();
+    const expired: GameState = { ...opened, confessionWindowEndsAt: Date.now() - 1 };
+    expect(() => submitConfession(expired, 'a', 'I did nothing wrong, I swear.'))
+      .toThrowError(ConfessionError);
+    try {
+      submitConfession(expired, 'a', 'I did nothing wrong, I swear.');
+    } catch (e) {
+      expect((e as ConfessionError).code).toBe('EXPIRED');
+    }
+  });
+});
 
 describe('Confession Booth — phase init', () => {
   it('opens BOOTH on startRoundtable with empty entries and a 60s window', () => {

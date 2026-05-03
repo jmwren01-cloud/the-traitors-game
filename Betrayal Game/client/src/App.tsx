@@ -76,7 +76,7 @@ function App() {
   }
 
   const phase = gameState?.phase || 'LOBBY';
-  // Confession Booth overlay visibility (Wave 4 / 4). The overlay shows
+  // Confession Booth overlay visibility. The overlay shows
   // for the entire BOOTH window and stays up after reveal until the local
   // player presses "Begin Discussion". `boothDismissed` resets every time
   // a fresh booth opens so the overlay always re-appears next round.
@@ -322,9 +322,6 @@ function App() {
           lastWhisperReceivedId={gameState?.lastWhisperReceivedId}
           whispersRead={gameState?.whispersRead}
           whisperError={gameState?.whisperError}
-          confessionRevealed={gameState?.confessionRevealed}
-          confessionRound={gameState?.confessionRound}
-          currentRoundNumber={gameState?.currentRound}
           onLocalAction={dispatchLocal}
           onSend={send}
         />

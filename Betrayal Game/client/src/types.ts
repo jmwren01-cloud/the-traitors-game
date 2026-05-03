@@ -153,14 +153,14 @@ export interface RoundRecord {
   shieldedRole?: Role;
   recruitedName?: string;
   /**
-   * Wave 4 / 4 — full per-round confession archive (with playerId
+   * full per-round confession archive (with playerId
    * attribution and isDefault/isAnonymousTip flags) so the post-game
    * replay can show who actually said what.
    */
   confessions?: ConfessionEntry[];
 }
 
-// ============= Confession Booth (Wave 4 / 4) =============
+// ============= Confession Booth =============
 
 export const CONFESSION_MIN_LENGTH = 10;
 export const CONFESSION_MAX_LENGTH = 120;
@@ -280,7 +280,7 @@ export interface GameState {
   /** Last terminal evidence outcome — drives the inline failure banner. */
   evidenceLastFailure?: 'SKIPPED' | 'NO_AGREEMENT' | 'TIMEOUT';
   /**
-   * Wave 4 / 4 — Confession Booth public state. `confessionPhase` mirrors
+   * Confession Booth public state. `confessionPhase` mirrors
    * the server's BOOTH/DISCUSSION sub-phase. `confessionRevealed` is the
    * shuffled, attribution-stripped reveal payload. The submitted/total
    * counts drive the public "X of Y" progress chip. `confessionWindowEndsAt`
@@ -370,7 +370,7 @@ export type C2SEvent =
       targetId?: string;
       content?: string;
     } }
-  /** Wave 4 / 4 — Confession Booth submission (10–120 chars). */
+  /** Confession Booth submission (10–120 chars). */
   | { type: 'C2S_SUBMIT_CONFESSION'; payload: { content: string } };
 
 export const WHISPER_MAX_LENGTH = 200;

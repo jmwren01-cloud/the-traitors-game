@@ -15,7 +15,7 @@ import { startVoteRevealSequence } from './voteReveal.js';
 const activeChallengeTimers = new Map<string, NodeJS.Timeout>();
 // Wave 4 / 3 — server-side 60s false-evidence unanimity timer.
 const evidenceWindowTimers = new Map<string, NodeJS.Timeout>();
-// Wave 4 / 4 — server-side 60s Confession Booth timer.
+// server-side 60s Confession Booth timer.
 const confessionTimers = new Map<string, NodeJS.Timeout>();
 
 function clearChallengeTimer(sessionId: string): void {
@@ -172,7 +172,7 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
     broadcastToSessionPerRecipient(sessionId, buildEvent, games, playerConnections);
   }
 
-  // ============= CONFESSION BOOTH HELPERS (Wave 4 / 4) =============
+  // ============= CONFESSION BOOTH HELPERS =============
 
   /**
    * Start the ROUNDTABLE discussion timer (the timer that was previously
@@ -517,7 +517,7 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
           }
         }
 
-        // Wave 4 / 4 — Hydrate Confession Booth state on reconnect so a
+        // Hydrate Confession Booth state on reconnect so a
         // returning alive player sees the open booth (with their submitted
         // flag) or the freshly revealed cards. Public fields only — never
         // ship `confessionEntries` (carries playerIds).
@@ -650,7 +650,7 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
           });
         }
 
-        // Wave 4 / 4 — open Confession Booth before discussion timer.
+        // open Confession Booth before discussion timer.
         beginConfessionBooth(currentSessionId, updatedGame);
         return;
       }
@@ -1037,7 +1037,7 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
           });
 
           if (updatedGame.phase === 'ROUNDTABLE') {
-            // Wave 4 / 4 — booth gates the discussion timer.
+            // booth gates the discussion timer.
             beginConfessionBooth(currentSessionId, updatedGame);
           }
         }
@@ -1394,7 +1394,7 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
             payload: { phase: updatedGame.phase, currentRound: updatedGame.currentRound }
           });
           if (updatedGame.phase === 'ROUNDTABLE') {
-            // Wave 4 / 4 — challenges-disabled path also opens the booth.
+            // challenges-disabled path also opens the booth.
             broadcast(currentSessionId, {
               type: 'S2C_ROUNDTABLE_STARTED',
               payload: { phase: 'ROUNDTABLE', currentRound: updatedGame.currentRound }
@@ -1481,7 +1481,7 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
           });
         }
 
-        // Wave 4 / 4 — booth gates the discussion timer.
+        // booth gates the discussion timer.
         beginConfessionBooth(currentSessionId, updatedGame);
         return;
       }

@@ -197,7 +197,7 @@ export interface RoundRecord {
   shieldedRole?: Role;
   recruitedName?: string;
   /**
-   * Wave 4 / 4 — Confession Booth. Full attribution for the post-game
+   * Confession Booth. Full attribution for the post-game
    * replay. Includes default-statement entries (`isDefault: true`) and
    * any injected ANONYMOUS_TIP (`isAnonymousTip: true`,
    * `playerId: undefined` since it has no real author).
@@ -206,7 +206,7 @@ export interface RoundRecord {
 }
 
 /**
- * Wave 4 / 4 — Confession Booth. Server-side full record for one
+ * Confession Booth. Server-side full record for one
  * statement made during a Roundtable's Booth sub-phase. `playerId` is
  * NEVER broadcast during the live game — only in the post-game replay
  * via `RoundRecord.confessions`.
@@ -321,7 +321,7 @@ export interface GameState {
    */
   evidenceWindowEndsAt?: number;
   /**
-   * Wave 4 / 4 — Confession Booth state for the current Roundtable.
+   * Confession Booth state for the current Roundtable.
    * `confessionPhase === 'BOOTH'` means the 60s booth overlay is active and
    * the discussion timer has NOT started yet. `'DISCUSSION'` means the
    * reveal has happened (or the booth is irrelevant — set on every fresh
@@ -428,7 +428,7 @@ export type C2SEvent =
       content?: string;
     } }
   /**
-   * Wave 4 / 4 — Confession Booth. Submit the player's anonymous statement
+   * Confession Booth. Submit the player's anonymous statement
    * during the 60s booth window. Server validates length (10-120 chars
    * after trim), liveness, and single-submission per round.
    */
@@ -493,7 +493,7 @@ export type S2CEvent =
       evidenceUsed?: boolean;
       falseEvidence?: FalseEvidence;
       /**
-       * Wave 4 / 4 — Booth state for the current Roundtable. Only the
+       * Booth state for the current Roundtable. Only the
        * public-facing fields are sent (no server-side `confessionEntries`).
        * `confessionMySubmitted` lets the rejoining player skip straight to
        * the "recorded" state when they had already submitted.
@@ -698,7 +698,7 @@ export type S2CEvent =
       reason: 'SKIPPED' | 'NO_AGREEMENT' | 'TIMEOUT';
     } }
   /**
-   * Wave 4 / 4 — Booth opens. Sent at the start of every Roundtable to
+   * Booth opens. Sent at the start of every Roundtable to
    * every player. `endsAt` is the Unix-ms deadline for the 60s window;
    * `aliveCount` is the denominator for the public progress count.
    */
@@ -717,7 +717,7 @@ export type S2CEvent =
       needed: number;
     } }
   /**
-   * Wave 4 / 4 — Booth resolves. Server-shuffled, attribution stripped.
+   * Booth resolves. Server-shuffled, attribution stripped.
    * The roundtable discussion timer starts immediately after this event.
    */
   | { type: 'S2C_CONFESSIONS_REVEALED'; payload: {

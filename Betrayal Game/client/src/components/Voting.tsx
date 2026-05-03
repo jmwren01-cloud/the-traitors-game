@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import type { Player, C2SEvent, Role, Vote, VoteTally, Whisper, ConfessionReveal } from '../types';
+import type { Player, C2SEvent, Role, Vote, VoteTally, Whisper } from '../types';
 import { WHISPER_MAX_LENGTH } from '../types';
 import { getColorHex, getAvatarEmoji } from '../avatarConstants';
 import styles from './Voting.module.css';
@@ -37,12 +37,6 @@ interface VotingProps {
   whispersRead?: string[];
   /** Most recent server-side whisper validation error for this player. */
   whisperError?: { code: string; message: string };
-  /** Wave 4 / 4 — current round's revealed confessions (anonymised). */
-  confessionRevealed?: ConfessionReveal[];
-  /** Round number the confessions belong to (suppresses cross-round leaks). */
-  confessionRound?: number;
-  /** Round we are currently playing — must match confessionRound to display. */
-  currentRoundNumber?: number;
   /** Local action dispatcher (not a server event). */
   onLocalAction?: (action: { type: string; payload?: Record<string, unknown> }) => void;
   onSend: (event: C2SEvent) => void;
@@ -50,7 +44,7 @@ interface VotingProps {
 
 const REASON_MAX_LENGTH = 120;
 
-export function Voting({ players, myPlayerId, phase, votes: _votes, banishedPlayer, currentRound, voteCount, tiedPlayerIds, tiedPlayerNames, randomlySelectedPlayer, revealIndex, currentTally, revealedVotes, totalVotes: serverTotalVotes, currentReveal, shieldBlockedBanishment, shieldBlockedBanishmentName, whispers, lastWhisperReceivedId, whispersRead, whisperError, confessionRevealed, confessionRound, currentRoundNumber, onLocalAction, onSend }: VotingProps) {
+export function Voting({ players, myPlayerId, phase, votes: _votes, banishedPlayer, currentRound, voteCount, tiedPlayerIds, tiedPlayerNames, randomlySelectedPlayer, revealIndex, currentTally, revealedVotes, totalVotes: serverTotalVotes, currentReveal, shieldBlockedBanishment, shieldBlockedBanishmentName, whispers, lastWhisperReceivedId, whispersRead, whisperError, onLocalAction, onSend }: VotingProps) {
   void _votes;
   const [selectedTarget, setSelectedTarget] = useState<string | null>(null);
   const [reasonText, setReasonText] = useState('');
@@ -275,13 +269,6 @@ export function Voting({ players, myPlayerId, phase, votes: _votes, banishedPlay
     const t = window.setTimeout(() => onLocalAction({ type: 'CLIENT_CLEAR_WHISPER_ERROR' }), 4000);
     return () => window.clearTimeout(t);
   }, [whisperError, onLocalAction]);
-
-  // Wave 4 / 4 — confessions are now surfaced via the Chat "Confessions"
-  // tab; the inline panel was removed to avoid duplication. Reference
-  // the props so the wiring stays type-checked end-to-end.
-  void confessionRevealed;
-  void confessionRound;
-  void currentRoundNumber;
 
   const renderWhisperFeed = (round: number) => {
     const items = allWhispers.filter((w) => w.round === round);

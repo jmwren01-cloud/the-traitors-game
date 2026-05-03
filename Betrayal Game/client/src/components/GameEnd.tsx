@@ -147,7 +147,7 @@ function RoundCard({ record, index, whispers, players }: { record: RoundRecord; 
         </div>
       )}
 
-      {/* Wave 4 / 4 — confessions with true author attribution. */}
+      {/* confessions with true author attribution. */}
       {record.confessions && record.confessions.length > 0 && (
         <div style={{
           marginTop: 12, padding: 10,
