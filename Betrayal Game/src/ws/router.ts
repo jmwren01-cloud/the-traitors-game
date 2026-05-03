@@ -1333,7 +1333,6 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
                 result.game,
                 playerConnections
               );
-              broadcastSheriffResults(currentSessionId, games, playerConnections, setGame);
             } else if (result.murderedPlayerId) {
               broadcastMorningEventWithRecruitment(
                 'S2C_MURDER_RESOLVED',
@@ -1348,6 +1347,9 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
                 playerConnections
               );
             }
+            // Sheriff investigations resolve overnight regardless of
+            // whether the kill landed, was shielded, or was Medic-blocked.
+            broadcastSheriffResults(currentSessionId, games, playerConnections, setGame);
           } catch (err) {
             console.error('Error auto-resolving murder:', err);
           }

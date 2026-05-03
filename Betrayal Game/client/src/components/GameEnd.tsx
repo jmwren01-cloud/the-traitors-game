@@ -92,6 +92,87 @@ function RoundCard({ record, index, whispers, players }: { record: RoundRecord; 
     <div className={styles.roundCard} style={{ animationDelay: `${0.1 + index * 0.12}s` }}>
       <div className={styles.roundLabel}>Round {record.round}</div>
 
+      {/* Chronological order:
+          1. Booth confessions (start of Roundtable)
+          2. Seer reveal (during Roundtable)
+          3. Suspicion Tokens (end of Roundtable)
+          4. Roundtable vote + banishment
+          5. Medic protect (night begins)
+          6. Murder / shield (or medic silent save)
+          7. Recruitment (resolves alongside the murder)
+          8. Sheriff reports (overnight)
+          9. Whispers (interleaved across the round) */}
+
+      {/* 1. Confessions */}
+      {record.confessions && record.confessions.length > 0 && (
+        <div style={{
+          marginTop: 12, padding: 10,
+          border: '1px solid rgba(212,165,80,0.4)', borderRadius: 8,
+          background: 'rgba(80,30,10,0.18)',
+        }}>
+          <div style={{ fontSize: 12, opacity: 0.85, marginBottom: 6, letterSpacing: 0.4, color: '#f7d896' }}>
+            🕯️ CONFESSIONS
+          </div>
+          {record.confessions.map((c) => {
+            if (c.isAnonymousTip) {
+              return (
+                <div key={c.id} style={{ fontSize: 13, padding: '4px 0', color: '#ffb380' }}>
+                  <strong>Anonymous Tip</strong>
+                  <span style={{ opacity: 0.85, marginLeft: 6, fontStyle: 'italic' }}>— "{c.text}"</span>
+                </div>
+              );
+            }
+            const author = playerById(c.playerId);
+            return (
+              <div key={c.id} style={{ fontSize: 13, padding: '4px 0' }}>
+                <PlayerChip player={author} name={playerNameById(c.playerId)} />
+                {c.isDefault && (
+                  <span style={{ marginLeft: 6, fontSize: 11, opacity: 0.7, fontStyle: 'italic' }}>
+                    (didn't confess)
+                  </span>
+                )}
+                <span style={{ opacity: 0.85, marginLeft: 6, fontStyle: 'italic' }}>— "{c.text}"</span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* 2. Seer reveal */}
+      {record.seerReveal && (
+        <div className={styles.outcomeRow}>
+          <div className={styles.outcomeNeutral}>
+            <span className={styles.outcomeIcon}>🔮</span>
+            <span className={styles.outcomeText}>
+              <PlayerChip player={playerById(record.seerReveal.seerId)} name={record.seerReveal.seerName} />
+              {"'s gift revealed "}
+              <PlayerChip player={playerById(record.seerReveal.targetId)} name={record.seerReveal.targetName} />
+              {' as '}<RolePill role={record.seerReveal.actualRole} />
+            </span>
+          </div>
+        </div>
+      )}
+
+      {/* 3. Suspicion Token graph (end of Roundtable, just before voting). */}
+      {record.suspicionTokens && record.suspicionTokens.length > 0 && (
+        <div style={{
+          marginTop: 12, padding: 10,
+          border: '1px solid rgba(180, 120, 255, 0.4)', borderRadius: 8,
+          background: 'rgba(36, 20, 64, 0.35)',
+        }}>
+          <div style={{ fontSize: 12, opacity: 0.85, marginBottom: 6, letterSpacing: 0.4, color: '#d9b6ff' }}>
+            🎯 SUSPICION TOKENS
+          </div>
+          <RevealGraph
+            players={players.filter((p) => record.suspicionTokens!.some(
+              (t) => t.placerId === p.id || t.targetId === p.id,
+            ))}
+            tokens={record.suspicionTokens}
+          />
+        </div>
+      )}
+
+      {/* 4. Roundtable vote + banishment */}
       {hasVotes ? (
         <div className={styles.voteSection}>
           <div className={styles.voteSectionTitle}>Roundtable vote</div>
@@ -136,8 +217,26 @@ function RoundCard({ record, index, whispers, players }: { record: RoundRecord; 
         )}
       </div>
 
+      {/* 5. Medic protect (night begins). For a successful save we render
+          this row instead of a "no murder this night" line. */}
+      {record.medicProtection && (
+        <div className={styles.outcomeRow}>
+          <div className={styles.outcomeNeutral}>
+            <span className={styles.outcomeIcon}>{record.medicProtection.saved ? '💉' : '🩺'}</span>
+            <span className={styles.outcomeText}>
+              <PlayerChip player={playerById(record.medicProtection.medicId)} name={record.medicProtection.medicName} />
+              {record.medicProtection.saved ? ' saved ' : ' protected '}
+              <PlayerChip player={playerById(record.medicProtection.targetId)} name={record.medicProtection.targetName} />
+              {record.medicProtection.saved && ' from the Traitors'}
+            </span>
+          </div>
+        </div>
+      )}
+
+      {/* 6. Murder / shield outcome. Suppress the generic "no murder"
+          line when a Medic save already covered it. */}
       <div className={styles.outcomeRow}>
-        {record.murderBlocked ? (
+        {record.murderBlocked && record.shieldedName ? (
           <div className={styles.shieldOutcome}>
             <span className={styles.outcomeIcon}>🛡️</span>
             <span className={styles.outcomeText}>
@@ -145,6 +244,8 @@ function RoundCard({ record, index, whispers, players }: { record: RoundRecord; 
               {record.shieldedRole && (<> <RolePill role={record.shieldedRole} /></>)} used their shield
             </span>
           </div>
+        ) : record.murderBlocked && record.medicProtection?.saved ? (
+          null
         ) : record.murderedName ? (
           <div className={styles.murderOutcome}>
             <span className={styles.outcomeIcon}>🔪</span>
@@ -161,36 +262,19 @@ function RoundCard({ record, index, whispers, players }: { record: RoundRecord; 
         )}
       </div>
 
-      {/* Wave 4 special-role activity: Seer first (used during the day),
-          then Medic protect/save, then Sheriff reports (resolved overnight). */}
-      {record.seerReveal && (
+      {/* 7. Recruitment */}
+      {record.recruitedName && (
         <div className={styles.outcomeRow}>
-          <div className={styles.outcomeNeutral}>
-            <span className={styles.outcomeIcon}>🔮</span>
+          <div className={styles.recruitedOutcome}>
+            <span className={styles.outcomeIcon}>🤝</span>
             <span className={styles.outcomeText}>
-              <PlayerChip player={playerById(record.seerReveal.seerId)} name={record.seerReveal.seerName} />
-              {"'s gift revealed "}
-              <PlayerChip player={playerById(record.seerReveal.targetId)} name={record.seerReveal.targetName} />
-              {' as '}<RolePill role={record.seerReveal.actualRole} />
+              <PlayerChip player={playerByName(record.recruitedName)} name={record.recruitedName} /> was recruited and joined the Traitors
             </span>
           </div>
         </div>
       )}
 
-      {record.medicProtection && (
-        <div className={styles.outcomeRow}>
-          <div className={styles.outcomeNeutral}>
-            <span className={styles.outcomeIcon}>{record.medicProtection.saved ? '💉' : '🩺'}</span>
-            <span className={styles.outcomeText}>
-              <PlayerChip player={playerById(record.medicProtection.medicId)} name={record.medicProtection.medicName} />
-              {record.medicProtection.saved ? ' saved ' : ' protected '}
-              <PlayerChip player={playerById(record.medicProtection.targetId)} name={record.medicProtection.targetName} />
-              {record.medicProtection.saved && ' from the Traitors'}
-            </span>
-          </div>
-        </div>
-      )}
-
+      {/* 8. Sheriff investigations (overnight) */}
       {record.sheriffInvestigations && record.sheriffInvestigations.length > 0 && (
         <div className={styles.outcomeRow}>
           <div className={styles.outcomeNeutral} style={{ flexDirection: 'column', alignItems: 'flex-start', gap: 4 }}>
@@ -209,72 +293,7 @@ function RoundCard({ record, index, whispers, players }: { record: RoundRecord; 
         </div>
       )}
 
-      {record.recruitedName && (
-        <div className={styles.outcomeRow}>
-          <div className={styles.recruitedOutcome}>
-            <span className={styles.outcomeIcon}>🤝</span>
-            <span className={styles.outcomeText}>
-              <PlayerChip player={playerByName(record.recruitedName)} name={record.recruitedName} /> was recruited and joined the Traitors
-            </span>
-          </div>
-        </div>
-      )}
-
-      {/* confessions with true author attribution. */}
-      {record.confessions && record.confessions.length > 0 && (
-        <div style={{
-          marginTop: 12, padding: 10,
-          border: '1px solid rgba(212,165,80,0.4)', borderRadius: 8,
-          background: 'rgba(80,30,10,0.18)',
-        }}>
-          <div style={{ fontSize: 12, opacity: 0.85, marginBottom: 6, letterSpacing: 0.4, color: '#f7d896' }}>
-            🕯️ CONFESSIONS
-          </div>
-          {record.confessions.map((c) => {
-            if (c.isAnonymousTip) {
-              return (
-                <div key={c.id} style={{ fontSize: 13, padding: '4px 0', color: '#ffb380' }}>
-                  <strong>Anonymous Tip</strong>
-                  <span style={{ opacity: 0.85, marginLeft: 6, fontStyle: 'italic' }}>— "{c.text}"</span>
-                </div>
-              );
-            }
-            const author = playerById(c.playerId);
-            return (
-              <div key={c.id} style={{ fontSize: 13, padding: '4px 0' }}>
-                <PlayerChip player={author} name={playerNameById(c.playerId)} />
-                {c.isDefault && (
-                  <span style={{ marginLeft: 6, fontSize: 11, opacity: 0.7, fontStyle: 'italic' }}>
-                    (didn't confess)
-                  </span>
-                )}
-                <span style={{ opacity: 0.85, marginLeft: 6, fontStyle: 'italic' }}>— "{c.text}"</span>
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      {/* Suspicion Token graph for this round. */}
-      {record.suspicionTokens && record.suspicionTokens.length > 0 && (
-        <div style={{
-          marginTop: 12, padding: 10,
-          border: '1px solid rgba(180, 120, 255, 0.4)', borderRadius: 8,
-          background: 'rgba(36, 20, 64, 0.35)',
-        }}>
-          <div style={{ fontSize: 12, opacity: 0.85, marginBottom: 6, letterSpacing: 0.4, color: '#d9b6ff' }}>
-            🎯 SUSPICION TOKENS
-          </div>
-          <RevealGraph
-            players={players.filter((p) => record.suspicionTokens!.some(
-              (t) => t.placerId === p.id || t.targetId === p.id,
-            ))}
-            tokens={record.suspicionTokens}
-          />
-        </div>
-      )}
-
-      {/* full whisper replay for this round. */}
+      {/* 9. Whispers — interleaved across the round, kept as a feed at the bottom. */}
       {roundWhispers.length > 0 && (
         <div style={{ marginTop: 12, padding: 10, border: '1px solid rgba(255,255,255,0.15)', borderRadius: 8, background: 'rgba(108,74,182,0.08)' }}>
           <div style={{ fontSize: 12, opacity: 0.75, marginBottom: 6, letterSpacing: 0.4 }}>WHISPERS</div>
