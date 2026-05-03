@@ -1,0 +1,34 @@
+Good flag from the agent. Here's how I'd answer each of its questions:
+
+**1. Prerequisites — proceed without Wave 2/3?**
+Yes, proceed. The Wave 2/3 references in the specs are integration points, not hard blockers. Tell the agent to treat any HUD/profile references as "integrate into current UI wherever makes sense." The paranoia mechanics don't depend on player stats existing.
+
+**2. How many tasks?**
+One task per prompt. Five separate tasks, run sequentially. Don't batch them — each one is substantial enough that a single combined task will lose coherence halfway through.
+
+**3. Start with all 5 or just Prompt 1?**
+Plan all 5 now but only action Prompt 1 immediately. Let the agent create the five tasks, then start executing on Special Roles. The others queue behind it.
+
+**4. The 14 existing drafts?**
+This needs a judgment call from you, not me — I can't see what those 14 drafts are. But the principle I'd apply:
+
+- Anything that's a bug or TypeScript error → keep, fix before Wave 4
+- Anything that's a Wave 2/3 feature that didn't ship → cancel, the Wave 4 prompts will supersede or absorb them
+- The colour/icon work and host reassign → keep if nearly done, cancel if not started
+- Recruitment tests → keep, tests are always worth having
+
+So tell the agent: **fix open bugs and TS errors first, cancel any unstarted Wave 2/3 feature drafts, then queue the five Wave 4 tasks in order.**
+
+Send it this:
+
+---
+
+*"Thanks for the flags. Here's how to proceed:*
+
+*Prerequisites: Don't wait for Wave 2/3. Treat any HUD or player profile references in the Wave 4 spec as 'integrate into current UI wherever fits.' The core mechanics don't depend on the stats layer.*
+
+*Existing drafts: Close any unstarted Wave 2/3 feature tasks. Keep and fix any open bugs or TypeScript errors — resolve those before starting Wave 4. Keep the recruitment tests if they exist.*
+
+*Task structure: Create one task per Wave 4 prompt (five tasks total). Start executing Prompt 1 (Special Roles) immediately. Prompts 2–5 queue behind it in order.*
+
+*Go."*
