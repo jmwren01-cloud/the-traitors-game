@@ -364,7 +364,7 @@ export function gameStateReducer(state: GameState | null, msg: Msg): GameState |
         currentTally: undefined,
         totalVotes: undefined,
         currentReveal: undefined,
-        // Wave 4 / 5 — strip the live token sub-phase scaffolding once
+        // strip the live token sub-phase scaffolding once
         // voting begins. The current round's tokens stay archived in
         // `suspicionTokensByRound`.
         tokenPhase: undefined,

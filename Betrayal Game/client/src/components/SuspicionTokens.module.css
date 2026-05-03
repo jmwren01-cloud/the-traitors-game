@@ -143,6 +143,50 @@
   color: #ffb84d;
 }
 
+.history {
+  margin-top: 14px;
+  border-top: 1px solid #2c1e44;
+  padding-top: 10px;
+}
+
+.historyToggle {
+  background: transparent;
+  border: none;
+  color: #c4b3e0;
+  font-size: 13px;
+  cursor: pointer;
+  padding: 6px 4px;
+}
+
+.historyList {
+  margin-top: 8px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.historyRound {
+  margin-bottom: 10px;
+}
+
+.historyRoundLabel {
+  font-size: 12px;
+  color: #d9b6ff;
+  letter-spacing: 0.04em;
+  margin-bottom: 4px;
+}
+
+.historyEdges {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  font-size: 13px;
+  color: #f0e6ff;
+}
+
+.historyEdges li {
+  padding: 2px 0;
+}
+
 @media (max-width: 480px) {
   .card { padding: 16px; }
   .title { font-size: 18px; }

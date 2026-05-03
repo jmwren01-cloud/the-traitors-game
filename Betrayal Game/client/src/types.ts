@@ -159,14 +159,14 @@ export interface RoundRecord {
    */
   confessions?: ConfessionEntry[];
   /**
-   * Wave 4 / 5 — public per-round Suspicion Token graph (auto-backfills
+   * public per-round Suspicion Token graph (auto-backfills
    * flagged with `isAuto: true`). Rendered in the post-game replay's
    * "How It Happened" timeline.
    */
   suspicionTokens?: SuspicionToken[];
 }
 
-// ============= Suspicion Tokens (Wave 4 / 5) =============
+// ============= Suspicion Tokens  =============
 
 export const TOKEN_PLACEMENT_WINDOW_MS = 45_000;
 export const TOKEN_REVEAL_DURATION_MS = 5_000;
@@ -330,7 +330,7 @@ export interface GameState {
   /** Round number whose confessions are currently in `confessionRevealed`. */
   confessionRound?: number;
   /**
-   * Wave 4 / 5 — Suspicion Token sub-phase state. `tokenPhase` is set
+   * Suspicion Token sub-phase state. `tokenPhase` is set
    * only while the sub-phase is open. During PLACEMENT we know counts +
    * our own pick; on REVEAL we have the full directed graph in
    * `suspicionTokensCurrent`. `suspicionTokensByRound` archives all past
@@ -424,7 +424,7 @@ export type C2SEvent =
     } }
   /** Confession Booth submission (10–120 chars). */
   | { type: 'C2S_SUBMIT_CONFESSION'; payload: { content: string } }
-  /** Wave 4 / 5 — place this player's single Suspicion Token. */
+  /** place this player's single Suspicion Token. */
   | { type: 'C2S_PLACE_SUSPICION_TOKEN'; payload: { targetId: string } };
 
 export const WHISPER_MAX_LENGTH = 200;

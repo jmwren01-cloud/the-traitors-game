@@ -204,7 +204,7 @@ export interface RoundRecord {
    */
   confessions?: ConfessionEntry[];
   /**
-   * Wave 4 / 5 — Suspicion Tokens. Public per-round directed graph of
+   * Suspicion Tokens. Public per-round directed graph of
    * who placed a token on whom before voting opened. `isAuto: true` flags
    * server-assigned placements for players who didn't pick in time.
    */
@@ -212,7 +212,7 @@ export interface RoundRecord {
 }
 
 /**
- * Wave 4 / 5 — Suspicion Tokens. A single public placement during the
+ * Suspicion Tokens. A single public placement during the
  * pre-voting Suspicion Token sub-phase. `placerId`/`targetId` reference
  * `Player.id`. `round` snapshots the round in which it was cast.
  * `isAuto` is true when the server backfilled a random valid target
@@ -225,7 +225,7 @@ export interface SuspicionToken {
   isAuto?: boolean;
 }
 
-/** Sub-phase of a ROUNDTABLE for the Wave 4 / 5 Suspicion Token system. */
+/** Sub-phase of a ROUNDTABLE for the  Suspicion Token system. */
 export type SuspicionTokenPhase = 'PLACEMENT' | 'REVEAL';
 
 /** Length of the public placement window before auto-resolve. */
@@ -366,7 +366,7 @@ export interface GameState {
   /** Unix-ms deadline for the 60s booth window. Cleared on resolve. */
   confessionWindowEndsAt?: number;
   /**
-   * Wave 4 / 5 — Suspicion Token sub-phase nested inside a ROUNDTABLE
+   * Suspicion Token sub-phase nested inside a ROUNDTABLE
    * after discussion ends but before VOTING starts. `'PLACEMENT'` while
    * the 45s window is open; `'REVEAL'` while the directed graph is shown
    * before the voting timer auto-starts. Undefined outside the sub-phase.
@@ -484,7 +484,7 @@ export type C2SEvent =
    */
   | { type: 'C2S_SUBMIT_CONFESSION'; payload: { content: string } }
   /**
-   * Wave 4 / 5 — Place this player's single public Suspicion Token on
+   * Place this player's single public Suspicion Token on
    * `targetId` during the 45s pre-voting placement window. Server
    * validates phase, liveness, single-submission, valid alive non-self
    * target. Replays after timeout/all-submitted are rejected.
@@ -562,7 +562,7 @@ export type S2CEvent =
       confessionTotalCount?: number;
       confessionMySubmitted?: boolean;
       /**
-       * Wave 4 / 5 — Suspicion Token sub-phase rehydration. `tokenPhase`
+       * Suspicion Token sub-phase rehydration. `tokenPhase`
        * is set only while the sub-phase is active. During PLACEMENT the
        * server only sends `tokenSubmittedCount`/`tokenTotalCount` and the
        * caller's own `myTokenTargetId` (if any). On REVEAL/post-reveal the
@@ -800,7 +800,7 @@ export type S2CEvent =
       round: number;
     } }
   /**
-   * Wave 4 / 5 — Suspicion Token sub-phase opens. Sent at the moment the
+   * Suspicion Token sub-phase opens. Sent at the moment the
    * host advances out of the discussion via C2S_START_VOTING. `aliveCount`
    * is the denominator for the public progress count.
    */

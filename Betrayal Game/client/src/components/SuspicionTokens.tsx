@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import type { ReactElement } from 'react';
 import type { Player, SuspicionToken, SuspicionTokenPhase, SuspicionTokenErrorCode, C2SEvent } from '../types';
 import { TOKEN_PLACEMENT_WINDOW_MS } from '../types';
 import styles from './SuspicionTokens.module.css';
@@ -14,31 +15,25 @@ interface Props {
   totalCount?: number;
   myTokenTargetId?: string;
   tokens?: SuspicionToken[];
+  pastRounds?: Record<number, SuspicionToken[]>;
   tokenError?: { code: SuspicionTokenErrorCode; message: string };
   onSend: (event: C2SEvent) => void;
   onClearError: () => void;
 }
 
-/**
- * Wave 4 / 5 — Suspicion Tokens overlay. Mounted between Roundtable
- * discussion and Voting. Two states:
- *   - PLACEMENT: 45s window. Alive players pick one alive non-self
- *     target. We send `C2S_PLACE_SUSPICION_TOKEN` and lock our pick on
- *     the private echo. Public progress is shown without identities.
- *   - REVEAL: 5s hold. Server-resolved directed graph (placer -> target)
- *     is rendered as an SVG with auto-backfill flagged.
- *
- * Spectators see the same overlay (read-only) so they aren't dropped
- * into a confusing blank screen.
- */
-export function SuspicionTokens(props: Props): JSX.Element {
+// Suspicion Token overlay shown between Roundtable discussion and
+// Voting. PLACEMENT (45s): alive players pick — and may re-pick — one
+// alive non-self target. REVEAL (5s): server-resolved directed graph.
+// Spectators see a read-only view.
+export function SuspicionTokens(props: Props): ReactElement {
   const {
     phase, players, myPlayerId, isAlive,
     windowEndsAt, revealEndsAt, submittedCount, totalCount,
-    myTokenTargetId, tokens, tokenError, onSend, onClearError,
+    myTokenTargetId, tokens, pastRounds, tokenError, onSend, onClearError,
   } = props;
 
   const [now, setNow] = useState(Date.now);
+  const [historyOpen, setHistoryOpen] = useState(false);
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 250);
     return () => clearInterval(t);
@@ -53,11 +48,20 @@ export function SuspicionTokens(props: Props): JSX.Element {
   const fillPct = endsAt ? Math.max(0, Math.min(100, (remaining / totalDuration) * 100)) : 0;
 
   const handlePick = (targetId: string): void => {
-    if (!placement || !isAlive || myTokenTargetId !== undefined) return;
+    if (!placement || !isAlive) return;
     if (targetId === myPlayerId) return;
+    if (targetId === myTokenTargetId) return;
     onClearError();
     onSend({ type: 'C2S_PLACE_SUSPICION_TOKEN', payload: { targetId } });
   };
+
+  const pastRoundNumbers = useMemo(() => {
+    if (!pastRounds) return [];
+    return Object.keys(pastRounds)
+      .map((k) => Number(k))
+      .filter((n) => !Number.isNaN(n))
+      .sort((a, b) => b - a);
+  }, [pastRounds]);
 
   return (
     <div className={styles.overlay} role="dialog" aria-label="Suspicion Tokens">
@@ -67,7 +71,7 @@ export function SuspicionTokens(props: Props): JSX.Element {
         </h2>
         <p className={styles.subtitle}>
           {placement
-            ? 'One token. One suspect. Public to the table.'
+            ? 'One token. One suspect. You may change your pick until time runs out.'
             : 'The chamber sees who you suspect.'}
         </p>
 
@@ -87,15 +91,13 @@ export function SuspicionTokens(props: Props): JSX.Element {
               {alive.map((p) => {
                 const isSelf = p.id === myPlayerId;
                 const selected = myTokenTargetId === p.id;
-                const disabled =
-                  !isAlive || isSelf || (myTokenTargetId !== undefined && !selected);
                 return (
                   <button
                     key={p.id}
                     type="button"
                     className={`${styles.target} ${selected ? styles.targetSelected : ''}`}
                     onClick={() => handlePick(p.id)}
-                    disabled={disabled}
+                    disabled={!isAlive || isSelf}
                     aria-pressed={selected}
                   >
                     {p.name}{isSelf ? ' (you)' : ''}
@@ -108,9 +110,10 @@ export function SuspicionTokens(props: Props): JSX.Element {
               <div className={styles.error} role="alert">{tokenError.message}</div>
             )}
 
-            {myTokenTargetId !== undefined && (
+            {myTokenTargetId !== undefined && isAlive && (
               <div className={styles.locked}>
-                Token cast. Awaiting the rest of the table…
+                Token cast on {alive.find((p) => p.id === myTokenTargetId)?.name ?? '...'}.
+                Tap another suspect to change your pick.
               </div>
             )}
             {!isAlive && (
@@ -124,17 +127,51 @@ export function SuspicionTokens(props: Props): JSX.Element {
         {phase === 'REVEAL' && (
           <RevealGraph players={alive} tokens={tokens ?? []} />
         )}
+
+        {pastRoundNumbers.length > 0 && (
+          <div className={styles.history}>
+            <button
+              type="button"
+              className={styles.historyToggle}
+              onClick={() => setHistoryOpen((v) => !v)}
+              aria-expanded={historyOpen}
+            >
+              {historyOpen ? '▾' : '▸'} Past Suspicions ({pastRoundNumbers.length})
+            </button>
+            {historyOpen && (
+              <div className={styles.historyList}>
+                {pastRoundNumbers.map((round) => {
+                  const roundTokens = pastRounds?.[round] ?? [];
+                  return (
+                    <div key={round} className={styles.historyRound}>
+                      <div className={styles.historyRoundLabel}>Round {round}</div>
+                      <ul className={styles.historyEdges}>
+                        {roundTokens.map((t, i) => {
+                          const placerName = players.find((p) => p.id === t.placerId)?.name ?? '?';
+                          const targetName = players.find((p) => p.id === t.targetId)?.name ?? '?';
+                          return (
+                            <li key={`${t.placerId}-${t.targetId}-${i}`}>
+                              {placerName} → {targetName}
+                              {t.isAuto && <span className={styles.autoNote}> (auto)</span>}
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
 }
 
-/**
- * Static SVG directed graph: alive players placed evenly around a
- * circle; arrows go from placer -> target. Auto-backfill arrows are
- * dashed + amber so the table can tell them apart from real picks.
- */
-function RevealGraph(props: { players: Player[]; tokens: SuspicionToken[] }): JSX.Element {
+// Static SVG directed graph: alive players on a circle, arrows from
+// placer -> target. Auto-backfill arrows are dashed + amber.
+function RevealGraph(props: { players: Player[]; tokens: SuspicionToken[] }): ReactElement {
   const { players, tokens } = props;
   const size = 320;
   const cx = size / 2;

@@ -91,10 +91,13 @@ describe('Suspicion Tokens — placeSuspicionToken validation', () => {
     expect(() => placeSuspicionToken(g, 'p1', 'pX')).toThrow(/alive player/);
   });
 
-  it('rejects double-placement', () => {
-    const g = beginSuspicionTokenPhase(mkGame());
-    const after = placeSuspicionToken(g, 'p1', 'p2');
-    expect(() => placeSuspicionToken(after, 'p1', 'p3')).toThrow(/already placed/);
+  it('upserts: re-placing replaces the token without growing the count', () => {
+    let g = beginSuspicionTokenPhase(mkGame());
+    g = placeSuspicionToken(g, 'p1', 'p2');
+    g = placeSuspicionToken(g, 'p1', 'p3');
+    expect(g.suspicionTokensCurrent).toHaveLength(1);
+    expect(g.suspicionTokensCurrent![0]?.targetId).toBe('p3');
+    expect(g.tokensSubmittedIds).toEqual(['p1']);
   });
 
   it('rejects placement after window expires', () => {

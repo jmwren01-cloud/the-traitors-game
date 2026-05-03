@@ -601,7 +601,7 @@ export function startRoundtable(game: GameState): GameState {
     ...omit(
       game,
       'confessionRevealed',
-      // Wave 4 / 5 — clear last round's Suspicion Token sub-phase. The
+      // clear last round's Suspicion Token sub-phase. The
       // archive `suspicionTokensByRound` is intentionally preserved.
       'tokenPhase',
       'tokenWindowEndsAt',
@@ -621,7 +621,7 @@ export function startRoundtable(game: GameState): GameState {
   };
 }
 
-// ============= SUSPICION TOKEN SUB-PHASE (Wave 4 / 5) =============
+// ============= SUSPICION TOKEN SUB-PHASE  =============
 
 export class SuspicionTokenError extends Error {
   constructor(
@@ -683,19 +683,23 @@ export function placeSuspicionToken(
   if (!target || !target.isAlive) {
     throw new SuspicionTokenError('INVALID_TARGET', 'Target must be an alive player');
   }
+  // Upsert: a player may change their suspect at any point while the
+  // window is open. Replace any existing entry for this placer; the
+  // submitted-ids list is treated as a set so progress counts stay
+  // stable across re-picks.
   const submitted = game.tokensSubmittedIds ?? [];
-  if (submitted.includes(placerId)) {
-    throw new SuspicionTokenError('ALREADY_PLACED', 'You have already placed your Suspicion Token this round');
-  }
   const token: SuspicionToken = {
     placerId,
     targetId,
     round: game.currentRound,
   };
+  const existing = game.suspicionTokensCurrent ?? [];
+  const others = existing.filter((t) => t.placerId !== placerId);
+  const nextSubmitted = submitted.includes(placerId) ? submitted : [...submitted, placerId];
   return {
     ...game,
-    suspicionTokensCurrent: [...(game.suspicionTokensCurrent ?? []), token],
-    tokensSubmittedIds: [...submitted, placerId],
+    suspicionTokensCurrent: [...others, token],
+    tokensSubmittedIds: nextSubmitted,
   };
 }
 
@@ -1097,7 +1101,7 @@ export function startVoting(game: GameState): GameState {
     throw new Error('Cannot start voting from current phase');
   }
 
-  // Wave 4 / 5 — strip the Suspicion Token sub-phase scaffolding when
+  // strip the Suspicion Token sub-phase scaffolding when
   // we transition into VOTING. The current round's tokens remain
   // archived on `suspicionTokensByRound` and on the eventual RoundRecord.
   return {
@@ -1509,7 +1513,7 @@ function buildRoundRecord(game: GameState): RoundRecord {
     ...(game.confessionEntries && game.confessionEntries.length > 0
       ? { confessions: game.confessionEntries }
       : {}),
-    // Wave 4 / 5 — public Suspicion Token graph for the post-game replay.
+    // public Suspicion Token graph for the post-game replay.
     ...(game.suspicionTokensCurrent && game.suspicionTokensCurrent.length > 0
       ? { suspicionTokens: game.suspicionTokensCurrent }
       : {}),

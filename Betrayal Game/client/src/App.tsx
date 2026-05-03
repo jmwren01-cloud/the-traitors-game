@@ -90,11 +90,8 @@ function App() {
     phase === 'ROUNDTABLE' &&
     (confessionPhase === 'BOOTH' ||
       (confessionPhase === 'DISCUSSION' && !!gameState?.confessionRevealed && !boothDismissed));
-  // Wave 4 / 5 — Suspicion Tokens overlay. Active for both PLACEMENT
-  // (45s) and the brief REVEAL hold (5s); the server flips us into
-  // VOTING right after, which strips `tokenPhase` and unmounts the
-  // overlay automatically. Booth takes priority if (somehow) both are
-  // open simultaneously — booth is mandatory and time-limited first.
+  // Suspicion Tokens overlay — PLACEMENT (45s) + REVEAL (5s). Booth
+  // takes priority if both are ever active.
   const tokenPhaseLocal = gameState?.tokenPhase;
   const tokenOverlayActive =
     phase === 'ROUNDTABLE' && tokenPhaseLocal !== undefined && !boothActive;
@@ -250,6 +247,7 @@ function App() {
             {...(gameState?.tokenSubmittedCount !== undefined ? { submittedCount: gameState.tokenSubmittedCount } : {})}
             {...(gameState?.tokenTotalCount !== undefined ? { totalCount: gameState.tokenTotalCount } : {})}
             {...(gameState?.suspicionTokensCurrent !== undefined ? { tokens: gameState.suspicionTokensCurrent } : {})}
+            {...(gameState?.suspicionTokensByRound !== undefined ? { pastRounds: gameState.suspicionTokensByRound } : {})}
             onSend={send}
             onClearError={() => dispatchLocal({ type: 'CLIENT_CLEAR_TOKEN_ERROR' })}
           />
@@ -366,6 +364,7 @@ function App() {
             {...(gameState?.tokenTotalCount !== undefined ? { totalCount: gameState.tokenTotalCount } : {})}
             {...(gameState?.myTokenTargetId !== undefined ? { myTokenTargetId: gameState.myTokenTargetId } : {})}
             {...(gameState?.suspicionTokensCurrent !== undefined ? { tokens: gameState.suspicionTokensCurrent } : {})}
+            {...(gameState?.suspicionTokensByRound !== undefined ? { pastRounds: gameState.suspicionTokensByRound } : {})}
             {...(gameState?.tokenError !== undefined ? { tokenError: gameState.tokenError } : {})}
             onSend={send}
             onClearError={() => dispatchLocal({ type: 'CLIENT_CLEAR_TOKEN_ERROR' })}

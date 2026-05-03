@@ -206,7 +206,7 @@ function RoundCard({ record, index, whispers, players }: { record: RoundRecord; 
         </div>
       )}
 
-      {/* Wave 4 / 5 — Suspicion Token graph for this round. */}
+      {/* Suspicion Token graph for this round. */}
       {record.suspicionTokens && record.suspicionTokens.length > 0 && (
         <div style={{
           marginTop: 12, padding: 10,

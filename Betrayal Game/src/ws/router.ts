@@ -18,7 +18,7 @@ const activeChallengeTimers = new Map<string, NodeJS.Timeout>();
 const evidenceWindowTimers = new Map<string, NodeJS.Timeout>();
 // server-side 60s Confession Booth timer.
 const confessionTimers = new Map<string, NodeJS.Timeout>();
-// Wave 4 / 5 — server-side 45s Suspicion Token placement timer + the 5s
+// server-side 45s Suspicion Token placement timer + the 5s
 // post-resolve reveal timer that auto-advances into VOTING.
 const tokenTimers = new Map<string, NodeJS.Timeout>();
 
@@ -227,7 +227,7 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
     startRoundtableDiscussionTimer(sessionId, resolved);
   }
 
-  // ============= SUSPICION TOKEN HELPERS (Wave 4 / 5) =============
+  // ============= SUSPICION TOKEN HELPERS  =============
 
   /**
    * Final transition out of the Suspicion Token sub-phase: call
@@ -651,7 +651,7 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
           reconnectPayload.confessionMySubmitted =
             (updatedGame.confessionSubmittedIds ?? []).includes(currentPlayerId);
 
-          // Wave 4 / 5 — Suspicion Token sub-phase rehydration. During
+          // Suspicion Token sub-phase rehydration. During
           // PLACEMENT we never broadcast individual placements (privacy),
           // so we only ship counts + the caller's own pick. On REVEAL we
           // ship the full current-round graph. The byRound archive is
@@ -919,7 +919,7 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
       }
 
       if (event.type === 'C2S_START_VOTING') {
-        // Wave 4 / 5 — host has ended discussion. Open the public 45s
+        // host has ended discussion. Open the public 45s
         // Suspicion Token sub-phase BEFORE voting starts. The reveal
         // hold + voting timer are scheduled by `fireTokenResolution` /
         // `proceedToVotingFromTokens` (not here).
