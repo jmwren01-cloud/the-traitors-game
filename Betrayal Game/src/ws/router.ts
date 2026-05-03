@@ -1581,10 +1581,6 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
         setGame(updatedGame);
 
         const recruiter = updatedGame.players.find((p) => p.id === currentPlayerId);
-        // Look up the target by id from the validated payload — safe to
-        // share with fellow traitors so they know which Faithful is
-        // about to flip at dawn. The recruited player themselves still
-        // only learns at the morning reveal via S2C_YOU_WERE_RECRUITED.
         const target = updatedGame.players.find((p) => p.id === event.payload.targetId);
 
         updatedGame.players.forEach((p) => {

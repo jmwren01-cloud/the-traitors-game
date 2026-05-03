@@ -439,6 +439,8 @@ export function gameStateReducer(state: GameState | null, msg: Msg): GameState |
         justRecruited: undefined,
         recruitedPlayer: undefined,
         nightRecruitmentSubmittedBy: undefined,
+        nightRecruitmentTargetId: undefined,
+        nightRecruitmentTargetName: undefined,
         // Wave 4 — the previous night's Medic confirmation and any silent-block
         // banner are stale once a new night begins. The Sheriff investigation
         // history (sheriffReports) is preserved across the whole game.

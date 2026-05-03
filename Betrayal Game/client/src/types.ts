@@ -230,8 +230,6 @@ export interface GameState {
   justRecruited?: boolean;
   recruitedPlayer?: { id: string; name: string };
   nightRecruitmentSubmittedBy?: string;
-  /** Task #18 — target of tonight's recruitment, surfaced to all alive
-   *  traitors (not the recruited player) so they can coordinate. */
   nightRecruitmentTargetId?: string;
   nightRecruitmentTargetName?: string;
   shieldBlockedBanishment?: boolean;
