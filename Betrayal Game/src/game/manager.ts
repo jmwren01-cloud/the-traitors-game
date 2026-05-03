@@ -492,9 +492,6 @@ export function runSheriffInvestigations(
     pendingForce.length === 0
       ? omit(game, 'forceSuspiciousIds')
       : { ...game, forceSuspiciousIds: pendingForce };
-  // Archive into the current round so the post-game replay can show every
-  // Sheriff investigation. Stripped from mid-game broadcasts by
-  // `scrubHistoryForLive`.
   const updated: GameState =
     out.length === 0
       ? base
@@ -550,8 +547,6 @@ export function submitMedicProtect(
     ...game,
     players: updatedPlayers,
     medicProtectionTargetId: targetId,
-    // Archive for the post-game replay. `saved` is flipped to true by
-    // `resolveMurder` if the Traitors actually targeted this player.
     currentMedicProtection: {
       medicId,
       medicName: medic.name,
@@ -614,8 +609,6 @@ export function activateSeer(
     targetName: target.name,
     actualRole: target.role!,
   };
-  // Archive into the current round so the post-game replay can show the
-  // Seer's gift. Stripped from mid-game broadcasts by `scrubHistoryForLive`.
   const updated: GameState = {
     ...game,
     players: updatedPlayers,
@@ -1721,7 +1714,6 @@ function buildRoundRecord(game: GameState): RoundRecord {
     ...(game.suspicionTokensCurrent && game.suspicionTokensCurrent.length > 0
       ? { suspicionTokens: game.suspicionTokensCurrent }
       : {}),
-    // Special-role activity for the post-game replay only.
     ...(game.currentSheriffInvestigations && game.currentSheriffInvestigations.length > 0
       ? { sheriffInvestigations: game.currentSheriffInvestigations }
       : {}),
@@ -2279,8 +2271,6 @@ export function resolveMurder(game: GameState): MurderResult {
     game.medicProtectionTargetId !== undefined &&
     game.medicProtectionTargetId === targetId
   ) {
-    // Mark the round's archived MedicProtectionRecord as a save so the
-    // post-game timeline can call it out as "Medic saved <player>".
     const savedMedic: MedicProtectionRecord | undefined = game.currentMedicProtection
       ? { ...game.currentMedicProtection, saved: true }
       : undefined;

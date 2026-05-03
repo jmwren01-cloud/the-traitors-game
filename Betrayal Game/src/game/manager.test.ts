@@ -254,6 +254,18 @@ describe('activateSeer()', () => {
     const game = makeGame({ players: [seer, target], phase: 'NIGHT' });
     expect(() => activateSeer(game, seer.id)).toThrow();
   });
+
+  it('archives the literal target role on currentSeerReveal even for special roles', () => {
+    const seer = makePlayer({ role: 'SEER' });
+    const sheriff = makePlayer({ role: 'SHERIFF' });
+    const game = makeGame({ players: [seer, sheriff], phase: 'ROUNDTABLE' });
+    const out = activateSeer(game, seer.id);
+    expect(out.actualRole).toBe('SHERIFF');
+    expect(out.game.currentSeerReveal).toBeDefined();
+    expect(out.game.currentSeerReveal!.actualRole).toBe('SHERIFF');
+    expect(out.game.currentSeerReveal!.targetId).toBe(sheriff.id);
+    expect(out.game.currentSeerReveal!.seerId).toBe(seer.id);
+  });
 });
 
 describe('checkWinCondition() — Wave 4 special roles count as Faithful', () => {

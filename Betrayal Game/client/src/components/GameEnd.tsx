@@ -44,14 +44,30 @@ interface GameEndProps {
 const STAGE_TIMINGS_MS = [0, 1500, 4000, 6000, 9000];
 
 function RolePill({ role }: { role: Role }) {
-  // Wave 4 — special roles (Sheriff/Medic/Seer) belong to the Faithful
-  // team. The post-game pill summarises team membership, so they all
-  // render as "Faithful". The detailed role can still be inspected via
-  // history entries elsewhere if needed.
+  // Team-membership pill: special roles collapse to "Faithful".
   const isTraitor = role === 'TRAITOR';
   return (
     <span className={isTraitor ? styles.pillTraitor : styles.pillFaithful}>
       {isTraitor ? 'Traitor' : 'Faithful'}
+    </span>
+  );
+}
+
+// Literal role label for the Seer reveal: the Seer learns the TRUE role,
+// not just the team, so Sheriff/Medic/Seer/Faithful/Traitor all render
+// distinctly.
+const SEER_ROLE_LABEL: Record<Role, string> = {
+  TRAITOR: 'Traitor',
+  FAITHFUL: 'Faithful',
+  SHERIFF: 'Sheriff',
+  MEDIC: 'Medic',
+  SEER: 'Seer',
+};
+function SeerRolePill({ role }: { role: Role }) {
+  const isTraitor = role === 'TRAITOR';
+  return (
+    <span className={isTraitor ? styles.pillTraitor : styles.pillFaithful}>
+      {SEER_ROLE_LABEL[role]}
     </span>
   );
 }
@@ -92,18 +108,9 @@ function RoundCard({ record, index, whispers, players }: { record: RoundRecord; 
     <div className={styles.roundCard} style={{ animationDelay: `${0.1 + index * 0.12}s` }}>
       <div className={styles.roundLabel}>Round {record.round}</div>
 
-      {/* Chronological order:
-          1. Booth confessions (start of Roundtable)
-          2. Seer reveal (during Roundtable)
-          3. Suspicion Tokens (end of Roundtable)
-          4. Roundtable vote + banishment
-          5. Medic protect (night begins)
-          6. Murder / shield (or medic silent save)
-          7. Recruitment (resolves alongside the murder)
-          8. Sheriff reports (overnight)
-          9. Whispers (interleaved across the round) */}
-
-      {/* 1. Confessions */}
+      {/* Rows render in chronological round order: confessions, seer,
+          tokens, vote+banish, medic, murder/shield, recruit, sheriff,
+          whispers. */}
       {record.confessions && record.confessions.length > 0 && (
         <div style={{
           marginTop: 12, padding: 10,
@@ -138,7 +145,6 @@ function RoundCard({ record, index, whispers, players }: { record: RoundRecord; 
         </div>
       )}
 
-      {/* 2. Seer reveal */}
       {record.seerReveal && (
         <div className={styles.outcomeRow}>
           <div className={styles.outcomeNeutral}>
@@ -147,13 +153,12 @@ function RoundCard({ record, index, whispers, players }: { record: RoundRecord; 
               <PlayerChip player={playerById(record.seerReveal.seerId)} name={record.seerReveal.seerName} />
               {"'s gift revealed "}
               <PlayerChip player={playerById(record.seerReveal.targetId)} name={record.seerReveal.targetName} />
-              {' as '}<RolePill role={record.seerReveal.actualRole} />
+              {' as '}<SeerRolePill role={record.seerReveal.actualRole} />
             </span>
           </div>
         </div>
       )}
 
-      {/* 3. Suspicion Token graph (end of Roundtable, just before voting). */}
       {record.suspicionTokens && record.suspicionTokens.length > 0 && (
         <div style={{
           marginTop: 12, padding: 10,
@@ -172,7 +177,6 @@ function RoundCard({ record, index, whispers, players }: { record: RoundRecord; 
         </div>
       )}
 
-      {/* 4. Roundtable vote + banishment */}
       {hasVotes ? (
         <div className={styles.voteSection}>
           <div className={styles.voteSectionTitle}>Roundtable vote</div>
@@ -217,8 +221,6 @@ function RoundCard({ record, index, whispers, players }: { record: RoundRecord; 
         )}
       </div>
 
-      {/* 5. Medic protect (night begins). For a successful save we render
-          this row instead of a "no murder this night" line. */}
       {record.medicProtection && (
         <div className={styles.outcomeRow}>
           <div className={styles.outcomeNeutral}>
@@ -233,8 +235,6 @@ function RoundCard({ record, index, whispers, players }: { record: RoundRecord; 
         </div>
       )}
 
-      {/* 6. Murder / shield outcome. Suppress the generic "no murder"
-          line when a Medic save already covered it. */}
       <div className={styles.outcomeRow}>
         {record.murderBlocked && record.shieldedName ? (
           <div className={styles.shieldOutcome}>
@@ -262,7 +262,6 @@ function RoundCard({ record, index, whispers, players }: { record: RoundRecord; 
         )}
       </div>
 
-      {/* 7. Recruitment */}
       {record.recruitedName && (
         <div className={styles.outcomeRow}>
           <div className={styles.recruitedOutcome}>
@@ -274,7 +273,6 @@ function RoundCard({ record, index, whispers, players }: { record: RoundRecord; 
         </div>
       )}
 
-      {/* 8. Sheriff investigations (overnight) */}
       {record.sheriffInvestigations && record.sheriffInvestigations.length > 0 && (
         <div className={styles.outcomeRow}>
           <div className={styles.outcomeNeutral} style={{ flexDirection: 'column', alignItems: 'flex-start', gap: 4 }}>
@@ -293,7 +291,7 @@ function RoundCard({ record, index, whispers, players }: { record: RoundRecord; 
         </div>
       )}
 
-      {/* 9. Whispers — interleaved across the round, kept as a feed at the bottom. */}
+      {/* whisper feed for this round. */}
       {roundWhispers.length > 0 && (
         <div style={{ marginTop: 12, padding: 10, border: '1px solid rgba(255,255,255,0.15)', borderRadius: 8, background: 'rgba(108,74,182,0.08)' }}>
           <div style={{ fontSize: 12, opacity: 0.75, marginBottom: 6, letterSpacing: 0.4 }}>WHISPERS</div>
