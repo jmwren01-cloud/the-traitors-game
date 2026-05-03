@@ -1,0 +1,89 @@
+.panel {
+  margin: 12px 0;
+  padding: 10px 12px;
+  background: rgba(36, 20, 64, 0.35);
+  border: 1px solid rgba(180, 120, 255, 0.3);
+  border-radius: 10px;
+  color: #f0e6ff;
+}
+
+.toggle {
+  background: transparent;
+  border: none;
+  color: #d9b6ff;
+  font-size: 14px;
+  cursor: pointer;
+  padding: 4px 0;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+.body {
+  margin-top: 10px;
+}
+
+.tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.tab {
+  background: #261a3d;
+  border: 1px solid #4a3370;
+  color: #c4b3e0;
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 13px;
+  cursor: pointer;
+  min-height: 32px;
+}
+
+.tabActive {
+  background: #4a2d80;
+  border-color: #ffb84d;
+  color: #fff;
+}
+
+.diffSection {
+  margin-top: 10px;
+  padding: 8px 10px;
+  background: rgba(0, 0, 0, 0.25);
+  border-radius: 8px;
+}
+
+.diffTitle {
+  font-size: 12px;
+  color: #d9b6ff;
+  letter-spacing: 0.04em;
+  margin-bottom: 6px;
+}
+
+.diffEmpty {
+  font-size: 13px;
+  color: #b3a3c9;
+  font-style: italic;
+}
+
+.diffList {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  font-size: 13px;
+}
+
+.diffList li {
+  padding: 3px 0;
+  color: #f0e6ff;
+}
+
+.diffFrom {
+  color: #b3a3c9;
+  text-decoration: line-through;
+}
+
+.diffTo {
+  color: #ffb84d;
+  font-weight: 600;
+}

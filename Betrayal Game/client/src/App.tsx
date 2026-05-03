@@ -6,6 +6,7 @@ import { RoleReveal } from './components/RoleReveal';
 import { Voting } from './components/Voting';
 import { ConfessionBooth } from './components/ConfessionBooth';
 import { SuspicionTokens } from './components/SuspicionTokens';
+import { SuspicionTokenHistoryPanel } from './components/SuspicionTokenHistoryPanel';
 import { NightPhase } from './components/NightPhase';
 import { GameEnd } from './components/GameEnd';
 import { ChatBox } from './components/ChatBox';
@@ -252,6 +253,12 @@ function App() {
             onClearError={() => dispatchLocal({ type: 'CLIENT_CLEAR_TOKEN_ERROR' })}
           />
         )}
+        {!tokenOverlayActive && (
+          <SuspicionTokenHistoryPanel
+            players={gameState?.players ?? []}
+            {...(gameState?.suspicionTokensByRound !== undefined ? { byRound: gameState.suspicionTokensByRound } : {})}
+          />
+        )}
         <Spectator
           players={gameState?.players || []}
           myPlayerId={gameState?.myPlayerId}
@@ -350,6 +357,12 @@ function App() {
           onLocalAction={dispatchLocal}
           onSend={send}
         />
+        {!tokenOverlayActive && (
+          <SuspicionTokenHistoryPanel
+            players={gameState?.players ?? []}
+            {...(gameState?.suspicionTokensByRound !== undefined ? { byRound: gameState.suspicionTokensByRound } : {})}
+          />
+        )}
         {specialRoleHud}
         {chatBox}
         {tokenOverlayActive && tokenPhaseLocal && (

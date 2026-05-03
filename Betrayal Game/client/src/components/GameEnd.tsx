@@ -8,6 +8,7 @@ import { getOrCreateDeviceToken } from '../utils/identity';
 import { useSoundContext } from '../contexts/SoundContext';
 import { vibrate } from '../utils/haptics';
 import { ProfileDrawer } from './ProfileDrawer';
+import { RevealGraph } from './SuspicionTokens';
 import styles from './GameEnd.module.css';
 
 interface GameEndProps {
@@ -216,22 +217,12 @@ function RoundCard({ record, index, whispers, players }: { record: RoundRecord; 
           <div style={{ fontSize: 12, opacity: 0.85, marginBottom: 6, letterSpacing: 0.4, color: '#d9b6ff' }}>
             🎯 SUSPICION TOKENS
           </div>
-          {record.suspicionTokens.map((t, i) => {
-            const placerName = playerNameById(t.placerId);
-            const targetName = playerNameById(t.targetId);
-            return (
-              <div key={`${t.placerId}-${t.targetId}-${i}`} style={{ fontSize: 13, padding: '3px 0' }}>
-                <PlayerChip player={playerById(t.placerId)} name={placerName} />
-                <span style={{ opacity: 0.7, margin: '0 6px' }}>→</span>
-                <PlayerChip player={playerById(t.targetId)} name={targetName} />
-                {t.isAuto && (
-                  <span style={{ marginLeft: 6, fontSize: 11, opacity: 0.7, fontStyle: 'italic', color: '#ffb84d' }}>
-                    (auto)
-                  </span>
-                )}
-              </div>
-            );
-          })}
+          <RevealGraph
+            players={players.filter((p) => record.suspicionTokens!.some(
+              (t) => t.placerId === p.id || t.targetId === p.id,
+            ))}
+            tokens={record.suspicionTokens}
+          />
         </div>
       )}
 

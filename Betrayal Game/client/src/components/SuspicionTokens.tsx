@@ -169,9 +169,10 @@ export function SuspicionTokens(props: Props): ReactElement {
   );
 }
 
-// Static SVG directed graph: alive players on a circle, arrows from
-// placer -> target. Auto-backfill arrows are dashed + amber.
-function RevealGraph(props: { players: Player[]; tokens: SuspicionToken[] }): ReactElement {
+// Static SVG directed graph: players on a circle, arrows from placer
+// -> target. Auto-backfill arrows are dashed + amber. Exported so the
+// in-game history panel and post-game replay can reuse it.
+export function RevealGraph(props: { players: Player[]; tokens: SuspicionToken[] }): ReactElement {
   const { players, tokens } = props;
   const size = 320;
   const cx = size / 2;
