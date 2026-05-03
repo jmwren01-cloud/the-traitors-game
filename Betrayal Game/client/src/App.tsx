@@ -5,6 +5,7 @@ import { Lobby } from './components/Lobby';
 import { RoleReveal } from './components/RoleReveal';
 import { Voting } from './components/Voting';
 import { ConfessionBooth } from './components/ConfessionBooth';
+import { SuspicionTokens } from './components/SuspicionTokens';
 import { NightPhase } from './components/NightPhase';
 import { GameEnd } from './components/GameEnd';
 import { ChatBox } from './components/ChatBox';
@@ -89,7 +90,16 @@ function App() {
     phase === 'ROUNDTABLE' &&
     (confessionPhase === 'BOOTH' ||
       (confessionPhase === 'DISCUSSION' && !!gameState?.confessionRevealed && !boothDismissed));
-  const showChat = gameState && phase !== 'LOBBY' && phase !== 'ROLE_ASSIGN' && !boothActive;
+  // Wave 4 / 5 — Suspicion Tokens overlay. Active for both PLACEMENT
+  // (45s) and the brief REVEAL hold (5s); the server flips us into
+  // VOTING right after, which strips `tokenPhase` and unmounts the
+  // overlay automatically. Booth takes priority if (somehow) both are
+  // open simultaneously — booth is mandatory and time-limited first.
+  const tokenPhaseLocal = gameState?.tokenPhase;
+  const tokenOverlayActive =
+    phase === 'ROUNDTABLE' && tokenPhaseLocal !== undefined && !boothActive;
+  const showChat =
+    gameState && phase !== 'LOBBY' && phase !== 'ROLE_ASSIGN' && !boothActive && !tokenOverlayActive;
   const isChatDisabled = phase === 'ROLE_REVEAL';
   const specialRoleHud = gameState ? (
     <SpecialRoleHud
@@ -229,6 +239,21 @@ function App() {
         {hostPanel}
         {phaseIntroCard}
         {timer}
+        {tokenOverlayActive && tokenPhaseLocal && (
+          <SuspicionTokens
+            phase={tokenPhaseLocal}
+            players={gameState?.players ?? []}
+            {...(gameState?.myPlayerId !== undefined ? { myPlayerId: gameState.myPlayerId } : {})}
+            isAlive={false}
+            {...(gameState?.tokenWindowEndsAt !== undefined ? { windowEndsAt: gameState.tokenWindowEndsAt } : {})}
+            {...(gameState?.tokenRevealEndsAt !== undefined ? { revealEndsAt: gameState.tokenRevealEndsAt } : {})}
+            {...(gameState?.tokenSubmittedCount !== undefined ? { submittedCount: gameState.tokenSubmittedCount } : {})}
+            {...(gameState?.tokenTotalCount !== undefined ? { totalCount: gameState.tokenTotalCount } : {})}
+            {...(gameState?.suspicionTokensCurrent !== undefined ? { tokens: gameState.suspicionTokensCurrent } : {})}
+            onSend={send}
+            onClearError={() => dispatchLocal({ type: 'CLIENT_CLEAR_TOKEN_ERROR' })}
+          />
+        )}
         <Spectator
           players={gameState?.players || []}
           myPlayerId={gameState?.myPlayerId}
@@ -329,6 +354,23 @@ function App() {
         />
         {specialRoleHud}
         {chatBox}
+        {tokenOverlayActive && tokenPhaseLocal && (
+          <SuspicionTokens
+            phase={tokenPhaseLocal}
+            players={gameState?.players ?? []}
+            {...(gameState?.myPlayerId !== undefined ? { myPlayerId: gameState.myPlayerId } : {})}
+            isAlive={isAlive}
+            {...(gameState?.tokenWindowEndsAt !== undefined ? { windowEndsAt: gameState.tokenWindowEndsAt } : {})}
+            {...(gameState?.tokenRevealEndsAt !== undefined ? { revealEndsAt: gameState.tokenRevealEndsAt } : {})}
+            {...(gameState?.tokenSubmittedCount !== undefined ? { submittedCount: gameState.tokenSubmittedCount } : {})}
+            {...(gameState?.tokenTotalCount !== undefined ? { totalCount: gameState.tokenTotalCount } : {})}
+            {...(gameState?.myTokenTargetId !== undefined ? { myTokenTargetId: gameState.myTokenTargetId } : {})}
+            {...(gameState?.suspicionTokensCurrent !== undefined ? { tokens: gameState.suspicionTokensCurrent } : {})}
+            {...(gameState?.tokenError !== undefined ? { tokenError: gameState.tokenError } : {})}
+            onSend={send}
+            onClearError={() => dispatchLocal({ type: 'CLIENT_CLEAR_TOKEN_ERROR' })}
+          />
+        )}
         {boothActive && (
           <ConfessionBooth
             phase={confessionPhase ?? 'BOOTH'}

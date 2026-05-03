@@ -158,7 +158,39 @@ export interface RoundRecord {
    * replay can show who actually said what.
    */
   confessions?: ConfessionEntry[];
+  /**
+   * Wave 4 / 5 — public per-round Suspicion Token graph (auto-backfills
+   * flagged with `isAuto: true`). Rendered in the post-game replay's
+   * "How It Happened" timeline.
+   */
+  suspicionTokens?: SuspicionToken[];
 }
+
+// ============= Suspicion Tokens (Wave 4 / 5) =============
+
+export const TOKEN_PLACEMENT_WINDOW_MS = 45_000;
+export const TOKEN_REVEAL_DURATION_MS = 5_000;
+
+export type SuspicionTokenPhase = 'PLACEMENT' | 'REVEAL';
+
+/**
+ * Mirrors the server `SuspicionToken`. `isAuto` flags placements the
+ * server backfilled when a player didn't act in the placement window.
+ */
+export interface SuspicionToken {
+  placerId: string;
+  targetId: string;
+  round: number;
+  isAuto?: boolean;
+}
+
+export type SuspicionTokenErrorCode =
+  | 'PHASE'
+  | 'EXPIRED'
+  | 'DEAD'
+  | 'ALREADY_PLACED'
+  | 'INVALID_TARGET'
+  | 'SELF';
 
 // ============= Confession Booth =============
 
@@ -297,6 +329,24 @@ export interface GameState {
   mySubmittedConfession?: boolean;
   /** Round number whose confessions are currently in `confessionRevealed`. */
   confessionRound?: number;
+  /**
+   * Wave 4 / 5 — Suspicion Token sub-phase state. `tokenPhase` is set
+   * only while the sub-phase is open. During PLACEMENT we know counts +
+   * our own pick; on REVEAL we have the full directed graph in
+   * `suspicionTokensCurrent`. `suspicionTokensByRound` archives all past
+   * rounds for the live in-game history panel; the post-game replay
+   * reads `RoundRecord.suspicionTokens` instead.
+   */
+  tokenPhase?: SuspicionTokenPhase;
+  tokenWindowEndsAt?: number;
+  tokenRevealEndsAt?: number;
+  tokenSubmittedCount?: number;
+  tokenTotalCount?: number;
+  myTokenTargetId?: string;
+  suspicionTokensCurrent?: SuspicionToken[];
+  suspicionTokensByRound?: Record<number, SuspicionToken[]>;
+  /** Last validation error from the server for our placement attempt. */
+  tokenError?: { code: SuspicionTokenErrorCode; message: string };
 }
 
 export type EvidenceType = 'FRAME' | 'WHISPER_FABRICATION' | 'ANONYMOUS_TIP';
@@ -373,7 +423,9 @@ export type C2SEvent =
       content?: string;
     } }
   /** Confession Booth submission (10–120 chars). */
-  | { type: 'C2S_SUBMIT_CONFESSION'; payload: { content: string } };
+  | { type: 'C2S_SUBMIT_CONFESSION'; payload: { content: string } }
+  /** Wave 4 / 5 — place this player's single Suspicion Token. */
+  | { type: 'C2S_PLACE_SUSPICION_TOKEN'; payload: { targetId: string } };
 
 export const WHISPER_MAX_LENGTH = 200;
 

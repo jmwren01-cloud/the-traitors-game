@@ -1,7 +1,7 @@
 // Game Manager - Core Game Logic
 
-import type { GameState, Player, Role, Vote, TimerState, GamePhase, GameSettings, ChallengeState, ChallengeType, RoundRecord, VoteEntry, Whisper, EvidenceVote, EvidenceType, FalseEvidence, ConfessionEntry, ConfessionReveal } from './types.js';
-import { DEFAULT_SETTINGS, FALSE_EVIDENCE_CONTENT_MAX, FALSE_EVIDENCE_WINDOW_MS, CONFESSION_MIN_LENGTH, CONFESSION_MAX_LENGTH, CONFESSION_WINDOW_MS } from './types.js';
+import type { GameState, Player, Role, Vote, TimerState, GamePhase, GameSettings, ChallengeState, ChallengeType, RoundRecord, VoteEntry, Whisper, EvidenceVote, EvidenceType, FalseEvidence, ConfessionEntry, ConfessionReveal, SuspicionToken } from './types.js';
+import { DEFAULT_SETTINGS, FALSE_EVIDENCE_CONTENT_MAX, FALSE_EVIDENCE_WINDOW_MS, CONFESSION_MIN_LENGTH, CONFESSION_MAX_LENGTH, CONFESSION_WINDOW_MS, TOKEN_PLACEMENT_WINDOW_MS } from './types.js';
 import { pickAvailableColor, pickRandomAvatar, COLOR_IDS, AVATAR_IDS } from './avatarConstants.js';
 
 // Word bank for Word Scramble challenge (simple 4-5 letter words)
@@ -598,7 +598,17 @@ export function startRoundtable(game: GameState): GameState {
   // open the Confession Booth sub-phase. The discussion
   // timer is NOT started until resolveConfessions runs.
   return {
-    ...omit(game, 'confessionRevealed'),
+    ...omit(
+      game,
+      'confessionRevealed',
+      // Wave 4 / 5 — clear last round's Suspicion Token sub-phase. The
+      // archive `suspicionTokensByRound` is intentionally preserved.
+      'tokenPhase',
+      'tokenWindowEndsAt',
+      'tokenRevealEndsAt',
+      'suspicionTokensCurrent',
+      'tokensSubmittedIds',
+    ),
     phase: 'ROUNDTABLE',
     currentRound: newRound,
     // fresh whisper budget every Roundtable: each alive player
@@ -609,6 +619,152 @@ export function startRoundtable(game: GameState): GameState {
     confessionSubmittedIds: [],
     confessionWindowEndsAt: Date.now() + CONFESSION_WINDOW_MS,
   };
+}
+
+// ============= SUSPICION TOKEN SUB-PHASE (Wave 4 / 5) =============
+
+export class SuspicionTokenError extends Error {
+  constructor(
+    public code: 'PHASE' | 'EXPIRED' | 'DEAD' | 'ALREADY_PLACED' | 'INVALID_TARGET' | 'SELF',
+    message: string,
+  ) {
+    super(message);
+    this.name = 'SuspicionTokenError';
+  }
+}
+
+/**
+ * Open the pre-voting Suspicion Token placement window. Caller must
+ * already be in `ROUNDTABLE` (host pressed Start Voting). Idempotent —
+ * if a sub-phase is already in progress this returns the game unchanged
+ * so the router can detect the no-op.
+ */
+export function beginSuspicionTokenPhase(game: GameState): GameState {
+  if (game.phase !== 'ROUNDTABLE') {
+    throw new SuspicionTokenError('PHASE', 'Token placement requires ROUNDTABLE');
+  }
+  if (game.tokenPhase !== undefined) return game;
+  return {
+    ...omit(game, 'tokenRevealEndsAt'),
+    tokenPhase: 'PLACEMENT',
+    tokenWindowEndsAt: Date.now() + TOKEN_PLACEMENT_WINDOW_MS,
+    suspicionTokensCurrent: [],
+    tokensSubmittedIds: [],
+  };
+}
+
+/**
+ * Record a single public Suspicion Token. Validation:
+ *   - sub-phase must be PLACEMENT and window not yet expired
+ *   - placer must be alive
+ *   - target must exist, be alive, and not be the placer
+ *   - placer cannot have already placed this round
+ * Throws `SuspicionTokenError` on rejection.
+ */
+export function placeSuspicionToken(
+  game: GameState,
+  placerId: string,
+  targetId: string,
+): GameState {
+  if (game.phase !== 'ROUNDTABLE' || game.tokenPhase !== 'PLACEMENT') {
+    throw new SuspicionTokenError('PHASE', 'Suspicion Tokens are not open');
+  }
+  if (game.tokenWindowEndsAt !== undefined && Date.now() >= game.tokenWindowEndsAt) {
+    throw new SuspicionTokenError('EXPIRED', 'Suspicion Token window has closed');
+  }
+  const placer = game.players.find((p) => p.id === placerId);
+  if (!placer || !placer.isAlive) {
+    throw new SuspicionTokenError('DEAD', 'Only alive players may place a Suspicion Token');
+  }
+  if (placerId === targetId) {
+    throw new SuspicionTokenError('SELF', 'You cannot place a Suspicion Token on yourself');
+  }
+  const target = game.players.find((p) => p.id === targetId);
+  if (!target || !target.isAlive) {
+    throw new SuspicionTokenError('INVALID_TARGET', 'Target must be an alive player');
+  }
+  const submitted = game.tokensSubmittedIds ?? [];
+  if (submitted.includes(placerId)) {
+    throw new SuspicionTokenError('ALREADY_PLACED', 'You have already placed your Suspicion Token this round');
+  }
+  const token: SuspicionToken = {
+    placerId,
+    targetId,
+    round: game.currentRound,
+  };
+  return {
+    ...game,
+    suspicionTokensCurrent: [...(game.suspicionTokensCurrent ?? []), token],
+    tokensSubmittedIds: [...submitted, placerId],
+  };
+}
+
+/** True if every alive player has placed a Suspicion Token this round. */
+export function allAlivePlacedTokens(game: GameState): boolean {
+  const alive = game.players.filter((p) => p.isAlive).map((p) => p.id);
+  if (alive.length === 0) return false;
+  const submitted = new Set(game.tokensSubmittedIds ?? []);
+  return alive.every((id) => submitted.has(id));
+}
+
+/**
+ * Close the Suspicion Token PLACEMENT window. Backfills a random valid
+ * alive non-self target (`isAuto: true`) for every alive non-submitter,
+ * archives the per-round graph into `suspicionTokensByRound`, and flips
+ * the sub-phase to `'REVEAL'`. Idempotent — calling outside PLACEMENT
+ * returns the game unchanged. `rng` is injected for deterministic tests.
+ */
+export function resolveSuspicionTokens(
+  game: GameState,
+  rng: () => number = Math.random,
+): GameState {
+  if (game.phase !== 'ROUNDTABLE' || game.tokenPhase !== 'PLACEMENT') {
+    return game;
+  }
+  const alive = game.players.filter((p) => p.isAlive);
+  const submitted = new Set(game.tokensSubmittedIds ?? []);
+  const tokens: SuspicionToken[] = [...(game.suspicionTokensCurrent ?? [])];
+
+  for (const placer of alive) {
+    if (submitted.has(placer.id)) continue;
+    const candidates = alive.filter((p) => p.id !== placer.id);
+    if (candidates.length === 0) continue;
+    const idx = Math.floor(rng() * candidates.length);
+    const target = candidates[idx] ?? candidates[0]!;
+    tokens.push({
+      placerId: placer.id,
+      targetId: target.id,
+      round: game.currentRound,
+      isAuto: true,
+    });
+  }
+
+  const archive: Record<number, SuspicionToken[]> = {
+    ...(game.suspicionTokensByRound ?? {}),
+    [game.currentRound]: tokens,
+  };
+  return {
+    ...omit(game, 'tokenWindowEndsAt'),
+    tokenPhase: 'REVEAL',
+    suspicionTokensCurrent: tokens,
+    suspicionTokensByRound: archive,
+  };
+}
+
+/**
+ * Clear the Suspicion Token sub-phase fields when transitioning out of
+ * the ROUNDTABLE into VOTING. The current round's tokens stay archived
+ * via `suspicionTokensByRound` (and via `buildRoundRecord` when the
+ * round eventually completes).
+ */
+export function clearSuspicionTokenPhase(game: GameState): GameState {
+  return omit(
+    game,
+    'tokenPhase',
+    'tokenWindowEndsAt',
+    'tokenRevealEndsAt',
+    'tokensSubmittedIds',
+  );
 }
 
 // ============= CONFESSION BOOTH =============
@@ -941,8 +1097,11 @@ export function startVoting(game: GameState): GameState {
     throw new Error('Cannot start voting from current phase');
   }
 
+  // Wave 4 / 5 — strip the Suspicion Token sub-phase scaffolding when
+  // we transition into VOTING. The current round's tokens remain
+  // archived on `suspicionTokensByRound` and on the eventual RoundRecord.
   return {
-    ...game,
+    ...clearSuspicionTokenPhase(game),
     phase: 'VOTING',
     votes: []
   };
@@ -1349,6 +1508,10 @@ function buildRoundRecord(game: GameState): RoundRecord {
     // full confession attribution for the post-game replay.
     ...(game.confessionEntries && game.confessionEntries.length > 0
       ? { confessions: game.confessionEntries }
+      : {}),
+    // Wave 4 / 5 — public Suspicion Token graph for the post-game replay.
+    ...(game.suspicionTokensCurrent && game.suspicionTokensCurrent.length > 0
+      ? { suspicionTokens: game.suspicionTokensCurrent }
       : {}),
   };
 }

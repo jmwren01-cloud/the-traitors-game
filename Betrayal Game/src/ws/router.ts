@@ -1,6 +1,7 @@
 import { WebSocket } from 'ws';
 import * as game from '../game/manager.js';
 import type { C2SEvent, S2CEvent, ChatMessage, GameState, Role } from '../game/types.js';
+import { TOKEN_REVEAL_DURATION_MS } from '../game/types.js';
 import {
   broadcastToSession,
   broadcastToSessionPerRecipient,
@@ -17,6 +18,9 @@ const activeChallengeTimers = new Map<string, NodeJS.Timeout>();
 const evidenceWindowTimers = new Map<string, NodeJS.Timeout>();
 // server-side 60s Confession Booth timer.
 const confessionTimers = new Map<string, NodeJS.Timeout>();
+// Wave 4 / 5 — server-side 45s Suspicion Token placement timer + the 5s
+// post-resolve reveal timer that auto-advances into VOTING.
+const tokenTimers = new Map<string, NodeJS.Timeout>();
 
 function clearChallengeTimer(sessionId: string): void {
   const t = activeChallengeTimers.get(sessionId);
@@ -42,6 +46,14 @@ function clearConfessionTimer(sessionId: string): void {
   }
 }
 
+function clearTokenTimer(sessionId: string): void {
+  const t = tokenTimers.get(sessionId);
+  if (t) {
+    clearTimeout(t);
+    tokenTimers.delete(sessionId);
+  }
+}
+
 /**
  * Clean up all in-memory timers/intervals associated with a session.
  * Call this when a game session is destroyed (e.g. all players gone, manual cleanup).
@@ -50,6 +62,7 @@ export function cleanupSessionTimers(sessionId: string): void {
   clearChallengeTimer(sessionId);
   clearEvidenceTimer(sessionId);
   clearConfessionTimer(sessionId);
+  clearTokenTimer(sessionId);
 }
 
 function countEligibleAnswerers(state: GameState): number {
@@ -212,6 +225,98 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
       },
     });
     startRoundtableDiscussionTimer(sessionId, resolved);
+  }
+
+  // ============= SUSPICION TOKEN HELPERS (Wave 4 / 5) =============
+
+  /**
+   * Final transition out of the Suspicion Token sub-phase: call
+   * `startVoting` (which strips the sub-phase scaffolding), broadcast
+   * S2C_VOTING_STARTED, and start the VOTING timer. Idempotent — bails
+   * if we're no longer in ROUNDTABLE/REVEAL.
+   */
+  function proceedToVotingFromTokens(sessionId: string): void {
+    clearTokenTimer(sessionId);
+    const current = games.get(sessionId);
+    if (!current) return;
+    // Strict guard: only advance when the reveal hold is actually
+    // active. Prevents accidental phase skipping if this is ever
+    // called from a stray timer / out-of-order code path.
+    if (current.phase !== 'ROUNDTABLE' || current.tokenPhase !== 'REVEAL') return;
+    const voting = game.startVoting(current);
+    setGame(voting);
+    broadcast(sessionId, { type: 'S2C_VOTING_STARTED', payload: { phase: 'VOTING' } });
+    const timer = game.createTimer('VOTING', voting.settings);
+    if (timer) {
+      const withTimer = { ...voting, timer };
+      setGame(withTimer);
+      broadcast(sessionId, {
+        type: 'S2C_TIMER_UPDATE',
+        payload: { endTime: timer.endTime, duration: timer.duration, phase: 'VOTING' },
+      });
+    }
+  }
+
+  /**
+   * Resolve the Suspicion Token PLACEMENT window (backfill auto picks,
+   * archive per-round graph), broadcast S2C_TOKENS_REVEALED, and
+   * schedule the 5s reveal hold that auto-advances into VOTING.
+   * Idempotent — safe to call from both the placement timeout and the
+   * "all alive placed" early path.
+   */
+  function fireTokenResolution(sessionId: string): void {
+    clearTokenTimer(sessionId);
+    const current = games.get(sessionId);
+    if (!current) return;
+    if (current.phase !== 'ROUNDTABLE' || current.tokenPhase !== 'PLACEMENT') return;
+    const resolved = game.resolveSuspicionTokens(current);
+    const revealEndsAt = Date.now() + TOKEN_REVEAL_DURATION_MS;
+    const withReveal = { ...resolved, tokenRevealEndsAt: revealEndsAt };
+    setGame(withReveal);
+    broadcast(sessionId, {
+      type: 'S2C_TOKENS_REVEALED',
+      payload: {
+        tokens: resolved.suspicionTokensCurrent ?? [],
+        round: resolved.currentRound,
+        revealEndsAt,
+      },
+    });
+    const handle = setTimeout(() => {
+      tokenTimers.delete(sessionId);
+      try {
+        proceedToVotingFromTokens(sessionId);
+      } catch (e) {
+        console.error('Suspicion Token reveal -> voting transition error:', e);
+      }
+    }, Math.max(0, revealEndsAt - Date.now()));
+    tokenTimers.set(sessionId, handle);
+  }
+
+  /**
+   * Open the Suspicion Token PLACEMENT window: persist initialised
+   * sub-phase state, broadcast S2C_TOKEN_PHASE_STARTED, and schedule
+   * the 45s placement timeout.
+   */
+  function beginTokenPlacement(sessionId: string, current: GameState): void {
+    clearTokenTimer(sessionId);
+    const opened = game.beginSuspicionTokenPhase(current);
+    setGame(opened);
+    const aliveCount = opened.players.filter((p) => p.isAlive).length;
+    const endsAt = opened.tokenWindowEndsAt ?? Date.now();
+    const duration = Math.max(0, endsAt - Date.now());
+    broadcast(sessionId, {
+      type: 'S2C_TOKEN_PHASE_STARTED',
+      payload: { endsAt, duration, aliveCount, round: opened.currentRound },
+    });
+    const handle = setTimeout(() => {
+      tokenTimers.delete(sessionId);
+      try {
+        fireTokenResolution(sessionId);
+      } catch (e) {
+        console.error('Suspicion Token auto-resolve error:', e);
+      }
+    }, duration);
+    tokenTimers.set(sessionId, handle);
   }
 
   /**
@@ -545,6 +650,39 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
           reconnectPayload.confessionSubmittedCount = submittedCount;
           reconnectPayload.confessionMySubmitted =
             (updatedGame.confessionSubmittedIds ?? []).includes(currentPlayerId);
+
+          // Wave 4 / 5 — Suspicion Token sub-phase rehydration. During
+          // PLACEMENT we never broadcast individual placements (privacy),
+          // so we only ship counts + the caller's own pick. On REVEAL we
+          // ship the full current-round graph. The byRound archive is
+          // always shipped so the in-game history panel can render past
+          // rounds' graphs after a mid-game reconnect.
+          if (updatedGame.tokenPhase !== undefined) {
+            reconnectPayload.tokenPhase = updatedGame.tokenPhase;
+            const tokenAlive = updatedGame.players.filter((p) => p.isAlive).length;
+            const tokenSubmitted = (updatedGame.tokensSubmittedIds ?? []).length;
+            reconnectPayload.tokenTotalCount = tokenAlive;
+            reconnectPayload.tokenSubmittedCount = tokenSubmitted;
+            if (updatedGame.tokenWindowEndsAt !== undefined) {
+              reconnectPayload.tokenWindowEndsAt = updatedGame.tokenWindowEndsAt;
+            }
+            if (updatedGame.tokenRevealEndsAt !== undefined) {
+              reconnectPayload.tokenRevealEndsAt = updatedGame.tokenRevealEndsAt;
+            }
+            if (updatedGame.tokenPhase === 'PLACEMENT') {
+              const mine = (updatedGame.suspicionTokensCurrent ?? []).find(
+                (t) => t.placerId === currentPlayerId,
+              );
+              if (mine) reconnectPayload.myTokenTargetId = mine.targetId;
+            } else {
+              // REVEAL — full graph is public.
+              reconnectPayload.suspicionTokensCurrent =
+                updatedGame.suspicionTokensCurrent ?? [];
+            }
+          }
+          if (updatedGame.suspicionTokensByRound !== undefined) {
+            reconnectPayload.suspicionTokensByRound = updatedGame.suspicionTokensByRound;
+          }
         }
 
         ws.send(JSON.stringify({ type: 'S2C_RECONNECTED', payload: reconnectPayload } satisfies S2CEvent));
@@ -781,22 +919,69 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
       }
 
       if (event.type === 'C2S_START_VOTING') {
-        const updatedGame = game.startVoting(gameState);
-        setGame(updatedGame);
+        // Wave 4 / 5 — host has ended discussion. Open the public 45s
+        // Suspicion Token sub-phase BEFORE voting starts. The reveal
+        // hold + voting timer are scheduled by `fireTokenResolution` /
+        // `proceedToVotingFromTokens` (not here).
+        const startingPlayer = gameState.players.find((p) => p.id === currentPlayerId);
+        if (!startingPlayer?.isHost) {
+          sendError(ws, 'Only the host can start voting');
+          return;
+        }
+        if (gameState.phase !== 'ROUNDTABLE') {
+          sendError(ws, 'Can only start voting from Roundtable');
+          return;
+        }
+        // Confession Booth must have moved past BOOTH before suspicion
+        // tokens open. The token sub-phase belongs strictly between
+        // discussion-end and voting; opening it during BOOTH would let
+        // the booth timer be skipped via `proceedToVotingFromTokens`.
+        if (gameState.confessionPhase === 'BOOTH') {
+          sendError(ws, 'Confession Booth must finish before voting');
+          return;
+        }
+        if (gameState.tokenPhase !== undefined) {
+          // Already in PLACEMENT or REVEAL — idempotent no-op.
+          return;
+        }
+        beginTokenPlacement(currentSessionId, gameState);
+        return;
+      }
 
+      if (event.type === 'C2S_PLACE_SUSPICION_TOKEN') {
+        let after: GameState;
+        try {
+          after = game.placeSuspicionToken(gameState, currentPlayerId, event.payload.targetId);
+        } catch (err) {
+          if (err instanceof game.SuspicionTokenError) {
+            ws.send(JSON.stringify({
+              type: 'S2C_TOKEN_ERROR',
+              payload: { code: err.code, message: err.message },
+            } satisfies S2CEvent));
+          } else {
+            sendError(ws, (err as Error).message);
+          }
+          return;
+        }
+        setGame(after);
+
+        // Private echo to the placer so their UI locks in immediately —
+        // even if the public broadcast loses ordering with their tab.
+        ws.send(JSON.stringify({
+          type: 'S2C_TOKEN_PLACED_PRIVATE',
+          payload: { targetId: event.payload.targetId },
+        } satisfies S2CEvent));
+
+        const aliveIds = after.players.filter((p) => p.isAlive).map((p) => p.id);
+        const received = (after.tokensSubmittedIds ?? []).length;
+        const needed = aliveIds.length;
         broadcast(currentSessionId, {
-          type: 'S2C_VOTING_STARTED',
-          payload: { phase: 'VOTING' }
+          type: 'S2C_TOKEN_PLACED',
+          payload: { received, needed },
         });
 
-        const timer = game.createTimer('VOTING', updatedGame.settings);
-        if (timer) {
-          const gameWithTimer = { ...updatedGame, timer };
-          setGame(gameWithTimer);
-          broadcast(currentSessionId, {
-            type: 'S2C_TIMER_UPDATE',
-            payload: { endTime: timer.endTime, duration: timer.duration, phase: 'VOTING' }
-          });
+        if (game.allAlivePlacedTokens(after)) {
+          fireTokenResolution(currentSessionId);
         }
         return;
       }

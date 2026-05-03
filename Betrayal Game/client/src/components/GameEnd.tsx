@@ -206,6 +206,35 @@ function RoundCard({ record, index, whispers, players }: { record: RoundRecord; 
         </div>
       )}
 
+      {/* Wave 4 / 5 — Suspicion Token graph for this round. */}
+      {record.suspicionTokens && record.suspicionTokens.length > 0 && (
+        <div style={{
+          marginTop: 12, padding: 10,
+          border: '1px solid rgba(180, 120, 255, 0.4)', borderRadius: 8,
+          background: 'rgba(36, 20, 64, 0.35)',
+        }}>
+          <div style={{ fontSize: 12, opacity: 0.85, marginBottom: 6, letterSpacing: 0.4, color: '#d9b6ff' }}>
+            🎯 SUSPICION TOKENS
+          </div>
+          {record.suspicionTokens.map((t, i) => {
+            const placerName = playerNameById(t.placerId);
+            const targetName = playerNameById(t.targetId);
+            return (
+              <div key={`${t.placerId}-${t.targetId}-${i}`} style={{ fontSize: 13, padding: '3px 0' }}>
+                <PlayerChip player={playerById(t.placerId)} name={placerName} />
+                <span style={{ opacity: 0.7, margin: '0 6px' }}>→</span>
+                <PlayerChip player={playerById(t.targetId)} name={targetName} />
+                {t.isAuto && (
+                  <span style={{ marginLeft: 6, fontSize: 11, opacity: 0.7, fontStyle: 'italic', color: '#ffb84d' }}>
+                    (auto)
+                  </span>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
       {/* full whisper replay for this round. */}
       {roundWhispers.length > 0 && (
         <div style={{ marginTop: 12, padding: 10, border: '1px solid rgba(255,255,255,0.15)', borderRadius: 8, background: 'rgba(108,74,182,0.08)' }}>

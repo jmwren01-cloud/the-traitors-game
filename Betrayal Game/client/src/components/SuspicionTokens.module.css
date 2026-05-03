@@ -1,0 +1,150 @@
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: rgba(8, 6, 14, 0.92);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 24px 16px;
+  overflow-y: auto;
+}
+
+.card {
+  width: 100%;
+  max-width: 640px;
+  background: linear-gradient(180deg, #1a1325 0%, #110a1a 100%);
+  border: 1px solid #5a3a87;
+  border-radius: 14px;
+  padding: 20px;
+  color: #f0e6ff;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6);
+}
+
+.title {
+  margin: 0 0 4px 0;
+  font-size: 22px;
+  letter-spacing: 0.04em;
+  color: #d9b6ff;
+  text-align: center;
+}
+
+.subtitle {
+  margin: 0 0 14px 0;
+  text-align: center;
+  font-size: 13px;
+  color: #b3a3c9;
+}
+
+.timerBar {
+  height: 6px;
+  background: #2c1e44;
+  border-radius: 3px;
+  overflow: hidden;
+  margin-bottom: 14px;
+}
+
+.timerFill {
+  height: 100%;
+  background: linear-gradient(90deg, #b478ff, #ff6699);
+  transition: width 0.5s linear;
+}
+
+.progress {
+  text-align: center;
+  font-size: 13px;
+  color: #c4b3e0;
+  margin-bottom: 14px;
+}
+
+.targets {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 10px;
+}
+
+.target {
+  min-height: 60px;
+  padding: 12px 10px;
+  border-radius: 10px;
+  background: #261a3d;
+  border: 2px solid transparent;
+  color: #f0e6ff;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.1s ease, border-color 0.15s, background 0.15s;
+  touch-action: manipulation;
+}
+
+.target:hover:not(:disabled) {
+  background: #34245a;
+  border-color: #7a4dc2;
+}
+
+.target:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.target:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.targetSelected {
+  background: #4a2d80;
+  border-color: #ffb84d;
+  box-shadow: 0 0 0 2px rgba(255, 184, 77, 0.35);
+}
+
+.locked {
+  margin-top: 16px;
+  padding: 10px;
+  background: #2a1f3f;
+  border-radius: 8px;
+  text-align: center;
+  font-size: 14px;
+  color: #ffd3a0;
+}
+
+.error {
+  margin-top: 12px;
+  padding: 8px 10px;
+  background: #4a1f1f;
+  border: 1px solid #ff6b6b;
+  border-radius: 6px;
+  color: #ffcfcf;
+  font-size: 13px;
+  text-align: center;
+}
+
+.graphWrap {
+  margin-top: 8px;
+  background: #110a1a;
+  border-radius: 10px;
+  padding: 8px;
+  overflow: hidden;
+}
+
+.graphSvg {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+.legend {
+  margin-top: 10px;
+  font-size: 12px;
+  color: #b3a3c9;
+  text-align: center;
+}
+
+.autoNote {
+  color: #ffb84d;
+}
+
+@media (max-width: 480px) {
+  .card { padding: 16px; }
+  .title { font-size: 18px; }
+  .target { min-height: 54px; font-size: 14px; }
+}

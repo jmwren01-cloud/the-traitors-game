@@ -203,7 +203,36 @@ export interface RoundRecord {
    * `playerId: undefined` since it has no real author).
    */
   confessions?: ConfessionEntry[];
+  /**
+   * Wave 4 / 5 — Suspicion Tokens. Public per-round directed graph of
+   * who placed a token on whom before voting opened. `isAuto: true` flags
+   * server-assigned placements for players who didn't pick in time.
+   */
+  suspicionTokens?: SuspicionToken[];
 }
+
+/**
+ * Wave 4 / 5 — Suspicion Tokens. A single public placement during the
+ * pre-voting Suspicion Token sub-phase. `placerId`/`targetId` reference
+ * `Player.id`. `round` snapshots the round in which it was cast.
+ * `isAuto` is true when the server backfilled a random valid target
+ * because the player didn't place in time.
+ */
+export interface SuspicionToken {
+  placerId: string;
+  targetId: string;
+  round: number;
+  isAuto?: boolean;
+}
+
+/** Sub-phase of a ROUNDTABLE for the Wave 4 / 5 Suspicion Token system. */
+export type SuspicionTokenPhase = 'PLACEMENT' | 'REVEAL';
+
+/** Length of the public placement window before auto-resolve. */
+export const TOKEN_PLACEMENT_WINDOW_MS = 45_000;
+
+/** How long the reveal graph stays up before voting auto-starts. */
+export const TOKEN_REVEAL_DURATION_MS = 5_000;
 
 /**
  * Confession Booth. Server-side full record for one
@@ -336,6 +365,27 @@ export interface GameState {
   confessionRevealed?: ConfessionReveal[];
   /** Unix-ms deadline for the 60s booth window. Cleared on resolve. */
   confessionWindowEndsAt?: number;
+  /**
+   * Wave 4 / 5 — Suspicion Token sub-phase nested inside a ROUNDTABLE
+   * after discussion ends but before VOTING starts. `'PLACEMENT'` while
+   * the 45s window is open; `'REVEAL'` while the directed graph is shown
+   * before the voting timer auto-starts. Undefined outside the sub-phase.
+   */
+  tokenPhase?: SuspicionTokenPhase;
+  /** Unix-ms deadline for the 45s placement window. Cleared on resolve. */
+  tokenWindowEndsAt?: number;
+  /** Unix-ms deadline for the 5s post-resolve reveal hold. */
+  tokenRevealEndsAt?: number;
+  /** Tokens placed (real + auto-backfilled) for the current round. */
+  suspicionTokensCurrent?: SuspicionToken[];
+  /** Player ids that have already submitted a token this round. */
+  tokensSubmittedIds?: string[];
+  /**
+   * Per-round archive of every Suspicion Token placement, keyed by round.
+   * Hydrated on reconnect and rendered in the post-game replay alongside
+   * each round's `RoundRecord`.
+   */
+  suspicionTokensByRound?: Record<number, SuspicionToken[]>;
 }
 
 export type EvidenceType = 'FRAME' | 'WHISPER_FABRICATION' | 'ANONYMOUS_TIP';
@@ -432,7 +482,14 @@ export type C2SEvent =
    * during the 60s booth window. Server validates length (10-120 chars
    * after trim), liveness, and single-submission per round.
    */
-  | { type: 'C2S_SUBMIT_CONFESSION'; payload: { content: string } };
+  | { type: 'C2S_SUBMIT_CONFESSION'; payload: { content: string } }
+  /**
+   * Wave 4 / 5 — Place this player's single public Suspicion Token on
+   * `targetId` during the 45s pre-voting placement window. Server
+   * validates phase, liveness, single-submission, valid alive non-self
+   * target. Replays after timeout/all-submitted are rejected.
+   */
+  | { type: 'C2S_PLACE_SUSPICION_TOKEN'; payload: { targetId: string } };
 
 // Server-to-Client Events
 export type S2CEvent =
@@ -504,6 +561,24 @@ export type S2CEvent =
       confessionSubmittedCount?: number;
       confessionTotalCount?: number;
       confessionMySubmitted?: boolean;
+      /**
+       * Wave 4 / 5 — Suspicion Token sub-phase rehydration. `tokenPhase`
+       * is set only while the sub-phase is active. During PLACEMENT the
+       * server only sends `tokenSubmittedCount`/`tokenTotalCount` and the
+       * caller's own `myTokenTargetId` (if any). On REVEAL/post-reveal the
+       * full current-round `suspicionTokensCurrent` is included so the
+       * graph can render. `suspicionTokensByRound` archives prior rounds
+       * for the in-game history panel; the post-game replay reads from
+       * RoundRecord.suspicionTokens instead.
+       */
+      tokenPhase?: SuspicionTokenPhase;
+      tokenWindowEndsAt?: number;
+      tokenRevealEndsAt?: number;
+      tokenSubmittedCount?: number;
+      tokenTotalCount?: number;
+      myTokenTargetId?: string;
+      suspicionTokensCurrent?: SuspicionToken[];
+      suspicionTokensByRound?: Record<number, SuspicionToken[]>;
     } }
   | { type: 'S2C_PLAYER_RECONNECTED'; payload: { playerId: string; players: Player[] } }
   | { type: 'S2C_PLAYER_DISCONNECTED'; payload: { playerId: string; players: Player[] } }
@@ -723,6 +798,49 @@ export type S2CEvent =
   | { type: 'S2C_CONFESSIONS_REVEALED'; payload: {
       reveals: ConfessionReveal[];
       round: number;
+    } }
+  /**
+   * Wave 4 / 5 — Suspicion Token sub-phase opens. Sent at the moment the
+   * host advances out of the discussion via C2S_START_VOTING. `aliveCount`
+   * is the denominator for the public progress count.
+   */
+  | { type: 'S2C_TOKEN_PHASE_STARTED'; payload: {
+      endsAt: number;
+      duration: number;
+      aliveCount: number;
+      round: number;
+    } }
+  /**
+   * Public progress only — never carries the placer's identity or their
+   * target. Emitted on every individual placement; the placer also gets
+   * a private `S2C_TOKEN_PLACED_PRIVATE` echo so their UI can lock in.
+   */
+  | { type: 'S2C_TOKEN_PLACED'; payload: {
+      received: number;
+      needed: number;
+    } }
+  /**
+   * Private echo to a single placer confirming their pick was recorded.
+   * Carries `targetId` so a client that placed and immediately reloaded
+   * still sees the locked-in selection.
+   */
+  | { type: 'S2C_TOKEN_PLACED_PRIVATE'; payload: {
+      targetId: string;
+    } }
+  /**
+   * Suspicion Token reveal. Server-resolved, public directed graph.
+   * Includes server-backfilled placements (`isAuto: true`) for any
+   * non-submitter. The voting timer auto-starts after a 5s reveal hold.
+   */
+  | { type: 'S2C_TOKENS_REVEALED'; payload: {
+      tokens: SuspicionToken[];
+      round: number;
+      revealEndsAt: number;
+    } }
+  /** Validation rejection for a Suspicion Token placement attempt. */
+  | { type: 'S2C_TOKEN_ERROR'; payload: {
+      code: 'PHASE' | 'EXPIRED' | 'DEAD' | 'ALREADY_PLACED' | 'INVALID_TARGET' | 'SELF';
+      message: string;
     } }
   | { type: 'S2C_AVATAR_UPDATED'; payload: { players: Player[] } }
   | { type: 'S2C_CHAT_MESSAGE'; payload: ChatMessage }

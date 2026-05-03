@@ -1,4 +1,4 @@
-import type { GameState, Player, Role, Vote, ChatMessage, TimerState, VoteTally, GameSettings, RoundRecord, SheriffReport, Whisper, WhisperErrorCode, ConfessionPhase, ConfessionReveal } from '../types';
+import type { GameState, Player, Role, Vote, ChatMessage, TimerState, VoteTally, GameSettings, RoundRecord, SheriffReport, Whisper, WhisperErrorCode, ConfessionPhase, ConfessionReveal, SuspicionToken, SuspicionTokenPhase, SuspicionTokenErrorCode } from '../types';
 
 type Msg = { type: string; payload: Record<string, unknown> };
 
@@ -149,7 +149,91 @@ export function gameStateReducer(state: GameState | null, msg: Msg): GameState |
         ...(payload.confessionSubmittedCount !== undefined ? { confessionSubmittedCount: payload.confessionSubmittedCount } : {}),
         ...(payload.confessionTotalCount !== undefined ? { confessionTotalCount: payload.confessionTotalCount } : {}),
         ...(payload.confessionMySubmitted !== undefined ? { mySubmittedConfession: payload.confessionMySubmitted } : {}),
+        ...((payload as { tokenPhase?: SuspicionTokenPhase }).tokenPhase !== undefined
+          ? { tokenPhase: (payload as { tokenPhase?: SuspicionTokenPhase }).tokenPhase }
+          : {}),
+        ...((payload as { tokenWindowEndsAt?: number }).tokenWindowEndsAt !== undefined
+          ? { tokenWindowEndsAt: (payload as { tokenWindowEndsAt?: number }).tokenWindowEndsAt }
+          : {}),
+        ...((payload as { tokenRevealEndsAt?: number }).tokenRevealEndsAt !== undefined
+          ? { tokenRevealEndsAt: (payload as { tokenRevealEndsAt?: number }).tokenRevealEndsAt }
+          : {}),
+        ...((payload as { tokenSubmittedCount?: number }).tokenSubmittedCount !== undefined
+          ? { tokenSubmittedCount: (payload as { tokenSubmittedCount?: number }).tokenSubmittedCount }
+          : {}),
+        ...((payload as { tokenTotalCount?: number }).tokenTotalCount !== undefined
+          ? { tokenTotalCount: (payload as { tokenTotalCount?: number }).tokenTotalCount }
+          : {}),
+        ...((payload as { myTokenTargetId?: string }).myTokenTargetId !== undefined
+          ? { myTokenTargetId: (payload as { myTokenTargetId?: string }).myTokenTargetId }
+          : {}),
+        ...((payload as { suspicionTokensCurrent?: SuspicionToken[] }).suspicionTokensCurrent !== undefined
+          ? { suspicionTokensCurrent: (payload as { suspicionTokensCurrent?: SuspicionToken[] }).suspicionTokensCurrent }
+          : {}),
+        ...((payload as { suspicionTokensByRound?: Record<number, SuspicionToken[]> }).suspicionTokensByRound !== undefined
+          ? { suspicionTokensByRound: (payload as { suspicionTokensByRound?: Record<number, SuspicionToken[]> }).suspicionTokensByRound }
+          : {}),
       };
+    }
+
+    case 'S2C_TOKEN_PHASE_STARTED': {
+      const payload = msg.payload as { endsAt: number; duration: number; aliveCount: number; round: number };
+      if (!state) return null;
+      return {
+        ...state,
+        tokenPhase: 'PLACEMENT',
+        tokenWindowEndsAt: payload.endsAt,
+        tokenRevealEndsAt: undefined,
+        tokenSubmittedCount: 0,
+        tokenTotalCount: payload.aliveCount,
+        myTokenTargetId: undefined,
+        suspicionTokensCurrent: [],
+        tokenError: undefined,
+      };
+    }
+
+    case 'S2C_TOKEN_PLACED': {
+      const payload = msg.payload as { received: number; needed: number };
+      if (!state) return null;
+      return {
+        ...state,
+        tokenSubmittedCount: payload.received,
+        tokenTotalCount: payload.needed,
+      };
+    }
+
+    case 'S2C_TOKEN_PLACED_PRIVATE': {
+      const payload = msg.payload as { targetId: string };
+      if (!state) return null;
+      return { ...state, myTokenTargetId: payload.targetId, tokenError: undefined };
+    }
+
+    case 'S2C_TOKENS_REVEALED': {
+      const payload = msg.payload as { tokens: SuspicionToken[]; round: number; revealEndsAt: number };
+      if (!state) return null;
+      const round = payload.round;
+      const archive = { ...(state.suspicionTokensByRound ?? {}), [round]: payload.tokens };
+      return {
+        ...state,
+        tokenPhase: 'REVEAL',
+        tokenWindowEndsAt: undefined,
+        tokenRevealEndsAt: payload.revealEndsAt,
+        suspicionTokensCurrent: payload.tokens,
+        suspicionTokensByRound: archive,
+      };
+    }
+
+    case 'S2C_TOKEN_ERROR': {
+      const payload = msg.payload as { code: SuspicionTokenErrorCode; message: string };
+      if (!state) return null;
+      return { ...state, tokenError: payload };
+    }
+
+    case 'CLIENT_CLEAR_TOKEN_ERROR': {
+      if (!state) return null;
+      const { tokenError: _drop, ...rest } = state;
+      void _drop;
+      return rest;
     }
 
     case 'S2C_PLAYER_DISCONNECTED': {
@@ -213,6 +297,16 @@ export function gameStateReducer(state: GameState | null, msg: Msg): GameState |
         confessionTotalCount: undefined,
         mySubmittedConfession: false,
         confessionRound: undefined,
+        // Reset the Suspicion Token sub-phase for the new round. The
+        // host will reopen it later via C2S_START_VOTING.
+        tokenPhase: undefined,
+        tokenWindowEndsAt: undefined,
+        tokenRevealEndsAt: undefined,
+        tokenSubmittedCount: undefined,
+        tokenTotalCount: undefined,
+        myTokenTargetId: undefined,
+        suspicionTokensCurrent: undefined,
+        tokenError: undefined,
       } : null;
     }
 
@@ -270,6 +364,16 @@ export function gameStateReducer(state: GameState | null, msg: Msg): GameState |
         currentTally: undefined,
         totalVotes: undefined,
         currentReveal: undefined,
+        // Wave 4 / 5 — strip the live token sub-phase scaffolding once
+        // voting begins. The current round's tokens stay archived in
+        // `suspicionTokensByRound`.
+        tokenPhase: undefined,
+        tokenWindowEndsAt: undefined,
+        tokenRevealEndsAt: undefined,
+        tokenSubmittedCount: undefined,
+        tokenTotalCount: undefined,
+        myTokenTargetId: undefined,
+        tokenError: undefined,
       } : null;
     }
 
