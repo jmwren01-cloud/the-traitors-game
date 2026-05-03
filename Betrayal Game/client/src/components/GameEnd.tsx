@@ -396,6 +396,10 @@ export function GameEnd({
           )}
 
           {history && history.length > 0 && (
+            <SuspicionStatsCard history={history} players={players} />
+          )}
+
+          {history && history.length > 0 && (
             <div className={`${styles.timeline} ${styles.stageEnter}`}>
               <h3 className={styles.timelineTitle}>How It Happened</h3>
               <div className={styles.timelineList}>
@@ -427,6 +431,115 @@ export function GameEnd({
           initialLeaderboard={leaderboard ?? null}
           initialGlobal={globalStats ?? null}
         />
+      )}
+    </div>
+  );
+}
+
+function SuspicionStatsCard({ history, players }: { history: RoundRecord[]; players: Player[] }) {
+  const allTokens = history.flatMap((r) => r.suspicionTokens ?? []);
+  if (allTokens.length === 0) return null;
+
+  const playerById = (id: string | undefined): Player | undefined =>
+    id ? players.find((p) => p.id === id) : undefined;
+  const isTraitor = (id: string): boolean => playerById(id)?.role === 'TRAITOR';
+
+  const incoming = new Map<string, number>();
+  const outgoingByPlacer = new Map<string, { total: number; auto: number; correct: number; manual: number }>();
+
+  for (const t of allTokens) {
+    incoming.set(t.targetId, (incoming.get(t.targetId) ?? 0) + 1);
+    const cur = outgoingByPlacer.get(t.placerId) ?? { total: 0, auto: 0, correct: 0, manual: 0 };
+    cur.total += 1;
+    if (t.isAuto) cur.auto += 1;
+    else {
+      cur.manual += 1;
+      if (isTraitor(t.targetId)) cur.correct += 1;
+    }
+    outgoingByPlacer.set(t.placerId, cur);
+  }
+
+  let mostSuspected: { id: string; n: number } | null = null;
+  for (const [id, n] of incoming) {
+    if (!mostSuspected || n > mostSuspected.n) mostSuspected = { id, n };
+  }
+
+  let bestAccuser: { id: string; pct: number; correct: number; manual: number } | null = null;
+  for (const [id, s] of outgoingByPlacer) {
+    if (s.manual === 0) continue;
+    const pct = s.correct / s.manual;
+    if (!bestAccuser || pct > bestAccuser.pct || (pct === bestAccuser.pct && s.correct > bestAccuser.correct)) {
+      bestAccuser = { id, pct, correct: s.correct, manual: s.manual };
+    }
+  }
+
+  const perPlacerRows = [...outgoingByPlacer.entries()]
+    .map(([id, s]) => ({ id, ...s, autoPct: s.total === 0 ? 0 : s.auto / s.total }))
+    .sort((a, b) => b.total - a.total);
+
+  return (
+    <div
+      className={styles.stageEnter}
+      style={{
+        margin: '16px auto', padding: '14px 16px', maxWidth: 720,
+        border: '1px solid rgba(180,120,255,0.4)', borderRadius: 10,
+        background: 'rgba(36,20,64,0.35)',
+      }}
+    >
+      <h3 style={{ margin: '0 0 10px', color: '#d9b6ff', fontSize: 16, letterSpacing: 0.4 }}>
+        🎯 Suspicion Stats
+      </h3>
+
+      <div style={{
+        display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 10,
+      }}>
+        {mostSuspected && (
+          <div style={{ padding: 10, background: 'rgba(0,0,0,0.25)', borderRadius: 8 }}>
+            <div style={{ fontSize: 11, color: '#b3a3c9', letterSpacing: 0.4, marginBottom: 4 }}>
+              MOST SUSPECTED
+            </div>
+            <PlayerChip player={playerById(mostSuspected.id)} />
+            <div style={{ fontSize: 12, color: '#f0e6ff', marginTop: 4 }}>
+              {mostSuspected.n} token{mostSuspected.n === 1 ? '' : 's'} received
+            </div>
+          </div>
+        )}
+
+        {bestAccuser && (
+          <div style={{ padding: 10, background: 'rgba(0,0,0,0.25)', borderRadius: 8 }}>
+            <div style={{ fontSize: 11, color: '#b3a3c9', letterSpacing: 0.4, marginBottom: 4 }}>
+              SHARPEST EYE
+            </div>
+            <PlayerChip player={playerById(bestAccuser.id)} />
+            <div style={{ fontSize: 12, color: '#f0e6ff', marginTop: 4 }}>
+              {bestAccuser.correct}/{bestAccuser.manual} pointed at a Traitor
+              {' '}({Math.round(bestAccuser.pct * 100)}%)
+            </div>
+          </div>
+        )}
+      </div>
+
+      {perPlacerRows.length > 0 && (
+        <div style={{ marginTop: 12 }}>
+          <div style={{ fontSize: 11, color: '#b3a3c9', letterSpacing: 0.4, marginBottom: 6 }}>
+            PLACED VS AUTO-ASSIGNED
+          </div>
+          <ul style={{ listStyle: 'none', padding: 0, margin: 0, fontSize: 13 }}>
+            {perPlacerRows.map((r) => (
+              <li key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '3px 0' }}>
+                <span style={{ minWidth: 140 }}>
+                  <PlayerChip player={playerById(r.id)} />
+                </span>
+                <span style={{ color: '#f0e6ff' }}>
+                  {r.manual} placed
+                </span>
+                <span style={{ color: '#ffb84d', opacity: r.auto > 0 ? 1 : 0.4 }}>
+                  · {r.auto} auto ({Math.round(r.autoPct * 100)}%)
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
     </div>
   );
