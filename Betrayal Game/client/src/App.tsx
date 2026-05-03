@@ -276,6 +276,7 @@ function App() {
           randomlySelectedPlayer={gameState?.randomlySelectedPlayer}
           shieldBlockedBanishment={gameState?.shieldBlockedBanishment}
           shieldBlockedBanishmentName={gameState?.shieldBlockedBanishmentName}
+          isHost={myPlayer?.isHost ?? false}
         />
         {chatBox}
       </>

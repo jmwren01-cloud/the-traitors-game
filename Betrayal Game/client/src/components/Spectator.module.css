@@ -38,10 +38,35 @@
   50% { transform: translateY(-5px); }
 }
 
+.ghostText {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+
+.ghostTitleRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 .ghostTitle {
   font-size: 1rem;
   font-weight: 700;
   color: #c8b8f0;
+}
+
+.hostBadge {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: rgba(243, 156, 18, 0.18);
+  color: #f5c46b;
+  border: 1px solid rgba(243, 156, 18, 0.45);
 }
 
 .ghostSub {

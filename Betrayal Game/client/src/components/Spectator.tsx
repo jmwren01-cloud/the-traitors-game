@@ -26,6 +26,10 @@ interface SpectatorProps {
   // need the same signal so they aren't left wondering why no one died.
   shieldBlockedBanishment?: boolean;
   shieldBlockedBanishmentName?: string;
+  // True when the spectating viewer is also the session host. Used to surface
+  // a HOST badge on the ghost banner so the host is reminded that the 👑 Host
+  // button (rendered by App.tsx) still gives them full controls.
+  isHost?: boolean;
 }
 
 const PHASE_LABELS: Partial<Record<string, string>> = {
@@ -60,6 +64,7 @@ export function Spectator({
   randomlySelectedPlayer,
   shieldBlockedBanishment,
   shieldBlockedBanishmentName,
+  isHost,
 }: SpectatorProps) {
   const alivePlayers = players.filter((p) => p.isAlive);
   const deadPlayers = players.filter((p) => !p.isAlive);
@@ -73,9 +78,16 @@ export function Spectator({
     <div className={`${styles.container} ${isNight ? styles.nightMode : ''}`}>
       <div className={styles.ghostBanner}>
         <span className={styles.ghostIcon}>👻</span>
-        <div>
-          <div className={styles.ghostTitle}>You are a Ghost</div>
-          <div className={styles.ghostSub}>Watch the game unfold from beyond...</div>
+        <div className={styles.ghostText}>
+          <div className={styles.ghostTitleRow}>
+            <span className={styles.ghostTitle}>You are a Ghost</span>
+            {isHost && <span className={styles.hostBadge}>👑 HOST</span>}
+          </div>
+          <div className={styles.ghostSub}>
+            {isHost
+              ? 'You can still run the game — open the Host panel to advance phases.'
+              : 'Watch the game unfold from beyond...'}
+          </div>
         </div>
       </div>
 
