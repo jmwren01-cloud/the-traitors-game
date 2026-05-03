@@ -605,7 +605,7 @@ export type S2CEvent =
       recruitedPlayerName?: string;
       recruitmentOccurred?: boolean;
     } }
-  | { type: 'S2C_RECRUITMENT_SUBMITTED'; payload: { recruiterId: string; recruiterName: string } }
+  | { type: 'S2C_RECRUITMENT_SUBMITTED'; payload: { recruiterId: string; recruiterName: string; targetId: string; targetName: string } }
   | { type: 'S2C_YOU_WERE_RECRUITED'; payload: { traitorIds: string[] } }
   | { type: 'S2C_PLAYER_RECRUITED'; payload: { newTraitorId: string; newTraitorName: string; updatedTraitorIds: string[] } }
   | { type: 'S2C_CHALLENGE_STARTED'; payload: { 

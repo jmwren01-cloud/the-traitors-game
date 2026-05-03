@@ -277,6 +277,7 @@ function App() {
           justRecruited={gameState?.justRecruited}
           recruitedPlayer={gameState?.recruitedPlayer}
           nightRecruitmentSubmittedBy={gameState?.nightRecruitmentSubmittedBy}
+          nightRecruitmentTargetName={gameState?.nightRecruitmentTargetName}
           evidenceUsed={gameState?.evidenceUsed}
           falseEvidence={gameState?.falseEvidence}
           evidenceVotes={gameState?.evidenceVotes}

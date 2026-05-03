@@ -803,7 +803,12 @@ export function gameStateReducer(state: GameState | null, msg: Msg): GameState |
     }
 
     case 'S2C_RECRUITMENT_SUBMITTED': {
-      const payload = msg.payload as { recruiterId: string; recruiterName: string };
+      const payload = msg.payload as {
+        recruiterId: string;
+        recruiterName: string;
+        targetId: string;
+        targetName: string;
+      };
       if (!state) return null;
       return {
         ...state,
@@ -811,6 +816,8 @@ export function gameStateReducer(state: GameState | null, msg: Msg): GameState |
           p.id === payload.recruiterId ? { ...p, recruitmentUsed: true } : p
         ),
         nightRecruitmentSubmittedBy: payload.recruiterId,
+        nightRecruitmentTargetId: payload.targetId,
+        nightRecruitmentTargetName: payload.targetName,
       };
     }
 

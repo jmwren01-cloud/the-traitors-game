@@ -23,6 +23,7 @@ interface NightPhaseProps {
   justRecruited?: boolean;
   recruitedPlayer?: { id: string; name: string };
   nightRecruitmentSubmittedBy?: string;
+  nightRecruitmentTargetName?: string;
   /** Wave 4 / 3 — False Evidence (traitor-only state). */
   evidenceUsed?: boolean;
   falseEvidence?: FalseEvidence;
@@ -49,6 +50,7 @@ export function NightPhase({
   justRecruited,
   recruitedPlayer,
   nightRecruitmentSubmittedBy,
+  nightRecruitmentTargetName,
   evidenceUsed,
   falseEvidence,
   evidenceVotes,
@@ -264,7 +266,10 @@ export function NightPhase({
                 return (
                   <div className={styles.recruitSection}>
                     <h2 className={styles.sectionTitle}>🤝 Recruit a Faithful</h2>
-                    <p className={styles.waiting}>✅ Recruitment submitted — they will join your ranks at dawn.</p>
+                    <p className={styles.waiting}>
+                      ✅ Recruitment submitted
+                      {nightRecruitmentTargetName ? <> — <strong>{nightRecruitmentTargetName}</strong> will join your ranks at dawn.</> : ' — they will join your ranks at dawn.'}
+                    </p>
                   </div>
                 );
               }
@@ -272,7 +277,11 @@ export function NightPhase({
                 return (
                   <div className={styles.recruitSection}>
                     <h2 className={styles.sectionTitle}>🤝 Recruit a Faithful</h2>
-                    <p className={styles.waiting}>A fellow Traitor has already submitted a recruitment for this night.</p>
+                    <p className={styles.waiting}>
+                      {nightRecruitmentTargetName
+                        ? <>A fellow Traitor has recruited <strong>{nightRecruitmentTargetName}</strong> — they will join your ranks at dawn.</>
+                        : 'A fellow Traitor has already submitted a recruitment for this night.'}
+                    </p>
                   </div>
                 );
               }
