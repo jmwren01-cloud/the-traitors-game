@@ -15,6 +15,8 @@ import { startVoteRevealSequence } from './voteReveal.js';
 const activeChallengeTimers = new Map<string, NodeJS.Timeout>();
 // Wave 4 / 3 — server-side 60s false-evidence unanimity timer.
 const evidenceWindowTimers = new Map<string, NodeJS.Timeout>();
+// Wave 4 / 4 — server-side 60s Confession Booth timer.
+const confessionTimers = new Map<string, NodeJS.Timeout>();
 
 function clearChallengeTimer(sessionId: string): void {
   const t = activeChallengeTimers.get(sessionId);
@@ -32,6 +34,14 @@ function clearEvidenceTimer(sessionId: string): void {
   }
 }
 
+function clearConfessionTimer(sessionId: string): void {
+  const t = confessionTimers.get(sessionId);
+  if (t) {
+    clearTimeout(t);
+    confessionTimers.delete(sessionId);
+  }
+}
+
 /**
  * Clean up all in-memory timers/intervals associated with a session.
  * Call this when a game session is destroyed (e.g. all players gone, manual cleanup).
@@ -39,6 +49,7 @@ function clearEvidenceTimer(sessionId: string): void {
 export function cleanupSessionTimers(sessionId: string): void {
   clearChallengeTimer(sessionId);
   clearEvidenceTimer(sessionId);
+  clearConfessionTimer(sessionId);
 }
 
 function countEligibleAnswerers(state: GameState): number {
@@ -159,6 +170,73 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
 
   function broadcastPerRecipient(sessionId: string, buildEvent: (recipientId: string) => S2CEvent): void {
     broadcastToSessionPerRecipient(sessionId, buildEvent, games, playerConnections);
+  }
+
+  // ============= CONFESSION BOOTH HELPERS (Wave 4 / 4) =============
+
+  /**
+   * Start the ROUNDTABLE discussion timer (the timer that was previously
+   * started immediately at Roundtable entry). Now invoked AFTER the
+   * Confession Booth resolves, so the timer is gated on the booth.
+   */
+  function startRoundtableDiscussionTimer(sessionId: string, current: GameState): GameState {
+    const timer = game.createTimer('ROUNDTABLE', current.settings);
+    if (!timer) return current;
+    const withTimer = { ...current, timer };
+    setGame(withTimer);
+    broadcast(sessionId, {
+      type: 'S2C_TIMER_UPDATE',
+      payload: { endTime: timer.endTime, duration: timer.duration, phase: 'ROUNDTABLE' },
+    });
+    return withTimer;
+  }
+
+  /**
+   * Resolve the booth (backfill defaults, inject ANONYMOUS_TIP, shuffle),
+   * broadcast S2C_CONFESSIONS_REVEALED, then start the discussion timer.
+   * Idempotent — safe to call from both the timeout fire and the
+   * "all alive submitted" early path.
+   */
+  function fireConfessionResolution(sessionId: string): void {
+    clearConfessionTimer(sessionId);
+    const current = games.get(sessionId);
+    if (!current) return;
+    if (current.phase !== 'ROUNDTABLE' || current.confessionPhase !== 'BOOTH') return;
+    const resolved = game.resolveConfessions(current);
+    setGame(resolved);
+    broadcast(sessionId, {
+      type: 'S2C_CONFESSIONS_REVEALED',
+      payload: {
+        reveals: resolved.confessionRevealed ?? [],
+        round: resolved.currentRound,
+      },
+    });
+    startRoundtableDiscussionTimer(sessionId, resolved);
+  }
+
+  /**
+   * Open the booth: broadcast S2C_CONFESSION_PHASE_STARTED and schedule
+   * the 60s timeout. Caller must have already broadcast
+   * S2C_ROUNDTABLE_STARTED and persisted the booth-initialised state.
+   */
+  function beginConfessionBooth(sessionId: string, current: GameState): void {
+    clearConfessionTimer(sessionId);
+    const aliveCount = current.players.filter((p) => p.isAlive).length;
+    const endsAt = current.confessionWindowEndsAt ?? Date.now();
+    const duration = Math.max(0, endsAt - Date.now());
+    broadcast(sessionId, {
+      type: 'S2C_CONFESSION_PHASE_STARTED',
+      payload: { endsAt, duration, aliveCount },
+    });
+    const handle = setTimeout(() => {
+      confessionTimers.delete(sessionId);
+      try {
+        fireConfessionResolution(sessionId);
+      } catch (e) {
+        console.error('Confession booth auto-resolve error:', e);
+      }
+    }, duration);
+    confessionTimers.set(sessionId, handle);
   }
 
   ws.on('message', (data: string) => {
@@ -439,6 +517,28 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
           }
         }
 
+        // Wave 4 / 4 — Hydrate Confession Booth state on reconnect so a
+        // returning alive player sees the open booth (with their submitted
+        // flag) or the freshly revealed cards. Public fields only — never
+        // ship `confessionEntries` (carries playerIds).
+        if (updatedGame.phase === 'ROUNDTABLE') {
+          if (updatedGame.confessionPhase !== undefined) {
+            reconnectPayload.confessionPhase = updatedGame.confessionPhase;
+          }
+          if (updatedGame.confessionRevealed !== undefined) {
+            reconnectPayload.confessionRevealed = updatedGame.confessionRevealed;
+          }
+          if (updatedGame.confessionWindowEndsAt !== undefined) {
+            reconnectPayload.confessionWindowEndsAt = updatedGame.confessionWindowEndsAt;
+          }
+          const aliveCount = updatedGame.players.filter((p) => p.isAlive).length;
+          const submittedCount = (updatedGame.confessionSubmittedIds ?? []).length;
+          reconnectPayload.confessionAliveCount = aliveCount;
+          reconnectPayload.confessionSubmittedCount = submittedCount;
+          reconnectPayload.confessionMySubmitted =
+            (updatedGame.confessionSubmittedIds ?? []).includes(currentPlayerId);
+        }
+
         ws.send(JSON.stringify({ type: 'S2C_RECONNECTED', payload: reconnectPayload } satisfies S2CEvent));
 
         broadcastPerRecipient(currentSessionId, (recipientId) => ({
@@ -550,15 +650,37 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
           });
         }
 
-        const timer = game.createTimer('ROUNDTABLE', updatedGame.settings);
-        if (timer) {
-          const gameWithTimer = { ...updatedGame, timer };
-          setGame(gameWithTimer);
-          updatedGame = gameWithTimer;
-          broadcast(currentSessionId, {
-            type: 'S2C_TIMER_UPDATE',
-            payload: { endTime: timer.endTime, duration: timer.duration, phase: 'ROUNDTABLE' }
-          });
+        // Wave 4 / 4 — open Confession Booth before discussion timer.
+        beginConfessionBooth(currentSessionId, updatedGame);
+        return;
+      }
+
+      if (event.type === 'C2S_SUBMIT_CONFESSION') {
+        let after: GameState;
+        try {
+          after = game.submitConfession(gameState, currentPlayerId, event.payload.content);
+        } catch (err) {
+          if (err instanceof game.ConfessionError) {
+            sendError(ws, err.message);
+          } else {
+            sendError(ws, (err as Error).message);
+          }
+          return;
+        }
+        setGame(after);
+
+        const aliveIds = after.players.filter((p) => p.isAlive).map((p) => p.id);
+        const received = (after.confessionSubmittedIds ?? []).length;
+        const needed = aliveIds.length;
+
+        broadcast(currentSessionId, {
+          type: 'S2C_CONFESSION_SUBMITTED',
+          payload: { received, needed },
+        });
+
+        if (game.allAliveConfessed(after)) {
+          // Early-resolve: every alive player has confessed.
+          fireConfessionResolution(currentSessionId);
         }
         return;
       }
@@ -915,15 +1037,8 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
           });
 
           if (updatedGame.phase === 'ROUNDTABLE') {
-            const timer = game.createTimer('ROUNDTABLE', updatedGame.settings);
-            if (timer) {
-              const gameWithTimer = { ...updatedGame, timer };
-              setGame(gameWithTimer);
-              broadcast(currentSessionId, {
-                type: 'S2C_TIMER_UPDATE',
-                payload: { endTime: timer.endTime, duration: timer.duration, phase: 'ROUNDTABLE' }
-              });
-            }
+            // Wave 4 / 4 — booth gates the discussion timer.
+            beginConfessionBooth(currentSessionId, updatedGame);
           }
         }
         return;
@@ -1278,6 +1393,14 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
             type: 'S2C_CONTINUE_GAME',
             payload: { phase: updatedGame.phase, currentRound: updatedGame.currentRound }
           });
+          if (updatedGame.phase === 'ROUNDTABLE') {
+            // Wave 4 / 4 — challenges-disabled path also opens the booth.
+            broadcast(currentSessionId, {
+              type: 'S2C_ROUNDTABLE_STARTED',
+              payload: { phase: 'ROUNDTABLE', currentRound: updatedGame.currentRound }
+            });
+            beginConfessionBooth(currentSessionId, updatedGame);
+          }
         }
         return;
       }
@@ -1358,15 +1481,8 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
           });
         }
 
-        const timer = game.createTimer('ROUNDTABLE', updatedGame.settings);
-        if (timer) {
-          const gameWithTimer = { ...updatedGame, timer };
-          setGame(gameWithTimer);
-          broadcast(currentSessionId, {
-            type: 'S2C_TIMER_UPDATE',
-            payload: { endTime: timer.endTime, duration: timer.duration, phase: 'ROUNDTABLE' }
-          });
-        }
+        // Wave 4 / 4 — booth gates the discussion timer.
+        beginConfessionBooth(currentSessionId, updatedGame);
         return;
       }
 

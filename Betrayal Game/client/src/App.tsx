@@ -4,6 +4,7 @@ import { useWebSocket } from './hooks/useWebSocket';
 import { Lobby } from './components/Lobby';
 import { RoleReveal } from './components/RoleReveal';
 import { Voting } from './components/Voting';
+import { ConfessionBooth } from './components/ConfessionBooth';
 import { NightPhase } from './components/NightPhase';
 import { GameEnd } from './components/GameEnd';
 import { ChatBox } from './components/ChatBox';
@@ -75,7 +76,20 @@ function App() {
   }
 
   const phase = gameState?.phase || 'LOBBY';
-  const showChat = gameState && phase !== 'LOBBY' && phase !== 'ROLE_ASSIGN';
+  // Confession Booth overlay visibility (Wave 4 / 4). The overlay shows
+  // for the entire BOOTH window and stays up after reveal until the local
+  // player presses "Begin Discussion". `boothDismissed` resets every time
+  // a fresh booth opens so the overlay always re-appears next round.
+  const [boothDismissed, setBoothDismissed] = useState(false);
+  const confessionPhase = gameState?.confessionPhase;
+  useEffect(() => {
+    if (confessionPhase === 'BOOTH') setBoothDismissed(false);
+  }, [confessionPhase, gameState?.currentRound]);
+  const boothActive =
+    phase === 'ROUNDTABLE' &&
+    (confessionPhase === 'BOOTH' ||
+      (confessionPhase === 'DISCUSSION' && !!gameState?.confessionRevealed && !boothDismissed));
+  const showChat = gameState && phase !== 'LOBBY' && phase !== 'ROLE_ASSIGN' && !boothActive;
   const isChatDisabled = phase === 'ROLE_REVEAL';
   const specialRoleHud = gameState ? (
     <SpecialRoleHud
@@ -306,11 +320,30 @@ function App() {
           lastWhisperReceivedId={gameState?.lastWhisperReceivedId}
           whispersRead={gameState?.whispersRead}
           whisperError={gameState?.whisperError}
+          confessionRevealed={gameState?.confessionRevealed}
+          confessionRound={gameState?.confessionRound}
+          currentRoundNumber={gameState?.currentRound}
           onLocalAction={dispatchLocal}
           onSend={send}
         />
         {specialRoleHud}
         {chatBox}
+        {boothActive && (
+          <ConfessionBooth
+            phase={confessionPhase ?? 'BOOTH'}
+            reveals={gameState?.confessionRevealed}
+            endsAt={gameState?.confessionWindowEndsAt}
+            submittedCount={gameState?.confessionSubmittedCount}
+            totalCount={gameState?.confessionTotalCount}
+            isAlive={isAlive}
+            hasSubmitted={gameState?.mySubmittedConfession ?? false}
+            onSubmit={send}
+            onBeginDiscussion={() => setBoothDismissed(true)}
+            onLocalSubmitted={() =>
+              dispatchLocal({ type: 'CLIENT_MY_CONFESSION_SUBMITTED' })
+            }
+          />
+        )}
       </>
     );
   }

@@ -196,7 +196,48 @@ export interface RoundRecord {
   shieldedName?: string;
   shieldedRole?: Role;
   recruitedName?: string;
+  /**
+   * Wave 4 / 4 — Confession Booth. Full attribution for the post-game
+   * replay. Includes default-statement entries (`isDefault: true`) and
+   * any injected ANONYMOUS_TIP (`isAnonymousTip: true`,
+   * `playerId: undefined` since it has no real author).
+   */
+  confessions?: ConfessionEntry[];
 }
+
+/**
+ * Wave 4 / 4 — Confession Booth. Server-side full record for one
+ * statement made during a Roundtable's Booth sub-phase. `playerId` is
+ * NEVER broadcast during the live game — only in the post-game replay
+ * via `RoundRecord.confessions`.
+ */
+export interface ConfessionEntry {
+  /** Unique id; used as the React key on reveal cards. */
+  id: string;
+  /** Author. Undefined for an injected ANONYMOUS_TIP (no real author). */
+  playerId?: string;
+  text: string;
+  /** True when the player did not submit and the server backfilled. */
+  isDefault?: boolean;
+  /** True for an ANONYMOUS_TIP injected by an active FalseEvidence plant. */
+  isAnonymousTip?: boolean;
+}
+
+/** Public-facing reveal — strips author and the default/tip flags. */
+export interface ConfessionReveal {
+  id: string;
+  text: string;
+}
+
+/** Min/max length of a player-submitted confession. */
+export const CONFESSION_MIN_LENGTH = 10;
+export const CONFESSION_MAX_LENGTH = 120;
+
+/** Booth window length. */
+export const CONFESSION_WINDOW_MS = 60_000;
+
+/** Sub-phase of a ROUNDTABLE; controls which UI is shown to the player. */
+export type ConfessionPhase = 'BOOTH' | 'DISCUSSION';
 
 export interface GameState {
   sessionId: string;
@@ -279,6 +320,22 @@ export interface GameState {
    * timeout that auto-fails an unfinished round.
    */
   evidenceWindowEndsAt?: number;
+  /**
+   * Wave 4 / 4 — Confession Booth state for the current Roundtable.
+   * `confessionPhase === 'BOOTH'` means the 60s booth overlay is active and
+   * the discussion timer has NOT started yet. `'DISCUSSION'` means the
+   * reveal has happened (or the booth is irrelevant — set on every fresh
+   * Roundtable and again after `resolveConfessions`).
+   */
+  confessionPhase?: ConfessionPhase;
+  /** Server-only full entries (with playerId). Reset on each Roundtable. */
+  confessionEntries?: ConfessionEntry[];
+  /** Player ids of players who have already submitted this round. */
+  confessionSubmittedIds?: string[];
+  /** Public-facing shuffled reveal list. Set by resolveConfessions. */
+  confessionRevealed?: ConfessionReveal[];
+  /** Unix-ms deadline for the 60s booth window. Cleared on resolve. */
+  confessionWindowEndsAt?: number;
 }
 
 export type EvidenceType = 'FRAME' | 'WHISPER_FABRICATION' | 'ANONYMOUS_TIP';
@@ -369,7 +426,13 @@ export type C2SEvent =
       voteType: EvidenceType | 'SKIP';
       targetId?: string;
       content?: string;
-    } };
+    } }
+  /**
+   * Wave 4 / 4 — Confession Booth. Submit the player's anonymous statement
+   * during the 60s booth window. Server validates length (10-120 chars
+   * after trim), liveness, and single-submission per round.
+   */
+  | { type: 'C2S_SUBMIT_CONFESSION'; payload: { content: string } };
 
 // Server-to-Client Events
 export type S2CEvent =
@@ -429,6 +492,18 @@ export type S2CEvent =
       evidenceWindowEndsAt?: number;
       evidenceUsed?: boolean;
       falseEvidence?: FalseEvidence;
+      /**
+       * Wave 4 / 4 — Booth state for the current Roundtable. Only the
+       * public-facing fields are sent (no server-side `confessionEntries`).
+       * `confessionMySubmitted` lets the rejoining player skip straight to
+       * the "recorded" state when they had already submitted.
+       */
+      confessionPhase?: ConfessionPhase;
+      confessionRevealed?: ConfessionReveal[];
+      confessionWindowEndsAt?: number;
+      confessionSubmittedCount?: number;
+      confessionAliveCount?: number;
+      confessionMySubmitted?: boolean;
     } }
   | { type: 'S2C_PLAYER_RECONNECTED'; payload: { playerId: string; players: Player[] } }
   | { type: 'S2C_PLAYER_DISCONNECTED'; payload: { playerId: string; players: Player[] } }
@@ -621,6 +696,33 @@ export type S2CEvent =
   /** Sent to alive Traitors when the vote concluded with no plant. */
   | { type: 'S2C_EVIDENCE_FAILED'; payload: {
       reason: 'SKIPPED' | 'NO_AGREEMENT' | 'TIMEOUT';
+    } }
+  /**
+   * Wave 4 / 4 — Booth opens. Sent at the start of every Roundtable to
+   * every player. `endsAt` is the Unix-ms deadline for the 60s window;
+   * `aliveCount` is the denominator for the public progress count.
+   */
+  | { type: 'S2C_CONFESSION_PHASE_STARTED'; payload: {
+      endsAt: number;
+      duration: number;
+      aliveCount: number;
+    } }
+  /**
+   * Public progress only — never carries the submitter's identity. The
+   * server emits this on every individual submission AND on the resolve
+   * step so reconnecting clients converge on the right count.
+   */
+  | { type: 'S2C_CONFESSION_SUBMITTED'; payload: {
+      received: number;
+      needed: number;
+    } }
+  /**
+   * Wave 4 / 4 — Booth resolves. Server-shuffled, attribution stripped.
+   * The roundtable discussion timer starts immediately after this event.
+   */
+  | { type: 'S2C_CONFESSIONS_REVEALED'; payload: {
+      reveals: ConfessionReveal[];
+      round: number;
     } }
   | { type: 'S2C_AVATAR_UPDATED'; payload: { players: Player[] } }
   | { type: 'S2C_CHAT_MESSAGE'; payload: ChatMessage }

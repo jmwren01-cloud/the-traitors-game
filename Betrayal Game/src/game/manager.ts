@@ -1,7 +1,7 @@
 // Game Manager - Core Game Logic
 
-import type { GameState, Player, Role, Vote, TimerState, GamePhase, GameSettings, ChallengeState, ChallengeType, RoundRecord, VoteEntry, Whisper, EvidenceVote, EvidenceType, FalseEvidence } from './types.js';
-import { DEFAULT_SETTINGS, FALSE_EVIDENCE_CONTENT_MAX, FALSE_EVIDENCE_WINDOW_MS } from './types.js';
+import type { GameState, Player, Role, Vote, TimerState, GamePhase, GameSettings, ChallengeState, ChallengeType, RoundRecord, VoteEntry, Whisper, EvidenceVote, EvidenceType, FalseEvidence, ConfessionEntry, ConfessionReveal } from './types.js';
+import { DEFAULT_SETTINGS, FALSE_EVIDENCE_CONTENT_MAX, FALSE_EVIDENCE_WINDOW_MS, CONFESSION_MIN_LENGTH, CONFESSION_MAX_LENGTH, CONFESSION_WINDOW_MS } from './types.js';
 import { pickAvailableColor, pickRandomAvatar, COLOR_IDS, AVATAR_IDS } from './avatarConstants.js';
 
 // Word bank for Word Scramble challenge (simple 4-5 letter words)
@@ -496,14 +496,205 @@ export function startRoundtable(game: GameState): GameState {
   // First roundtable after role reveal is Round 1
   const newRound = game.phase === 'ROLE_REVEAL' ? 1 : game.currentRound;
 
+  // Wave 4 / 4 — open the Confession Booth sub-phase. The discussion
+  // timer is NOT started until resolveConfessions runs.
   return {
-    ...game,
+    ...omit(game, 'confessionRevealed'),
     phase: 'ROUNDTABLE',
     currentRound: newRound,
     // fresh whisper budget every Roundtable: each alive player
     // gets exactly one outgoing whisper for the round.
-    whispersUsedThisRound: []
+    whispersUsedThisRound: [],
+    confessionPhase: 'BOOTH',
+    confessionEntries: [],
+    confessionSubmittedIds: [],
+    confessionWindowEndsAt: Date.now() + CONFESSION_WINDOW_MS,
   };
+}
+
+// ============= CONFESSION BOOTH (Wave 4 / 4) =============
+
+/**
+ * Default-statement bank used to backfill confessions for players who fail
+ * to submit before the booth window closes. Lines are intentionally
+ * deflective / generic so a defaulter is indistinguishable from a real
+ * "I have nothing to add" submission.
+ */
+export const DEFAULT_CONFESSIONS: readonly string[] = [
+  "I'm just here to listen.",
+  "I don't know who to trust yet.",
+  "Watch the quiet ones.",
+  "I have nothing to confess.",
+  "Something feels off about last night.",
+  "I'm keeping my cards close.",
+  "Trust your gut today.",
+  "I'm not the one you're looking for.",
+  "Pay attention to who deflects.",
+  "I'd rather not say.",
+  "We need to slow down and think.",
+  "Someone is lying through their teeth.",
+];
+
+export class ConfessionError extends Error {
+  constructor(public code: 'PHASE' | 'DEAD' | 'ALREADY_SUBMITTED' | 'TOO_SHORT' | 'TOO_LONG', message: string) {
+    super(message);
+    this.name = 'ConfessionError';
+  }
+}
+
+let confessionEntryCounter = 0;
+function generateConfessionId(): string {
+  confessionEntryCounter += 1;
+  return `cf_${Date.now().toString(36)}_${confessionEntryCounter.toString(36)}`;
+}
+
+/**
+ * Sanitise & enforce length on a player-submitted confession. Trims
+ * whitespace, collapses internal newlines to spaces, and clamps to the
+ * configured maximum. Returns the cleaned string OR throws ConfessionError.
+ */
+function sanitiseConfessionContent(raw: string): string {
+  const collapsed = String(raw ?? '').replace(/[\r\n\t]+/g, ' ').trim();
+  if (collapsed.length < CONFESSION_MIN_LENGTH) {
+    throw new ConfessionError('TOO_SHORT', `Confession must be at least ${CONFESSION_MIN_LENGTH} characters`);
+  }
+  if (collapsed.length > CONFESSION_MAX_LENGTH) {
+    throw new ConfessionError('TOO_LONG', `Confession must be at most ${CONFESSION_MAX_LENGTH} characters`);
+  }
+  return collapsed;
+}
+
+/**
+ * Append a real player confession during the BOOTH sub-phase. Throws
+ * ConfessionError on validation failure (wrong phase, dead player, double
+ * submission, length out of range).
+ */
+export function submitConfession(
+  game: GameState,
+  playerId: string,
+  rawContent: string,
+): GameState {
+  if (game.phase !== 'ROUNDTABLE' || game.confessionPhase !== 'BOOTH') {
+    throw new ConfessionError('PHASE', 'Confession booth is not open');
+  }
+  const player = game.players.find((p) => p.id === playerId);
+  if (!player || !player.isAlive) {
+    throw new ConfessionError('DEAD', 'Only alive players may confess');
+  }
+  const submitted = game.confessionSubmittedIds ?? [];
+  if (submitted.includes(playerId)) {
+    throw new ConfessionError('ALREADY_SUBMITTED', 'You have already confessed this round');
+  }
+  const text = sanitiseConfessionContent(rawContent);
+  const entry: ConfessionEntry = {
+    id: generateConfessionId(),
+    playerId,
+    text,
+  };
+  return {
+    ...game,
+    confessionEntries: [...(game.confessionEntries ?? []), entry],
+    confessionSubmittedIds: [...submitted, playerId],
+  };
+}
+
+/** True if every alive player has already submitted a confession this round. */
+export function allAliveConfessed(game: GameState): boolean {
+  const alive = game.players.filter((p) => p.isAlive).map((p) => p.id);
+  if (alive.length === 0) return false;
+  const submitted = new Set(game.confessionSubmittedIds ?? []);
+  return alive.every((id) => submitted.has(id));
+}
+
+/**
+ * Server-side Fisher-Yates shuffle. RNG is injected for deterministic
+ * tests; defaults to Math.random.
+ */
+function shuffleInPlace<T>(arr: T[], rng: () => number = Math.random): T[] {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(rng() * (i + 1));
+    const tmp = arr[i] as T;
+    arr[i] = arr[j] as T;
+    arr[j] = tmp;
+  }
+  return arr;
+}
+
+/**
+ * Close the booth: backfill defaults for any non-submitter, inject the
+ * active ANONYMOUS_TIP (if any), shuffle, strip authorship for the public
+ * reveal, and archive full attribution to the current round's history
+ * record. Idempotent — calling twice in the same round is a no-op.
+ *
+ * `rng` is injected for tests so the shuffle is deterministic.
+ */
+export function resolveConfessions(
+  game: GameState,
+  rng: () => number = Math.random,
+): GameState {
+  // Idempotent guard — only run while the booth is actually open.
+  if (game.phase !== 'ROUNDTABLE' || game.confessionPhase !== 'BOOTH') {
+    return game;
+  }
+
+  const alive = game.players.filter((p) => p.isAlive);
+  const submitted = new Set(game.confessionSubmittedIds ?? []);
+  const entries: ConfessionEntry[] = [...(game.confessionEntries ?? [])];
+
+  // Backfill defaults for every alive non-submitter, picking a random
+  // line per defaulter so they don't collide on the same string.
+  for (const p of alive) {
+    if (submitted.has(p.id)) continue;
+    const idx = Math.floor(rng() * DEFAULT_CONFESSIONS.length);
+    const text = DEFAULT_CONFESSIONS[idx] ?? DEFAULT_CONFESSIONS[0]!;
+    entries.push({
+      id: generateConfessionId(),
+      playerId: p.id,
+      text,
+      isDefault: true,
+    });
+  }
+
+  // Inject the active ANONYMOUS_TIP body (if a FalseEvidence plant of
+  // that type was activated this round). It's an extra entry — there's
+  // no real author, so playerId is intentionally omitted.
+  const ev = game.falseEvidence;
+  if (
+    ev &&
+    ev.type === 'ANONYMOUS_TIP' &&
+    ev.activatedAtRound === game.currentRound &&
+    typeof ev.content === 'string' &&
+    ev.content.trim().length > 0
+  ) {
+    entries.push({
+      id: generateConfessionId(),
+      text: ev.content.trim().slice(0, CONFESSION_MAX_LENGTH),
+      isAnonymousTip: true,
+    });
+  }
+
+  // Shuffle and strip authorship.
+  shuffleInPlace(entries, rng);
+  const reveals: ConfessionReveal[] = entries.map((e) => ({ id: e.id, text: e.text }));
+
+  // NOTE: full attribution lives on `game.confessionEntries`. It is
+  // copied onto the RoundRecord at end-of-round inside buildRoundRecord,
+  // so the post-game replay sees it without us double-pushing here.
+  return {
+    ...omit(game, 'confessionWindowEndsAt'),
+    confessionPhase: 'DISCUSSION',
+    confessionEntries: entries,
+    confessionRevealed: reveals,
+  };
+}
+
+/**
+ * Public-facing snapshot for reconnecting clients. Always safe — strips
+ * `playerId` & flags. Returns undefined if no reveal exists yet.
+ */
+export function getConfessionRevealsForBroadcast(game: GameState): ConfessionReveal[] | undefined {
+  if (!game.confessionRevealed) return undefined;
+  return game.confessionRevealed.map((r) => ({ id: r.id, text: r.text }));
 }
 
 // ============= WHISPER SYSTEM =============
@@ -1053,6 +1244,10 @@ function buildRoundRecord(game: GameState): RoundRecord {
     ...(shieldedPlayer?.name !== undefined ? { shieldedName: shieldedPlayer.name } : {}),
     ...(shieldedPlayer?.role !== undefined ? { shieldedRole: shieldedPlayer.role } : {}),
     ...(recruitedPlayer?.name !== undefined ? { recruitedName: recruitedPlayer.name } : {}),
+    // Wave 4 / 4 — full confession attribution for the post-game replay.
+    ...(game.confessionEntries && game.confessionEntries.length > 0
+      ? { confessions: game.confessionEntries }
+      : {}),
   };
 }
 
@@ -1721,13 +1916,19 @@ export function continueToDayPhase(game: GameState): GameState {
     };
   }
 
-  // Continue directly to roundtable
+  // Continue directly to roundtable. Wave 4 / 4 — initialise the
+  // Confession Booth sub-phase here too (the router relies on this
+  // to broadcast S2C_CONFESSION_PHASE_STARTED).
   return {
-    ...omit(game, 'lastRoundVotes', 'lastShieldedPlayerId', 'lastRecruitedPlayerId'),
+    ...omit(game, 'lastRoundVotes', 'lastShieldedPlayerId', 'lastRecruitedPlayerId', 'confessionRevealed'),
     history: newHistory,
     phase: 'ROUNDTABLE',
     currentRound: nextRound,
-    lastMurderBlocked: false
+    lastMurderBlocked: false,
+    confessionPhase: 'BOOTH',
+    confessionEntries: [],
+    confessionSubmittedIds: [],
+    confessionWindowEndsAt: Date.now() + CONFESSION_WINDOW_MS,
   };
 }
 
@@ -2069,9 +2270,14 @@ export function continueToRoundtable(game: GameState): GameState {
     throw new Error('Not in challenge result phase');
   }
 
+  // Wave 4 / 4 — initialise Confession Booth sub-phase on entry.
   return {
-    ...omit(game, 'challenge'),
+    ...omit(game, 'challenge', 'confessionRevealed'),
     phase: 'ROUNDTABLE',
+    confessionPhase: 'BOOTH',
+    confessionEntries: [],
+    confessionSubmittedIds: [],
+    confessionWindowEndsAt: Date.now() + CONFESSION_WINDOW_MS,
   };
 }
 

@@ -152,6 +152,40 @@ export interface RoundRecord {
   shieldedName?: string;
   shieldedRole?: Role;
   recruitedName?: string;
+  /**
+   * Wave 4 / 4 — full per-round confession archive (with playerId
+   * attribution and isDefault/isAnonymousTip flags) so the post-game
+   * replay can show who actually said what.
+   */
+  confessions?: ConfessionEntry[];
+}
+
+// ============= Confession Booth (Wave 4 / 4) =============
+
+export const CONFESSION_MIN_LENGTH = 10;
+export const CONFESSION_MAX_LENGTH = 120;
+export const CONFESSION_WINDOW_MS = 60_000;
+
+export type ConfessionPhase = 'BOOTH' | 'DISCUSSION';
+
+/**
+ * Server-side confession entry. Mirrors the server type. `playerId` is
+ * present for both real and default-backfilled entries (defaults still
+ * track who-defaulted so the post-game replay can mark "(didn't
+ * confess)"). ANONYMOUS_TIP injections have no author.
+ */
+export interface ConfessionEntry {
+  id: string;
+  playerId?: string;
+  text: string;
+  isDefault?: boolean;
+  isAnonymousTip?: boolean;
+}
+
+/** Public reveal — attribution stripped. */
+export interface ConfessionReveal {
+  id: string;
+  text: string;
 }
 
 export interface GameState {
@@ -245,6 +279,22 @@ export interface GameState {
   evidenceWindowEndsAt?: number;
   /** Last terminal evidence outcome — drives the inline failure banner. */
   evidenceLastFailure?: 'SKIPPED' | 'NO_AGREEMENT' | 'TIMEOUT';
+  /**
+   * Wave 4 / 4 — Confession Booth public state. `confessionPhase` mirrors
+   * the server's BOOTH/DISCUSSION sub-phase. `confessionRevealed` is the
+   * shuffled, attribution-stripped reveal payload. The submitted/total
+   * counts drive the public "X of Y" progress chip. `confessionWindowEndsAt`
+   * is the Unix-ms deadline for the booth countdown.
+   */
+  confessionPhase?: ConfessionPhase;
+  confessionRevealed?: ConfessionReveal[];
+  confessionSubmittedCount?: number;
+  confessionTotalCount?: number;
+  confessionWindowEndsAt?: number;
+  /** Local-only flag set when this player has submitted their confession. */
+  mySubmittedConfession?: boolean;
+  /** Round number whose confessions are currently in `confessionRevealed`. */
+  confessionRound?: number;
 }
 
 export type EvidenceType = 'FRAME' | 'WHISPER_FABRICATION' | 'ANONYMOUS_TIP';
@@ -319,7 +369,9 @@ export type C2SEvent =
       voteType: EvidenceType | 'SKIP';
       targetId?: string;
       content?: string;
-    } };
+    } }
+  /** Wave 4 / 4 — Confession Booth submission (10–120 chars). */
+  | { type: 'C2S_SUBMIT_CONFESSION'; payload: { content: string } };
 
 export const WHISPER_MAX_LENGTH = 200;
 

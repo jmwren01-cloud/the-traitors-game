@@ -1,4 +1,4 @@
-import type { GameState, Player, Role, Vote, ChatMessage, TimerState, VoteTally, GameSettings, RoundRecord, SheriffReport, Whisper, WhisperErrorCode } from '../types';
+import type { GameState, Player, Role, Vote, ChatMessage, TimerState, VoteTally, GameSettings, RoundRecord, SheriffReport, Whisper, WhisperErrorCode, ConfessionPhase, ConfessionReveal } from '../types';
 
 type Msg = { type: string; payload: Record<string, unknown> };
 
@@ -76,6 +76,12 @@ export function gameStateReducer(state: GameState | null, msg: Msg): GameState |
         evidenceWindowEndsAt?: number;
         evidenceUsed?: boolean;
         falseEvidence?: import('../types').FalseEvidence;
+        confessionPhase?: ConfessionPhase;
+        confessionRevealed?: ConfessionReveal[];
+        confessionWindowEndsAt?: number;
+        confessionSubmittedCount?: number;
+        confessionTotalCount?: number;
+        confessionMySubmitted?: boolean;
       };
 
       let currentReveal = undefined;
@@ -137,6 +143,12 @@ export function gameStateReducer(state: GameState | null, msg: Msg): GameState |
         ...(payload.evidenceWindowEndsAt !== undefined ? { evidenceWindowEndsAt: payload.evidenceWindowEndsAt } : {}),
         ...(payload.evidenceUsed !== undefined ? { evidenceUsed: payload.evidenceUsed } : {}),
         ...(payload.falseEvidence !== undefined ? { falseEvidence: payload.falseEvidence } : {}),
+        ...(payload.confessionPhase !== undefined ? { confessionPhase: payload.confessionPhase } : {}),
+        ...(payload.confessionRevealed !== undefined ? { confessionRevealed: payload.confessionRevealed, confessionRound: payload.currentRound } : {}),
+        ...(payload.confessionWindowEndsAt !== undefined ? { confessionWindowEndsAt: payload.confessionWindowEndsAt } : {}),
+        ...(payload.confessionSubmittedCount !== undefined ? { confessionSubmittedCount: payload.confessionSubmittedCount } : {}),
+        ...(payload.confessionTotalCount !== undefined ? { confessionTotalCount: payload.confessionTotalCount } : {}),
+        ...(payload.confessionMySubmitted !== undefined ? { mySubmittedConfession: payload.confessionMySubmitted } : {}),
       };
     }
 
@@ -192,7 +204,57 @@ export function gameStateReducer(state: GameState | null, msg: Msg): GameState |
         banishedPlayer: undefined,
         tiedPlayerIds: undefined,
         tiedPlayerNames: undefined,
+        // Reset booth state for the new round; the BOOTH overlay will be
+        // (re)opened by the imminent S2C_CONFESSION_PHASE_STARTED.
+        confessionPhase: undefined,
+        confessionRevealed: undefined,
+        confessionWindowEndsAt: undefined,
+        confessionSubmittedCount: undefined,
+        confessionTotalCount: undefined,
+        mySubmittedConfession: false,
+        confessionRound: undefined,
       } : null;
+    }
+
+    case 'S2C_CONFESSION_PHASE_STARTED': {
+      const payload = msg.payload as { endsAt: number; duration: number; aliveCount: number };
+      if (!state) return null;
+      return {
+        ...state,
+        confessionPhase: 'BOOTH',
+        confessionWindowEndsAt: payload.endsAt,
+        confessionSubmittedCount: 0,
+        confessionTotalCount: payload.aliveCount,
+        confessionRevealed: undefined,
+        mySubmittedConfession: false,
+      };
+    }
+
+    case 'S2C_CONFESSION_SUBMITTED': {
+      const payload = msg.payload as { received: number; needed: number };
+      if (!state) return null;
+      return {
+        ...state,
+        confessionSubmittedCount: payload.received,
+        confessionTotalCount: payload.needed,
+      };
+    }
+
+    case 'S2C_CONFESSIONS_REVEALED': {
+      const payload = msg.payload as { reveals: ConfessionReveal[]; round: number };
+      if (!state) return null;
+      return {
+        ...state,
+        confessionPhase: 'DISCUSSION',
+        confessionRevealed: payload.reveals,
+        confessionRound: payload.round,
+        confessionWindowEndsAt: undefined,
+      };
+    }
+
+    case 'CLIENT_MY_CONFESSION_SUBMITTED': {
+      if (!state) return null;
+      return { ...state, mySubmittedConfession: true };
     }
 
     case 'S2C_VOTING_STARTED': {

@@ -55,9 +55,13 @@ function RolePill({ role }: { role: Role }) {
   );
 }
 
-function RoundCard({ record, index, whispers }: { record: RoundRecord; index: number; whispers?: Whisper[] }) {
+function RoundCard({ record, index, whispers, players }: { record: RoundRecord; index: number; whispers?: Whisper[]; players: Player[] }) {
   const hasVotes = record.votes.length > 0;
   const roundWhispers = (whispers ?? []).filter((w) => w.round === record.round);
+  const playerNameById = (id: string | undefined): string => {
+    if (!id) return 'Unknown';
+    return players.find((p) => p.id === id)?.name ?? 'Unknown';
+  };
 
   return (
     <div className={styles.roundCard} style={{ animationDelay: `${0.1 + index * 0.12}s` }}>
@@ -140,6 +144,41 @@ function RoundCard({ record, index, whispers }: { record: RoundRecord; index: nu
               <strong>{record.recruitedName}</strong> was recruited and joined the Traitors
             </span>
           </div>
+        </div>
+      )}
+
+      {/* Wave 4 / 4 — confessions with true author attribution. */}
+      {record.confessions && record.confessions.length > 0 && (
+        <div style={{
+          marginTop: 12, padding: 10,
+          border: '1px solid rgba(212,165,80,0.4)', borderRadius: 8,
+          background: 'rgba(80,30,10,0.18)',
+        }}>
+          <div style={{ fontSize: 12, opacity: 0.85, marginBottom: 6, letterSpacing: 0.4, color: '#f7d896' }}>
+            🕯️ CONFESSIONS
+          </div>
+          {record.confessions.map((c) => {
+            if (c.isAnonymousTip) {
+              return (
+                <div key={c.id} style={{ fontSize: 13, padding: '4px 0', color: '#ffb380' }}>
+                  <strong>Anonymous Tip</strong>
+                  <span style={{ opacity: 0.85, marginLeft: 6, fontStyle: 'italic' }}>— "{c.text}"</span>
+                </div>
+              );
+            }
+            const authorName = playerNameById(c.playerId);
+            return (
+              <div key={c.id} style={{ fontSize: 13, padding: '4px 0' }}>
+                <strong>{authorName}</strong>
+                {c.isDefault && (
+                  <span style={{ marginLeft: 6, fontSize: 11, opacity: 0.7, fontStyle: 'italic' }}>
+                    (didn't confess)
+                  </span>
+                )}
+                <span style={{ opacity: 0.85, marginLeft: 6, fontStyle: 'italic' }}>— "{c.text}"</span>
+              </div>
+            );
+          })}
         </div>
       )}
 
@@ -316,7 +355,7 @@ export function GameEnd({
               <h3 className={styles.timelineTitle}>How It Happened</h3>
               <div className={styles.timelineList}>
                 {history.map((record, i) => (
-                  <RoundCard key={record.round} record={record} index={i} whispers={whispers} />
+                  <RoundCard key={record.round} record={record} index={i} whispers={whispers} players={players} />
                 ))}
               </div>
             </div>
