@@ -162,6 +162,29 @@ export interface VoteEntry {
   reasonText?: string;
 }
 
+/**
+ * Whisper system. Sent privately during ROUNDTABLE; the public
+ * feed only sees sender + recipient + round (NEVER the content). Content is
+ * delivered to the recipient via `S2C_WHISPER_RECEIVED` and replayed to all
+ * players post-game in the `S2C_GAME_END` payload. Persisted on `GameState`.
+ */
+export interface Whisper {
+  id: string;
+  senderId: string;
+  senderName: string;
+  recipientId: string;
+  recipientName: string;
+  round: number;
+  timestamp: number;
+  /**
+   * Whisper body. ALWAYS populated server-side. Scrubbed to undefined in
+   * public broadcasts (S2C_WHISPER_SENT) and in the per-recipient slice of
+   * S2C_RECONNECTED for whispers the player neither sent nor received.
+   * Always populated in S2C_GAME_END for the post-game replay.
+   */
+  content?: string;
+}
+
 export interface RoundRecord {
   round: number;
   votes: VoteEntry[];
@@ -224,6 +247,17 @@ export interface GameState {
   startedAt?: number;
   /** Set after writeGameRecord runs so we don't double-record on duplicate end-game broadcasts. */
   recordedAt?: number;
+  /**
+   * Every whisper sent during this game, in send order. The
+   * full list (with content) is replayed to all players post-game.
+   */
+  whispers?: Whisper[];
+  /**
+   * Player IDs that have already used their one whisper for the current
+   * Roundtable. Reset to [] on each `startRoundtable()`. Stored as a plain
+   * string array so the state remains JSON-serialisable for SQLite.
+   */
+  whispersUsedThisRound?: string[];
 }
 
 // Client-to-Server Events
@@ -268,7 +302,9 @@ export type C2SEvent =
   | { type: 'C2S_GET_LEADERBOARD'; payload: { metric: 'winRate' | 'gamesPlayed' | 'traitorWins' } }
   | { type: 'C2S_GET_GLOBAL_STATS'; payload: Record<string, never> }
   | { type: 'C2S_TRANSFER_HOST'; payload: { targetPlayerId: string } }
-  | { type: 'C2S_END_GAME_EARLY'; payload: Record<string, never> };
+  | { type: 'C2S_END_GAME_EARLY'; payload: Record<string, never> }
+  /** Send a private whisper to another alive player during ROUNDTABLE. */
+  | { type: 'C2S_SEND_WHISPER'; payload: { recipientId: string; content: string } };
 
 // Server-to-Client Events
 export type S2CEvent =
@@ -313,6 +349,11 @@ export type S2CEvent =
       totalVotes?: number;
       settings: GameSettings;
       history: RoundRecord[];
+      /**
+       * Whisper history scrubbed for this recipient. Content is
+       * present only for whispers the reconnecting player sent or received.
+       */
+      whispers?: Whisper[];
     } }
   | { type: 'S2C_PLAYER_RECONNECTED'; payload: { playerId: string; players: Player[] } }
   | { type: 'S2C_PLAYER_DISCONNECTED'; payload: { playerId: string; players: Player[] } }
@@ -372,6 +413,8 @@ export type S2CEvent =
       remainingFaithful: number;
       history: RoundRecord[];
       reason?: 'HOST_ENDED';
+      /** Full whisper log with content, for the post-game reveal. */
+      whispers?: Whisper[];
     } }
   | { type: 'S2C_HOST_TRANSFERRED'; payload: { 
       newHostId: string; 
@@ -463,6 +506,25 @@ export type S2CEvent =
       targetId?: string;
       targetName?: string;
     } }
+  /**
+   * broadcast to ALL players when any whisper is sent. The
+   * payload deliberately omits `content`; only sender/recipient/round are
+   * exposed publicly. Recipients additionally receive `S2C_WHISPER_RECEIVED`
+   * with the body.
+   */
+  | { type: 'S2C_WHISPER_SENT'; payload: {
+      id: string;
+      senderId: string;
+      senderName: string;
+      recipientId: string;
+      recipientName: string;
+      round: number;
+      timestamp: number;
+    } }
+  /** sent privately to the whisper's recipient with the body. */
+  | { type: 'S2C_WHISPER_RECEIVED'; payload: Whisper }
+  /** Whisper validation failure routed only to the offending sender. */
+  | { type: 'S2C_WHISPER_ERROR'; payload: { code: 'PHASE' | 'DEAD' | 'SELF' | 'ALREADY_USED' | 'EMPTY' | 'TOO_LONG' | 'NOT_FOUND'; message: string } }
   | { type: 'S2C_AVATAR_UPDATED'; payload: { players: Player[] } }
   | { type: 'S2C_CHAT_MESSAGE'; payload: ChatMessage }
   | { type: 'S2C_TIMER_UPDATE'; payload: { endTime: number; duration: number; phase: GamePhase } }

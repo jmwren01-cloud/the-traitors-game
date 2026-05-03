@@ -172,6 +172,11 @@ export function useWebSocket() {
     }
   }, []);
 
+  // Lets components apply CLIENT_* actions through the reducer.
+  const dispatchLocal = useCallback((action: { type: string; payload?: Record<string, unknown> }) => {
+    setGameState((prev) => gameStateReducer(prev, { type: action.type, payload: action.payload ?? {} }));
+  }, []);
+
   const identify = useCallback((deviceToken: string, playerName: string) => {
     setIdentifyError(null);
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
@@ -183,7 +188,7 @@ export function useWebSocket() {
   }, []);
 
   return {
-    connected, gameState, error, send,
+    connected, gameState, error, send, dispatchLocal,
     myPlayerId: myPlayerIdRef.current, reconnecting,
     identity, identifyError, identify,
     playerStats, leaderboard, globalStats,

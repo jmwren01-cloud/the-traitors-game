@@ -10,6 +10,8 @@ import {
   runSheriffInvestigations,
   submitMedicProtect,
   activateSeer,
+  sendWhisper,
+  WHISPER_MAX_LENGTH,
 } from './manager.js';
 import type { GameState, Player } from './types.js';
 import { DEFAULT_SETTINGS } from './types.js';
@@ -49,6 +51,8 @@ function makeGame(overrides: Partial<GameState> & { players: Player[] }): GameSt
     lastManualVotes: {},
     history: [],
     settings: { ...DEFAULT_SETTINGS },
+    whispers: [],
+    whispersUsedThisRound: [],
     ...overrides,
   };
 }
@@ -257,6 +261,65 @@ describe('checkWinCondition() — Wave 4 special roles count as Faithful', () =>
     const result = checkWinCondition(game);
     // 1 traitor vs 2 faithful-team players → game continues.
     expect(result.winner).toBeUndefined();
+  });
+});
+
+// ============= sendWhisper =============
+
+describe('sendWhisper()', () => {
+  it('appends a whisper, marks the sender as used, and returns the whisper', () => {
+    const sender = makePlayer();
+    const recipient = makePlayer();
+    const game = makeGame({ players: [sender, recipient], phase: 'ROUNDTABLE', currentRound: 2 });
+    const out = sendWhisper(game, sender.id, recipient.id, '  hello there  ');
+    expect(out.whisper.content).toBe('hello there');
+    expect(out.whisper.senderId).toBe(sender.id);
+    expect(out.whisper.recipientId).toBe(recipient.id);
+    expect(out.whisper.round).toBe(2);
+    expect(out.game.whispers).toHaveLength(1);
+    expect(out.game.whispersUsedThisRound).toEqual([sender.id]);
+  });
+
+  it('rejects a second whisper from the same sender in the same round', () => {
+    const a = makePlayer();
+    const b = makePlayer();
+    const c = makePlayer();
+    const game = makeGame({ players: [a, b, c], phase: 'ROUNDTABLE' });
+    const first = sendWhisper(game, a.id, b.id, 'hi');
+    expect(() => sendWhisper(first.game, a.id, c.id, 'again')).toThrow();
+  });
+
+  it('rejects whispers when not in the ROUNDTABLE phase', () => {
+    const a = makePlayer();
+    const b = makePlayer();
+    const game = makeGame({ players: [a, b], phase: 'VOTING' });
+    expect(() => sendWhisper(game, a.id, b.id, 'hey')).toThrow();
+  });
+
+  it('rejects whispering yourself', () => {
+    const a = makePlayer();
+    const game = makeGame({ players: [a, makePlayer()], phase: 'ROUNDTABLE' });
+    expect(() => sendWhisper(game, a.id, a.id, 'hey')).toThrow();
+  });
+
+  it('rejects whispers when sender or recipient is dead', () => {
+    const dead = makePlayer({ isAlive: false });
+    const alive = makePlayer();
+    const other = makePlayer();
+    const g1 = makeGame({ players: [dead, alive, other], phase: 'ROUNDTABLE' });
+    expect(() => sendWhisper(g1, dead.id, alive.id, 'hey')).toThrow();
+    const deadTarget = makePlayer({ isAlive: false });
+    const sender = makePlayer();
+    const g2 = makeGame({ players: [sender, deadTarget], phase: 'ROUNDTABLE' });
+    expect(() => sendWhisper(g2, sender.id, deadTarget.id, 'hey')).toThrow();
+  });
+
+  it('rejects empty / whitespace-only and over-cap content', () => {
+    const a = makePlayer();
+    const b = makePlayer();
+    const game = makeGame({ players: [a, b], phase: 'ROUNDTABLE' });
+    expect(() => sendWhisper(game, a.id, b.id, '   ')).toThrow();
+    expect(() => sendWhisper(game, a.id, b.id, 'x'.repeat(WHISPER_MAX_LENGTH + 1))).toThrow();
   });
 });
 

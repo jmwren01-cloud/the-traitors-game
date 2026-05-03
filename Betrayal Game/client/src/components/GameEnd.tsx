@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type {
-  Player, RoundRecord, C2SEvent, Role,
+  Player, RoundRecord, C2SEvent, Role, Whisper,
   PlayerStatsPayload, LeaderboardEntryPayload, GlobalStatsPayload
 } from '../types';
 import { getColorHex, getAvatarEmoji } from '../avatarConstants';
@@ -16,6 +16,8 @@ interface GameEndProps {
   players: Player[];
   myRole?: string;
   history?: RoundRecord[];
+  /** every whisper from the game, content fully revealed. */
+  whispers?: Whisper[];
 
   myPlayerId?: string;
   playerStats?: PlayerStatsPayload | null;
@@ -51,8 +53,9 @@ function RolePill({ role }: { role: Role }) {
   );
 }
 
-function RoundCard({ record, index }: { record: RoundRecord; index: number }) {
+function RoundCard({ record, index, whispers }: { record: RoundRecord; index: number; whispers?: Whisper[] }) {
   const hasVotes = record.votes.length > 0;
+  const roundWhispers = (whispers ?? []).filter((w) => w.round === record.round);
 
   return (
     <div className={styles.roundCard} style={{ animationDelay: `${0.1 + index * 0.12}s` }}>
@@ -137,12 +140,25 @@ function RoundCard({ record, index }: { record: RoundRecord; index: number }) {
           </div>
         </div>
       )}
+
+      {/* full whisper replay for this round. */}
+      {roundWhispers.length > 0 && (
+        <div style={{ marginTop: 12, padding: 10, border: '1px solid rgba(255,255,255,0.15)', borderRadius: 8, background: 'rgba(108,74,182,0.08)' }}>
+          <div style={{ fontSize: 12, opacity: 0.75, marginBottom: 6, letterSpacing: 0.4 }}>WHISPERS</div>
+          {roundWhispers.map((w) => (
+            <div key={w.id} style={{ fontSize: 13, padding: '4px 0' }}>
+              🤫 <strong>{w.senderName}</strong> &rarr; <strong>{w.recipientName}</strong>
+              {w.content && <span style={{ opacity: 0.85, marginLeft: 6 }}>— "{w.content}"</span>}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
 
 export function GameEnd({
-  winner, endReason, players, myRole, history,
+  winner, endReason, players, myRole, history, whispers,
   myPlayerId: _myPlayerId, playerStats, leaderboard, globalStats, onSend,
 }: GameEndProps) {
   const hostEnded = endReason === 'HOST_ENDED' || !winner;
@@ -274,7 +290,7 @@ export function GameEnd({
               <h3 className={styles.timelineTitle}>How It Happened</h3>
               <div className={styles.timelineList}>
                 {history.map((record, i) => (
-                  <RoundCard key={record.round} record={record} index={i} />
+                  <RoundCard key={record.round} record={record} index={i} whispers={whispers} />
                 ))}
               </div>
             </div>

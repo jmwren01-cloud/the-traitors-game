@@ -392,6 +392,15 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
           }
         }
 
+        // Project the whisper log for this reconnecting player. During live
+        // play only the recipient sees `content`; once the game has ended
+        // every player gets the full body (post-game replay contract).
+        reconnectPayload.whispers = game.scrubWhispersForRecipient(
+          updatedGame.whispers,
+          currentPlayerId,
+          updatedGame.phase === 'GAME_END'
+        );
+
         ws.send(JSON.stringify({ type: 'S2C_RECONNECTED', payload: reconnectPayload } satisfies S2CEvent));
 
         broadcastPerRecipient(currentSessionId, (recipientId) => ({
@@ -751,7 +760,8 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
               phase: 'GAME_END',
               remainingTraitors: aliveTraitors,
               remainingFaithful: aliveFaithful,
-              history: updatedGame.history
+              history: updatedGame.history,
+              whispers: updatedGame.whispers ?? []
             }
           });
         } else {
@@ -1034,7 +1044,8 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
               phase: 'GAME_END',
               remainingTraitors: aliveTraitors,
               remainingFaithful: aliveFaithful,
-              history: updatedGame.history
+              history: updatedGame.history,
+              whispers: updatedGame.whispers ?? []
             }
           });
         } else if (updatedGame.phase === 'CHALLENGE') {
@@ -1341,6 +1352,7 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
             remainingFaithful: aliveFaithful,
             history: updatedGame.history,
             reason: 'HOST_ENDED',
+            whispers: updatedGame.whispers ?? [],
           }
         });
         return;
@@ -1358,6 +1370,43 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
           type: 'S2C_AVATAR_UPDATED',
           payload: { players: scrubPlayersForRecipient(updatedGame.players, recipientId) }
         }));
+        return;
+      }
+
+      if (event.type === 'C2S_SEND_WHISPER') {
+        // Public meta-only fanout, private content to the recipient,
+        // typed error back to the sender on validation failure.
+        let result;
+        try {
+          result = game.sendWhisper(
+            gameState,
+            currentPlayerId,
+            event.payload.recipientId,
+            event.payload.content
+          );
+        } catch (err) {
+          if (err instanceof game.WhisperError) {
+            ws.send(JSON.stringify({
+              type: 'S2C_WHISPER_ERROR',
+              payload: { code: err.code, message: err.message }
+            } satisfies S2CEvent));
+          } else {
+            sendError(ws, (err as Error).message);
+          }
+          return;
+        }
+        setGame(result.game);
+
+        const fanout = game.buildWhisperFanout(result.whisper);
+        broadcast(currentSessionId, { type: 'S2C_WHISPER_SENT', payload: fanout.broadcast });
+
+        const recipientSocket = playerConnections.get(fanout.privateRecipientId);
+        if (recipientSocket && recipientSocket.readyState === WebSocket.OPEN) {
+          recipientSocket.send(JSON.stringify({
+            type: 'S2C_WHISPER_RECEIVED',
+            payload: fanout.privateForRecipient,
+          } satisfies S2CEvent));
+        }
         return;
       }
 

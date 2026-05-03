@@ -123,6 +123,23 @@ export interface VoteEntry {
   reasonText?: string;
 }
 
+/**
+ * Whisper. The public feed only ever sees sender + recipient + round;
+ * `content` is populated only for whispers the local player sent or
+ * received during the live game, and for ALL whispers in the post-game
+ * replay (`S2C_GAME_END`).
+ */
+export interface Whisper {
+  id: string;
+  senderId: string;
+  senderName: string;
+  recipientId: string;
+  recipientName: string;
+  round: number;
+  timestamp: number;
+  content?: string;
+}
+
 export interface RoundRecord {
   round: number;
   votes: VoteEntry[];
@@ -199,6 +216,19 @@ export interface GameState {
    * Traitors' kill. The protected identity is intentionally not sent.
    */
   medicBlocked?: boolean;
+  /**
+   * Whispers. Each entry has full sender/recipient metadata. `content` is
+   * set only when this player sent or received the whisper (or, post-game,
+   * for every whisper). Used for the public "X whispered to Y" feed, the
+   * local inbox, and the post-game replay.
+   */
+  whispers?: Whisper[];
+  /** Last whisper id we slid in as a notification — used to suppress repeats. */
+  lastWhisperReceivedId?: string;
+  /** Ids of received whispers the local player has already viewed. */
+  whispersRead?: string[];
+  /** Most recent whisper validation error returned for the local player. */
+  whisperError?: { code: WhisperErrorCode; message: string };
 }
 
 export interface SheriffReport {
@@ -245,7 +275,20 @@ export type C2SEvent =
   | { type: 'C2S_GET_LEADERBOARD'; payload: { metric: 'winRate' | 'gamesPlayed' | 'traitorWins' } }
   | { type: 'C2S_GET_GLOBAL_STATS'; payload: Record<string, never> }
   | { type: 'C2S_TRANSFER_HOST'; payload: { targetPlayerId: string } }
-  | { type: 'C2S_END_GAME_EARLY'; payload: Record<string, never> };
+  | { type: 'C2S_END_GAME_EARLY'; payload: Record<string, never> }
+  /** Send a private whisper to another alive player during ROUNDTABLE. */
+  | { type: 'C2S_SEND_WHISPER'; payload: { recipientId: string; content: string } };
+
+export const WHISPER_MAX_LENGTH = 200;
+
+export type WhisperErrorCode =
+  | 'PHASE'
+  | 'DEAD'
+  | 'SELF'
+  | 'ALREADY_USED'
+  | 'EMPTY'
+  | 'TOO_LONG'
+  | 'NOT_FOUND';
 
 // ============= Stats payload shapes (mirrors server) =============
 

@@ -1,4 +1,4 @@
-import type { GameState, Player, Role, Vote, ChatMessage, TimerState, VoteTally, GameSettings, RoundRecord, SheriffReport } from '../types';
+import type { GameState, Player, Role, Vote, ChatMessage, TimerState, VoteTally, GameSettings, RoundRecord, SheriffReport, Whisper, WhisperErrorCode } from '../types';
 
 type Msg = { type: string; payload: Record<string, unknown> };
 
@@ -70,6 +70,7 @@ export function gameStateReducer(state: GameState | null, msg: Msg): GameState |
         totalVotes?: number;
         settings: GameSettings;
         history: RoundRecord[];
+        whispers?: Whisper[];
       };
 
       let currentReveal = undefined;
@@ -125,6 +126,7 @@ export function gameStateReducer(state: GameState | null, msg: Msg): GameState |
         currentReveal,
         settings: payload.settings,
         history: payload.history ?? [],
+        whispers: payload.whispers ?? [],
       };
     }
 
@@ -630,7 +632,7 @@ export function gameStateReducer(state: GameState | null, msg: Msg): GameState |
     }
 
     case 'S2C_GAME_END': {
-      const payload = msg.payload as { winner?: 'TRAITORS' | 'FAITHFUL'; phase: string; remainingTraitors: number; remainingFaithful: number; history: RoundRecord[]; reason?: 'HOST_ENDED' };
+      const payload = msg.payload as { winner?: 'TRAITORS' | 'FAITHFUL'; phase: string; remainingTraitors: number; remainingFaithful: number; history: RoundRecord[]; reason?: 'HOST_ENDED'; whispers?: Whisper[] };
       return state ? {
         ...state,
         phase: payload.phase as GameState['phase'],
@@ -639,7 +641,61 @@ export function gameStateReducer(state: GameState | null, msg: Msg): GameState |
         remainingTraitors: payload.remainingTraitors,
         remainingFaithful: payload.remainingFaithful,
         history: payload.history ?? [],
+        // post-game replay reveals every whisper's content.
+        whispers: payload.whispers ?? state.whispers ?? [],
       } : null;
+    }
+
+    case 'S2C_WHISPER_SENT': {
+      // Append meta-only entry, deduped by id (recipient may have already
+      // received the content-bearing S2C_WHISPER_RECEIVED first).
+      const payload = msg.payload as unknown as Omit<Whisper, 'content'>;
+      if (!state) return null;
+      const existing = state.whispers ?? [];
+      if (existing.some((w) => w.id === payload.id)) return state;
+      return { ...state, whispers: [...existing, payload] };
+    }
+
+    case 'S2C_WHISPER_RECEIVED': {
+      // Upgrade meta entry to the full content-bearing version (or append).
+      const payload = msg.payload as unknown as Whisper;
+      if (!state) return null;
+      const existing = state.whispers ?? [];
+      const idx = existing.findIndex((w) => w.id === payload.id);
+      const next = idx >= 0
+        ? existing.map((w, i) => (i === idx ? payload : w))
+        : [...existing, payload];
+      return { ...state, whispers: next, lastWhisperReceivedId: payload.id };
+    }
+
+    case 'S2C_WHISPER_ERROR': {
+      const payload = msg.payload as { code: WhisperErrorCode; message: string };
+      if (!state) return null;
+      return { ...state, whisperError: payload };
+    }
+
+    case 'CLIENT_CLEAR_WHISPER_ERROR': {
+      if (!state) return null;
+      const { whisperError: _drop, ...rest } = state;
+      void _drop;
+      return rest as GameState;
+    }
+
+    case 'CLIENT_MARK_WHISPER_READ': {
+      const payload = msg.payload as { id: string };
+      if (!state) return null;
+      const prior = state.whispersRead ?? [];
+      if (prior.includes(payload.id)) return state;
+      return { ...state, whispersRead: [...prior, payload.id] };
+    }
+
+    case 'CLIENT_MARK_ALL_WHISPERS_READ': {
+      if (!state) return null;
+      const ids = (state.whispers ?? [])
+        .filter((w) => w.recipientId === state.myPlayerId && !!w.content)
+        .map((w) => w.id);
+      const merged = Array.from(new Set([...(state.whispersRead ?? []), ...ids]));
+      return { ...state, whispersRead: merged };
     }
 
     case 'S2C_HOST_TRANSFERRED': {

@@ -21,7 +21,7 @@ import './App.css';
 
 function App() {
   const {
-    connected, gameState, error, send, reconnecting,
+    connected, gameState, error, send, dispatchLocal, reconnecting,
     identity, identifyError, identify,
     playerStats, leaderboard, globalStats,
   } = useWebSocket();
@@ -188,6 +188,7 @@ function App() {
           players={gameState?.players || []}
           myRole={gameState?.myRole}
           history={gameState?.history}
+          whispers={gameState?.whispers}
           myPlayerId={gameState?.myPlayerId}
           playerStats={playerStats}
           leaderboard={leaderboard}
@@ -294,6 +295,11 @@ function App() {
           currentReveal={gameState?.currentReveal}
           shieldBlockedBanishment={gameState?.shieldBlockedBanishment}
           shieldBlockedBanishmentName={gameState?.shieldBlockedBanishmentName}
+          whispers={gameState?.whispers}
+          lastWhisperReceivedId={gameState?.lastWhisperReceivedId}
+          whispersRead={gameState?.whispersRead}
+          whisperError={gameState?.whisperError}
+          onLocalAction={dispatchLocal}
           onSend={send}
         />
         {specialRoleHud}

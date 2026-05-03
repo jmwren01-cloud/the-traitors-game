@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
-import type { Player, C2SEvent, Role, Vote, VoteTally } from '../types';
+import type { Player, C2SEvent, Role, Vote, VoteTally, Whisper } from '../types';
+import { WHISPER_MAX_LENGTH } from '../types';
 import { getColorHex, getAvatarEmoji } from '../avatarConstants';
 import styles from './Voting.module.css';
 import { useSoundContext } from '../contexts/SoundContext';
@@ -28,12 +29,22 @@ interface VotingProps {
   };
   shieldBlockedBanishment?: boolean;
   shieldBlockedBanishmentName?: string;
+  /** Every whisper visible to me (meta-only for others). */
+  whispers?: Whisper[];
+  /** Id of the most recent whisper I received (drives toast). */
+  lastWhisperReceivedId?: string;
+  /** Ids of received whispers the player has already viewed. */
+  whispersRead?: string[];
+  /** Most recent server-side whisper validation error for this player. */
+  whisperError?: { code: string; message: string };
+  /** Local action dispatcher (not a server event). */
+  onLocalAction?: (action: { type: string; payload?: Record<string, unknown> }) => void;
   onSend: (event: C2SEvent) => void;
 }
 
 const REASON_MAX_LENGTH = 120;
 
-export function Voting({ players, myPlayerId, phase, votes: _votes, banishedPlayer, currentRound, voteCount, tiedPlayerIds, tiedPlayerNames, randomlySelectedPlayer, revealIndex, currentTally, revealedVotes, totalVotes: serverTotalVotes, currentReveal, shieldBlockedBanishment, shieldBlockedBanishmentName, onSend }: VotingProps) {
+export function Voting({ players, myPlayerId, phase, votes: _votes, banishedPlayer, currentRound, voteCount, tiedPlayerIds, tiedPlayerNames, randomlySelectedPlayer, revealIndex, currentTally, revealedVotes, totalVotes: serverTotalVotes, currentReveal, shieldBlockedBanishment, shieldBlockedBanishmentName, whispers, lastWhisperReceivedId, whispersRead, whisperError, onLocalAction, onSend }: VotingProps) {
   void _votes;
   const [selectedTarget, setSelectedTarget] = useState<string | null>(null);
   const [reasonText, setReasonText] = useState('');
@@ -44,6 +55,12 @@ export function Voting({ players, myPlayerId, phase, votes: _votes, banishedPlay
   // (Reveal) and accepting the banishment (Decline). Reset whenever the phase
   // changes so a stale modal can never persist between rounds.
   const [shieldChoiceOpen, setShieldChoiceOpen] = useState(false);
+  // whisper UI state
+  const [whisperTargetId, setWhisperTargetId] = useState<string | null>(null);
+  const [whisperText, setWhisperText] = useState('');
+  const [whisperToast, setWhisperToast] = useState<{ id: string; from: string; content: string } | null>(null);
+  const [whisperInboxOpen, setWhisperInboxOpen] = useState(false);
+  const lastWhisperToastIdRef = useRef<string | undefined>(undefined);
   const prevPhaseRef = useRef(phase);
   const prevRevealIndexRef = useRef<number | undefined>(undefined);
   const banishSoundPlayedRef = useRef(false);
@@ -199,12 +216,220 @@ export function Voting({ players, myPlayerId, phase, votes: _votes, banishedPlay
     <div className={styles.shieldToast}>{shieldToast}</div>
   ) : null;
 
+  // Slide-in toast for newly received whispers (suppresses repeats).
+  useEffect(() => {
+    if (!lastWhisperReceivedId) return;
+    if (lastWhisperReceivedId === lastWhisperToastIdRef.current) return;
+    const w = (whispers ?? []).find((x) => x.id === lastWhisperReceivedId);
+    if (!w || !w.content) return;
+    lastWhisperToastIdRef.current = lastWhisperReceivedId;
+    setWhisperToast({ id: w.id, from: w.senderName, content: w.content });
+    const t = window.setTimeout(() => setWhisperToast(null), 5000);
+    return () => window.clearTimeout(t);
+  }, [lastWhisperReceivedId, whispers]);
+
+  const allWhispers = whispers ?? [];
+  const myWhispersThisRound = currentRound !== undefined
+    ? allWhispers.filter((w) => w.senderId === myPlayerId && w.round === currentRound)
+    : [];
+  const haveAlreadyWhisperedThisRound = myWhispersThisRound.length > 0;
+  const myRecipientIdsThisRound = new Set(myWhispersThisRound.map((w) => w.recipientId));
+  const inboxWhispers = allWhispers.filter((w) => w.recipientId === myPlayerId && !!w.content);
+  const readIds = new Set(whispersRead ?? []);
+  const unreadCount = inboxWhispers.filter((w) => !readIds.has(w.id)).length;
+
+  const dismissWhisperToast = () => {
+    if (whisperToast && onLocalAction) {
+      onLocalAction({ type: 'CLIENT_MARK_WHISPER_READ', payload: { id: whisperToast.id } });
+    }
+    setWhisperToast(null);
+  };
+
+  const openInbox = () => {
+    setWhisperInboxOpen((v) => {
+      const next = !v;
+      if (next && onLocalAction) {
+        onLocalAction({ type: 'CLIENT_MARK_ALL_WHISPERS_READ' });
+      }
+      return next;
+    });
+  };
+
+  const sendWhisper = () => {
+    const content = whisperText.trim();
+    if (!whisperTargetId || !content) return;
+    onSend({ type: 'C2S_SEND_WHISPER', payload: { recipientId: whisperTargetId, content } });
+    setWhisperTargetId(null);
+    setWhisperText('');
+  };
+
+  // Auto-clear stale whisper errors after 4s.
+  useEffect(() => {
+    if (!whisperError || !onLocalAction) return;
+    const t = window.setTimeout(() => onLocalAction({ type: 'CLIENT_CLEAR_WHISPER_ERROR' }), 4000);
+    return () => window.clearTimeout(t);
+  }, [whisperError, onLocalAction]);
+
+  // Meta-only whisper feed for the current round.
+  const renderWhisperFeed = (round: number) => {
+    const items = allWhispers.filter((w) => w.round === round);
+    if (items.length === 0) return null;
+    return (
+      <div style={{ marginTop: 16, padding: 12, border: '1px solid rgba(255,255,255,0.18)', borderRadius: 8, background: 'rgba(0,0,0,0.25)' }}>
+        <div style={{ fontSize: 13, opacity: 0.75, marginBottom: 6, letterSpacing: 0.4 }}>WHISPERS THIS ROUND</div>
+        {items.map((w) => (
+          <div key={w.id} style={{ fontSize: 14, padding: '3px 0' }}>
+            🤫 <strong>{w.senderName}</strong> whispered to <strong>{w.recipientName}</strong>
+            {w.senderId === myPlayerId && w.content && (
+              <span style={{ opacity: 0.65, marginLeft: 6 }}>— "{w.content}"</span>
+            )}
+          </div>
+        ))}
+      </div>
+    );
+  };
+
+  const renderWhisperToast = () => whisperToast ? (
+    <div
+      role="status"
+      onClick={dismissWhisperToast}
+      title="Tap to dismiss"
+      style={{
+        position: 'fixed', top: 16, right: 16, zIndex: 1000,
+        maxWidth: 320, padding: '10px 14px', borderRadius: 8,
+        background: 'rgba(20,20,30,0.95)', border: '1px solid #6c4ab6',
+        color: '#fff', boxShadow: '0 6px 18px rgba(0,0,0,0.5)',
+        cursor: 'pointer',
+        animation: 'whisperSlide 0.25s ease-out',
+      }}
+    >
+      <div style={{ fontSize: 12, opacity: 0.7, marginBottom: 4 }}>🤫 Whisper from {whisperToast.from}</div>
+      <div style={{ fontSize: 14, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{whisperToast.content}</div>
+      <div style={{ fontSize: 11, opacity: 0.5, marginTop: 4 }}>Tap to dismiss</div>
+    </div>
+  ) : null;
+
+  const renderWhisperModal = () => {
+    if (!whisperTargetId) return null;
+    const target = players.find((p) => p.id === whisperTargetId);
+    if (!target) return null;
+    const remaining = WHISPER_MAX_LENGTH - whisperText.length;
+    return (
+      <div
+        role="dialog"
+        aria-label={`Whisper to ${target.name}`}
+        style={{
+          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 999,
+          display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16,
+        }}
+        onClick={() => { setWhisperTargetId(null); setWhisperText(''); }}
+      >
+        <div
+          onClick={(e) => e.stopPropagation()}
+          style={{
+            background: '#15151f', border: '1px solid #6c4ab6', borderRadius: 12,
+            padding: 18, width: '100%', maxWidth: 420, color: '#fff',
+          }}
+        >
+          <h3 style={{ marginTop: 0, marginBottom: 8 }}>🤫 Whisper to {target.name}</h3>
+          <p style={{ fontSize: 13, opacity: 0.75, marginTop: 0 }}>
+            Only {target.name} will see the message. Everyone will see that you whispered to them.
+          </p>
+          <textarea
+            autoFocus
+            value={whisperText}
+            onChange={(e) => setWhisperText(e.target.value.slice(0, WHISPER_MAX_LENGTH))}
+            placeholder={`Say something to ${target.name}...`}
+            maxLength={WHISPER_MAX_LENGTH}
+            rows={4}
+            style={{ width: '100%', boxSizing: 'border-box', padding: 8, borderRadius: 6, border: whisperError ? '1px solid #c0392b' : '1px solid #444', background: '#0c0c14', color: '#fff', resize: 'vertical' }}
+          />
+          {whisperError && (
+            <div role="alert" style={{ marginTop: 6, color: '#ff8a80', fontSize: 13 }}>
+              {whisperError.message}
+            </div>
+          )}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 }}>
+            <span style={{ fontSize: 12, opacity: 0.6 }}>{remaining} characters left</span>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button
+                onClick={() => { setWhisperTargetId(null); setWhisperText(''); }}
+                style={{ padding: '6px 12px', background: 'transparent', border: '1px solid #555', color: '#fff', borderRadius: 6, cursor: 'pointer' }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={sendWhisper}
+                disabled={whisperText.trim().length === 0}
+                style={{ padding: '6px 12px', background: '#6c4ab6', border: 'none', color: '#fff', borderRadius: 6, cursor: whisperText.trim() ? 'pointer' : 'not-allowed', opacity: whisperText.trim() ? 1 : 0.5 }}
+              >
+                Send Whisper
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const renderWhisperInboxButton = () => {
+    if (inboxWhispers.length === 0) return null;
+    return (
+      <>
+        <button
+          onClick={openInbox}
+          aria-label={`Whisper inbox, ${unreadCount} unread`}
+          style={{
+            position: 'fixed', top: 16, right: 16, zIndex: 998,
+            padding: '8px 12px', borderRadius: 20, border: '1px solid #6c4ab6',
+            background: '#1c1c2a', color: '#fff', cursor: 'pointer', fontSize: 13,
+            display: 'inline-flex', alignItems: 'center', gap: 6,
+          }}
+        >
+          🤫 Inbox
+          {unreadCount > 0 && (
+            <span
+              aria-label={`${unreadCount} unread`}
+              style={{
+                background: '#c0392b', color: '#fff', fontSize: 11, fontWeight: 700,
+                borderRadius: 10, padding: '1px 6px', minWidth: 16, textAlign: 'center',
+              }}
+            >
+              {unreadCount}
+            </span>
+          )}
+          <span style={{ opacity: 0.6 }}>({inboxWhispers.length})</span>
+        </button>
+        {whisperInboxOpen && (
+          <div
+            style={{
+              position: 'fixed', top: 60, right: 16, zIndex: 998,
+              width: 'min(92vw, 320px)', maxHeight: '60vh', overflowY: 'auto',
+              background: '#15151f', border: '1px solid #6c4ab6', borderRadius: 10, padding: 12, color: '#fff',
+            }}
+          >
+            <div style={{ fontSize: 13, opacity: 0.75, marginBottom: 8 }}>YOUR WHISPERS</div>
+            {inboxWhispers.map((w) => (
+              <div key={w.id} style={{ borderTop: '1px solid rgba(255,255,255,0.08)', padding: '8px 0', fontSize: 14 }}>
+                <div style={{ fontSize: 12, opacity: 0.65 }}>Round {w.round} · from {w.senderName}</div>
+                <div style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{w.content}</div>
+              </div>
+            ))}
+          </div>
+        )}
+      </>
+    );
+  };
+
   if (phase === 'ROUNDTABLE') {
     const deadPlayers = players.filter((p) => !p.isAlive);
     
     return (
       <div className={styles.container}>
         {shieldToastEl}
+        {renderWhisperToast()}
+        {renderWhisperModal()}
+        {renderWhisperInboxButton()}
         <h1 className={styles.title}>The Roundtable</h1>
         {isRound1 && (
           <div className={styles.round1Banner}>
@@ -217,14 +442,45 @@ export function Voting({ players, myPlayerId, phase, votes: _votes, banishedPlay
           {alivePlayers.map((player) => {
             const colorHex = getColorHex(player.color);
             const avatarEmoji = getAvatarEmoji(player.avatar);
+            const canWhisperThem =
+              myPlayer?.isAlive &&
+              player.id !== myPlayerId &&
+              !haveAlreadyWhisperedThisRound;
+            const alreadyWhisperedThem = myRecipientIdsThisRound.has(player.id);
+            const buttonLabel = alreadyWhisperedThem ? '🤫 Whispered' : '🤫 Whisper';
+            const buttonTitle = alreadyWhisperedThem
+              ? `You whispered to ${player.name} this round`
+              : haveAlreadyWhisperedThisRound
+                ? 'You already whispered this round'
+                : `Whisper to ${player.name}`;
             return (
               <div key={player.id} className={`${styles.playerCard} ${player.id === myPlayerId ? styles.me : ''}`} style={{ borderColor: colorHex }}>
                 <div className={styles.avatar} style={{ background: colorHex, color: '#000' }}>{avatarEmoji}</div>
                 <span className={styles.name}>{player.name}{renderShieldIndicator(player)}</span>
+                {player.id !== myPlayerId && myPlayer?.isAlive && (
+                  <button
+                    onClick={() => canWhisperThem && setWhisperTargetId(player.id)}
+                    disabled={!canWhisperThem}
+                    title={buttonTitle}
+                    style={{
+                      marginTop: 6, padding: '4px 8px', fontSize: 12, borderRadius: 12,
+                      border: alreadyWhisperedThem ? '1px solid #5fa563' : '1px solid #6c4ab6',
+                      background: alreadyWhisperedThem
+                        ? '#1d2a1d'
+                        : canWhisperThem ? '#1c1c2a' : '#0c0c14',
+                      color: alreadyWhisperedThem ? '#bfeeb6' : canWhisperThem ? '#fff' : '#666',
+                      cursor: canWhisperThem ? 'pointer' : 'not-allowed',
+                    }}
+                  >
+                    {buttonLabel}
+                  </button>
+                )}
               </div>
             );
           })}
         </div>
+
+        {currentRound !== undefined && renderWhisperFeed(currentRound)}
 
         {deadPlayers.length > 0 && (
           <div className={styles.deadPlayersSection}>
@@ -253,7 +509,10 @@ export function Voting({ players, myPlayerId, phase, votes: _votes, banishedPlay
     return (
       <div className={styles.container}>
         {shieldToastEl}
+        {renderWhisperToast()}
+        {renderWhisperInboxButton()}
         <h1 className={styles.title}>Vote to Banish</h1>
+        {currentRound !== undefined && renderWhisperFeed(currentRound)}
         <p className={styles.subtitle}>Who is the traitor among you?</p>
 
         <div className={styles.playerGrid}>

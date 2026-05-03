@@ -108,6 +108,11 @@ function deserializeGame(json: string): GameState {
   if (parsed.settings && parsed.settings.challengeTimerSeconds === undefined) {
     parsed.settings.challengeTimerSeconds = 60;
   }
+  // whispers were added after games were persisted; backfill
+  // empty defaults so reads of legacy state never crash on undefined.
+  const p = parsed as GameState & { whispers?: unknown; whispersUsedThisRound?: unknown };
+  if (!Array.isArray(p.whispers)) p.whispers = [];
+  if (!Array.isArray(p.whispersUsedThisRound)) p.whispersUsedThisRound = [];
   return parsed as GameState;
 }
 

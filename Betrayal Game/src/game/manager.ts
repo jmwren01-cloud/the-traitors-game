@@ -1,6 +1,6 @@
 // Game Manager - Core Game Logic
 
-import type { GameState, Player, Role, Vote, TimerState, GamePhase, GameSettings, ChallengeState, ChallengeType, RoundRecord, VoteEntry } from './types.js';
+import type { GameState, Player, Role, Vote, TimerState, GamePhase, GameSettings, ChallengeState, ChallengeType, RoundRecord, VoteEntry, Whisper } from './types.js';
 import { DEFAULT_SETTINGS } from './types.js';
 import { pickAvailableColor, pickRandomAvatar, COLOR_IDS, AVATAR_IDS } from './avatarConstants.js';
 
@@ -96,7 +96,9 @@ export function createGame(hostName: string, deviceToken?: string): GameState {
     lastManualVotes: {},
     history: [],
     settings: { ...DEFAULT_SETTINGS },
-    startedAt: Date.now()
+    startedAt: Date.now(),
+    whispers: [],
+    whispersUsedThisRound: []
   };
 }
 
@@ -464,7 +466,145 @@ export function startRoundtable(game: GameState): GameState {
   return {
     ...game,
     phase: 'ROUNDTABLE',
-    currentRound: newRound
+    currentRound: newRound,
+    // fresh whisper budget every Roundtable: each alive player
+    // gets exactly one outgoing whisper for the round.
+    whispersUsedThisRound: []
+  };
+}
+
+// ============= WHISPER SYSTEM =============
+
+/**
+ * append a private whisper to game state.
+ *
+ * Validation:
+ *   - Must be in ROUNDTABLE phase
+ *   - Sender must be alive
+ *   - Recipient must exist and be alive
+ *   - Sender ≠ recipient
+ *   - Sender has not already whispered this round
+ *   - Content trims to 1..200 characters
+ *
+ * Returns both the updated game state and the persisted Whisper so the
+ * router can fan it out (publicly without content; privately with content).
+ */
+export const WHISPER_MAX_LENGTH = 200;
+
+export type WhisperErrorCode =
+  | 'PHASE'
+  | 'DEAD'
+  | 'SELF'
+  | 'ALREADY_USED'
+  | 'EMPTY'
+  | 'TOO_LONG'
+  | 'NOT_FOUND';
+
+export class WhisperError extends Error {
+  constructor(public code: WhisperErrorCode, message: string) {
+    super(message);
+    this.name = 'WhisperError';
+  }
+}
+
+/**
+ * Strip a whisper of its `content` for public broadcast.
+ * Anyone other than the recipient should only ever learn that
+ * "X whispered to Y" — never the body. `content` is omitted (not set to
+ * `undefined`) so the resulting object satisfies `exactOptionalPropertyTypes`.
+ */
+export function toPublicWhisper(w: Whisper): Whisper {
+  const { content: _drop, ...rest } = w;
+  void _drop;
+  return rest;
+}
+
+/**
+ * Build the public + private payloads for a single whisper send. The public
+ * broadcast omits content; the private payload (delivered only to the
+ * recipient socket) carries the full whisper.
+ */
+export function buildWhisperFanout(w: Whisper): {
+  broadcast: Whisper;
+  privateForRecipient: Whisper;
+  privateRecipientId: string;
+} {
+  return {
+    broadcast: toPublicWhisper(w),
+    privateForRecipient: w,
+    privateRecipientId: w.recipientId,
+  };
+}
+
+/**
+ * Project the whisper log for a single player. During live play only the
+ * recipient sees `content`; once the game has ended every player sees the
+ * full content (this is the post-game replay contract).
+ */
+export function scrubWhispersForRecipient(
+  whispers: Whisper[] | undefined,
+  recipientId: string,
+  gameEnded: boolean
+): Whisper[] {
+  return (whispers ?? []).map((w) => {
+    if (gameEnded || w.recipientId === recipientId) return w;
+    return toPublicWhisper(w);
+  });
+}
+
+export function sendWhisper(
+  game: GameState,
+  senderId: string,
+  recipientId: string,
+  rawContent: string
+): { game: GameState; whisper: Whisper } {
+  if (game.phase !== 'ROUNDTABLE') {
+    throw new WhisperError('PHASE', 'Whispers can only be sent during the Roundtable');
+  }
+  if (senderId === recipientId) {
+    throw new WhisperError('SELF', 'You cannot whisper to yourself');
+  }
+  const sender = game.players.find((p) => p.id === senderId);
+  if (!sender || !sender.isAlive) {
+    throw new WhisperError('DEAD', 'Only alive players can whisper');
+  }
+  const recipient = game.players.find((p) => p.id === recipientId);
+  if (!recipient) {
+    throw new WhisperError('NOT_FOUND', 'Recipient is not in the game');
+  }
+  if (!recipient.isAlive) {
+    throw new WhisperError('DEAD', 'Recipient is no longer alive');
+  }
+  const used = game.whispersUsedThisRound ?? [];
+  if (used.includes(senderId)) {
+    throw new WhisperError('ALREADY_USED', 'You have already whispered this round');
+  }
+  const content = (rawContent ?? '').trim();
+  if (content.length === 0) {
+    throw new WhisperError('EMPTY', 'Whisper cannot be empty');
+  }
+  if (content.length > WHISPER_MAX_LENGTH) {
+    throw new WhisperError('TOO_LONG', `Whisper exceeds ${WHISPER_MAX_LENGTH} characters`);
+  }
+
+  const whisper: Whisper = {
+    id: `whisper_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`,
+    senderId,
+    senderName: sender.name,
+    recipientId,
+    recipientName: recipient.name,
+    round: game.currentRound,
+    timestamp: Date.now(),
+    content,
+  };
+
+  return {
+    game: {
+      ...game,
+      whispers: [...(game.whispers ?? []), whisper],
+      whispersUsedThisRound: [...used, senderId],
+    },
+    whisper,
   };
 }
 
