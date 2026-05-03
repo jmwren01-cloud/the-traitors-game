@@ -47,8 +47,6 @@ export function SuspicionTokens(props: Props): ReactElement {
 
   const placement = phase === 'PLACEMENT';
 
-  // Roving-focus group for the picker. Only the alive non-self alive
-  // candidates are reachable; spectators get an empty group.
   const candidateIds =
     placement && isAlive
       ? alive.filter((p) => p.id !== myPlayerId).map((p) => p.id)
@@ -61,6 +59,18 @@ export function SuspicionTokens(props: Props): ReactElement {
     onActivate: (id) => {
       handlePick(id);
       setAnnouncement(`Token cast on ${playerName(id)}.`);
+    },
+    onCancel: () => {
+      // The Suspicion Token is committed to the server on activation, so
+      // there is no pending state to drop. Confirm the current cast (or
+      // the lack of one) so keyboard users get audible feedback.
+      if (myTokenTargetId) {
+        setAnnouncement(
+          `Suspicion Token still cast on ${playerName(myTokenTargetId)}. Pick another suspect to change it.`,
+        );
+      } else {
+        setAnnouncement('No Suspicion Token cast yet.');
+      }
     },
   });
 

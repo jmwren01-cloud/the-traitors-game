@@ -114,9 +114,7 @@ export function Challenge({
   const isAlive = me?.isAlive ?? true;
   const isHost = !!me?.isHost;
 
-  // MISSING_PLAYER picker is one-shot: activating immediately submits the
-  // chosen name. Roving focus is wired below so keyboard users can move
-  // between candidates with arrow keys and submit with Enter/Space.
+  // The MISSING_PLAYER picker is one-shot: activation immediately submits.
   const missingPlayerCandidates =
     challenge?.type === 'MISSING_PLAYER' && !showingPlayers && !hasAnswered && isAlive
       ? (challenge.shownPlayerIds ?? [])
@@ -131,6 +129,13 @@ export function Challenge({
         setAnnouncement(`Submitting ${p.name} as the missing player.`);
         handleMissingPlayerSubmit(p.name);
       }
+    },
+    onCancel: () => {
+      // No pending state to clear; surface the focused candidate so the
+      // keyboard user knows what Enter/Space would submit.
+      setAnnouncement(
+        'No selection to clear. Use arrow keys to move and Enter or Space to submit your guess.',
+      );
     },
   });
 

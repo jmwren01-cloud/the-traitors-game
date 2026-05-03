@@ -58,8 +58,6 @@ export function Voting({ players, myPlayerId, phase, votes: _votes, banishedPlay
   // (Reveal) and accepting the banishment (Decline). Reset whenever the phase
   // changes so a stale modal can never persist between rounds.
   const [shieldChoiceOpen, setShieldChoiceOpen] = useState(false);
-  // Polite live-region announcement for keyboard users on the day-phase
-  // pickers (voting + revote). Mirrors the night-phase pattern.
   const [announcement, setAnnouncement] = useState('');
   // whisper UI state
   const [whisperTargetId, setWhisperTargetId] = useState<string | null>(null);
@@ -198,7 +196,6 @@ export function Voting({ players, myPlayerId, phase, votes: _votes, banishedPlay
   const playerNameById = (id: string): string =>
     players.find((p) => p.id === id)?.name ?? 'player';
 
-  // Voting picker (alive players excluding self).
   const voteCandidateIds =
     canVote && phase === 'VOTING'
       ? alivePlayers.filter((p) => p.id !== myPlayerId).map((p) => p.id)
@@ -218,7 +215,6 @@ export function Voting({ players, myPlayerId, phase, votes: _votes, banishedPlay
     },
   });
 
-  // Revote picker (tied players excluding self).
   const revoteCandidateIds =
     canVote && phase === 'REVOTE' && tiedPlayerIds
       ? tiedPlayers.filter((p) => p.id !== myPlayerId).map((p) => p.id)

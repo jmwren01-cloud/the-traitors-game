@@ -193,7 +193,6 @@
   .target { min-height: 54px; font-size: 14px; }
 }
 
-/* Day-phase keyboard accessibility (Task #44). */
 .srOnly {
   position: absolute;
   width: 1px;
