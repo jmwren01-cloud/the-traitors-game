@@ -13,6 +13,7 @@ import {
   sendWhisper,
   WHISPER_MAX_LENGTH,
   removePlayer,
+  submitRecruitment,
 } from './manager.js';
 import type { GameState, Player } from './types.js';
 import { DEFAULT_SETTINGS } from './types.js';
@@ -631,5 +632,152 @@ describe('removePlayer()', () => {
     const game = makeGame({ players: [solo], hostId: solo.id });
     expect(() => removePlayer(game, solo.id)).toThrow(/only player/);
     expect(() => removePlayer(game, 'no-such-id')).toThrow(/not found/);
+  });
+});
+
+// ============= submitRecruitment =============
+
+describe('submitRecruitment()', () => {
+  it('records the pending recruitment and marks the recruiter as having used the ability', () => {
+    const traitor = makePlayer({ role: 'TRAITOR' });
+    const target = makePlayer({ role: 'FAITHFUL' });
+    const game = makeGame({ players: [traitor, target], phase: 'NIGHT' });
+
+    const out = submitRecruitment(game, traitor.id, target.id);
+
+    expect(out.pendingRecruitmentTargetId).toBe(target.id);
+    expect(out.players.find((p) => p.id === traitor.id)?.recruitmentUsed).toBe(true);
+    // Target's role isn't flipped until resolveMurder runs.
+    expect(out.players.find((p) => p.id === target.id)?.role).toBe('FAITHFUL');
+  });
+
+  it('rejects when not in NIGHT phase', () => {
+    const traitor = makePlayer({ role: 'TRAITOR' });
+    const target = makePlayer({ role: 'FAITHFUL' });
+    const game = makeGame({ players: [traitor, target], phase: 'ROUNDTABLE' });
+    expect(() => submitRecruitment(game, traitor.id, target.id)).toThrow(/night/);
+  });
+
+  it('rejects when the caller is not an alive Traitor', () => {
+    const faithful = makePlayer({ role: 'FAITHFUL' });
+    const target = makePlayer({ role: 'FAITHFUL' });
+    const deadTraitor = makePlayer({ role: 'TRAITOR', isAlive: false });
+    const game = makeGame({
+      players: [faithful, target, deadTraitor],
+      phase: 'NIGHT',
+    });
+    expect(() => submitRecruitment(game, faithful.id, target.id)).toThrow(/traitors/i);
+    expect(() => submitRecruitment(game, deadTraitor.id, target.id)).toThrow(/traitors/i);
+  });
+
+  it('rejects when the recruiter has already used recruitment this game', () => {
+    const traitor = makePlayer({ role: 'TRAITOR', recruitmentUsed: true });
+    const target = makePlayer({ role: 'FAITHFUL' });
+    const game = makeGame({ players: [traitor, target], phase: 'NIGHT' });
+    expect(() => submitRecruitment(game, traitor.id, target.id)).toThrow(/already used/i);
+  });
+
+  it('rejects when a recruitment is already pending this night', () => {
+    const traitor = makePlayer({ role: 'TRAITOR' });
+    const target = makePlayer({ role: 'FAITHFUL' });
+    const otherTarget = makePlayer({ role: 'FAITHFUL' });
+    const game = makeGame({
+      players: [traitor, target, otherTarget],
+      phase: 'NIGHT',
+      pendingRecruitmentTargetId: otherTarget.id,
+    });
+    expect(() => submitRecruitment(game, traitor.id, target.id)).toThrow(/already pending/i);
+  });
+
+  it('rejects targeting another Traitor (non-Faithful target)', () => {
+    const traitor = makePlayer({ role: 'TRAITOR' });
+    const otherTraitor = makePlayer({ role: 'TRAITOR' });
+    const game = makeGame({ players: [traitor, otherTraitor], phase: 'NIGHT' });
+    expect(() => submitRecruitment(game, traitor.id, otherTraitor.id)).toThrow(/Faithful/);
+  });
+
+  it('rejects targeting a dead player', () => {
+    const traitor = makePlayer({ role: 'TRAITOR' });
+    const deadTarget = makePlayer({ role: 'FAITHFUL', isAlive: false });
+    const game = makeGame({ players: [traitor, deadTarget], phase: 'NIGHT' });
+    expect(() => submitRecruitment(game, traitor.id, deadTarget.id)).toThrow();
+  });
+});
+
+// ============= resolveMurder() with pending recruitment =============
+
+describe('resolveMurder() — pending recruitment', () => {
+  it('flips the recruited player to TRAITOR and exposes lastRecruitedPlayerId on a successful murder', () => {
+    const traitor = makePlayer({ role: 'TRAITOR' });
+    const victim = makePlayer({ role: 'FAITHFUL' });
+    const recruit = makePlayer({ role: 'SHERIFF' });
+    const game = makeGame({
+      players: [traitor, victim, recruit],
+      phase: 'NIGHT',
+      murderVotes: [{ voterId: traitor.id, targetId: victim.id }],
+      pendingRecruitmentTargetId: recruit.id,
+    });
+
+    const result = resolveMurder(game);
+
+    expect(result.blocked).toBe(false);
+    expect(result.murderedPlayerId).toBe(victim.id);
+    expect(result.recruitedPlayerId).toBe(recruit.id);
+    expect(result.recruitedPlayerName).toBe(recruit.name);
+    // Recruited player is flipped to TRAITOR and marked as having used recruitment.
+    const flipped = result.game.players.find((p) => p.id === recruit.id)!;
+    expect(flipped.role).toBe('TRAITOR');
+    expect(flipped.isAlive).toBe(true);
+    expect(flipped.recruitmentUsed).toBe(true);
+    // pending field cleared, last-recruited surfaced for morning UI.
+    expect(result.game.pendingRecruitmentTargetId).toBeUndefined();
+    expect(result.game.lastRecruitedPlayerId).toBe(recruit.id);
+  });
+
+  it('still applies the recruitment when the murder is blocked by a shield', () => {
+    const traitor = makePlayer({ role: 'TRAITOR' });
+    const shielded = makePlayer({ role: 'FAITHFUL', hasShield: true });
+    const recruit = makePlayer({ role: 'FAITHFUL' });
+    const game = makeGame({
+      players: [traitor, shielded, recruit],
+      phase: 'NIGHT',
+      murderVotes: [{ voterId: traitor.id, targetId: shielded.id }],
+      pendingRecruitmentTargetId: recruit.id,
+    });
+
+    const result = resolveMurder(game);
+
+    expect(result.blocked).toBe(true);
+    expect(result.shieldedPlayerId).toBe(shielded.id);
+    expect(result.recruitedPlayerId).toBe(recruit.id);
+    const flipped = result.game.players.find((p) => p.id === recruit.id)!;
+    expect(flipped.role).toBe('TRAITOR');
+    expect(flipped.isAlive).toBe(true);
+    expect(result.game.lastRecruitedPlayerId).toBe(recruit.id);
+    expect(result.game.pendingRecruitmentTargetId).toBeUndefined();
+  });
+
+  it('still applies the recruitment when the murder is silently blocked by the Medic', () => {
+    const traitor = makePlayer({ role: 'TRAITOR' });
+    const victim = makePlayer({ role: 'FAITHFUL' });
+    const recruit = makePlayer({ role: 'FAITHFUL' });
+    const game = makeGame({
+      players: [traitor, victim, recruit],
+      phase: 'NIGHT',
+      murderVotes: [{ voterId: traitor.id, targetId: victim.id }],
+      medicProtectionTargetId: victim.id,
+      pendingRecruitmentTargetId: recruit.id,
+    });
+
+    const result = resolveMurder(game);
+
+    expect(result.blocked).toBe(true);
+    expect(result.shieldedPlayerId).toBeUndefined();
+    expect(result.recruitedPlayerId).toBe(recruit.id);
+    const flipped = result.game.players.find((p) => p.id === recruit.id)!;
+    expect(flipped.role).toBe('TRAITOR');
+    expect(flipped.isAlive).toBe(true);
+    expect(result.game.lastRecruitedPlayerId).toBe(recruit.id);
+    expect(result.game.pendingRecruitmentTargetId).toBeUndefined();
   });
 });
