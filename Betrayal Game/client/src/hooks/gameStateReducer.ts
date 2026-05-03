@@ -71,6 +71,11 @@ export function gameStateReducer(state: GameState | null, msg: Msg): GameState |
         settings: GameSettings;
         history: RoundRecord[];
         whispers?: Whisper[];
+        evidenceVotes?: import('../types').EvidenceVote[];
+        evidenceVoteProgress?: { received: number; needed: number };
+        evidenceWindowEndsAt?: number;
+        evidenceUsed?: boolean;
+        falseEvidence?: import('../types').FalseEvidence;
       };
 
       let currentReveal = undefined;
@@ -127,6 +132,11 @@ export function gameStateReducer(state: GameState | null, msg: Msg): GameState |
         settings: payload.settings,
         history: payload.history ?? [],
         whispers: payload.whispers ?? [],
+        ...(payload.evidenceVotes !== undefined ? { evidenceVotes: payload.evidenceVotes } : {}),
+        ...(payload.evidenceVoteProgress !== undefined ? { evidenceVoteProgress: payload.evidenceVoteProgress } : {}),
+        ...(payload.evidenceWindowEndsAt !== undefined ? { evidenceWindowEndsAt: payload.evidenceWindowEndsAt } : {}),
+        ...(payload.evidenceUsed !== undefined ? { evidenceUsed: payload.evidenceUsed } : {}),
+        ...(payload.falseEvidence !== undefined ? { falseEvidence: payload.falseEvidence } : {}),
       };
     }
 

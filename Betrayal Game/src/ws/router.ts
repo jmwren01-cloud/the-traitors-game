@@ -418,6 +418,27 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
           updatedGame.phase === 'GAME_END'
         );
 
+        // Wave 4 / 3 — Hydrate false-evidence traitor-only state on
+        // reconnect so a returning Traitor sees the active window and
+        // prior tally, and is correctly locked out if the ability is
+        // already spent. Non-traitors get nothing here.
+        if (player.isAlive && player.role === 'TRAITOR') {
+          if (updatedGame.evidenceVotes !== undefined) {
+            reconnectPayload.evidenceVotes = updatedGame.evidenceVotes;
+            const progress = game.getEvidenceVoteProgress(updatedGame);
+            reconnectPayload.evidenceVoteProgress = progress;
+          }
+          if (updatedGame.evidenceWindowEndsAt !== undefined) {
+            reconnectPayload.evidenceWindowEndsAt = updatedGame.evidenceWindowEndsAt;
+          }
+          if (updatedGame.evidenceUsed !== undefined) {
+            reconnectPayload.evidenceUsed = updatedGame.evidenceUsed;
+          }
+          if (updatedGame.falseEvidence !== undefined) {
+            reconnectPayload.falseEvidence = updatedGame.falseEvidence;
+          }
+        }
+
         ws.send(JSON.stringify({ type: 'S2C_RECONNECTED', payload: reconnectPayload } satisfies S2CEvent));
 
         broadcastPerRecipient(currentSessionId, (recipientId) => ({

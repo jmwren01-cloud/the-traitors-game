@@ -419,6 +419,16 @@ export type S2CEvent =
        * present only for whispers the reconnecting player sent or received.
        */
       whispers?: Whisper[];
+      /**
+       * Wave 4 / 3 — False Evidence traitor-only state. Populated only
+       * when the reconnecting player is an alive Traitor so the planting
+       * UI can rehydrate (active window, prior votes, single-use guard).
+       */
+      evidenceVotes?: EvidenceVote[];
+      evidenceVoteProgress?: { received: number; needed: number };
+      evidenceWindowEndsAt?: number;
+      evidenceUsed?: boolean;
+      falseEvidence?: FalseEvidence;
     } }
   | { type: 'S2C_PLAYER_RECONNECTED'; payload: { playerId: string; players: Player[] } }
   | { type: 'S2C_PLAYER_DISCONNECTED'; payload: { playerId: string; players: Player[] } }
