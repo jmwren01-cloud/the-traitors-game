@@ -55,13 +55,37 @@ function RolePill({ role }: { role: Role }) {
   );
 }
 
+function PlayerChip({ player, name }: { player?: Player; name?: string }) {
+  const displayName = name ?? player?.name ?? 'Unknown';
+  const colorHex = getColorHex(player?.color);
+  const emoji = getAvatarEmoji(player?.avatar);
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, verticalAlign: 'middle' }}>
+      <span
+        aria-hidden
+        style={{
+          display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+          width: 20, height: 20, borderRadius: '50%',
+          background: colorHex, color: '#000', fontSize: 12, lineHeight: 1,
+          flexShrink: 0,
+        }}
+      >
+        {emoji}
+      </span>
+      <strong style={{ color: colorHex }}>{displayName}</strong>
+    </span>
+  );
+}
+
 function RoundCard({ record, index, whispers, players }: { record: RoundRecord; index: number; whispers?: Whisper[]; players: Player[] }) {
   const hasVotes = record.votes.length > 0;
   const roundWhispers = (whispers ?? []).filter((w) => w.round === record.round);
-  const playerNameById = (id: string | undefined): string => {
-    if (!id) return 'Unknown';
-    return players.find((p) => p.id === id)?.name ?? 'Unknown';
-  };
+  const playerById = (id: string | undefined): Player | undefined =>
+    id ? players.find((p) => p.id === id) : undefined;
+  const playerByName = (name: string | undefined): Player | undefined =>
+    name ? players.find((p) => p.name === name) : undefined;
+  const playerNameById = (id: string | undefined): string =>
+    playerById(id)?.name ?? 'Unknown';
 
   return (
     <div className={styles.roundCard} style={{ animationDelay: `${0.1 + index * 0.12}s` }}>
@@ -74,13 +98,13 @@ function RoundCard({ record, index, whispers, players }: { record: RoundRecord; 
             {record.votes.map((v, i) => (
               <div key={i} className={`${styles.voteRow} ${v.isAutoVote ? styles.autoVoteRow : ''}`}>
                 <div className={styles.voteVoter}>
-                  <span className={styles.voterName}>{v.voterName}</span>
+                  <PlayerChip player={playerByName(v.voterName)} name={v.voterName} />
                   <RolePill role={v.voterRole} />
                   {v.isAutoVote && <span className={styles.autoBadge}>Auto</span>}
                 </div>
                 <span className={styles.voteArrow}>&#8594;</span>
                 <div className={styles.voteTarget}>
-                  <span className={styles.targetName}>{v.targetName}</span>
+                  <PlayerChip player={playerByName(v.targetName)} name={v.targetName} />
                   <RolePill role={v.targetRole} />
                 </div>
                 {v.reasonText && (
@@ -99,7 +123,7 @@ function RoundCard({ record, index, whispers, players }: { record: RoundRecord; 
           <div className={styles.banishOutcome}>
             <span className={styles.outcomeIcon}>🪄</span>
             <span className={styles.outcomeText}>
-              <strong>{record.banishedName}</strong> was banished
+              <PlayerChip player={playerByName(record.banishedName)} name={record.banishedName} /> was banished
               {record.banishedRole && (<> &mdash; <RolePill role={record.banishedRole} /></>)}
             </span>
           </div>
@@ -116,7 +140,7 @@ function RoundCard({ record, index, whispers, players }: { record: RoundRecord; 
           <div className={styles.shieldOutcome}>
             <span className={styles.outcomeIcon}>🛡️</span>
             <span className={styles.outcomeText}>
-              Murder attempt blocked &mdash; <strong>{record.shieldedName}</strong>
+              Murder attempt blocked &mdash; <PlayerChip player={playerByName(record.shieldedName)} name={record.shieldedName} />
               {record.shieldedRole && (<> <RolePill role={record.shieldedRole} /></>)} used their shield
             </span>
           </div>
@@ -124,7 +148,7 @@ function RoundCard({ record, index, whispers, players }: { record: RoundRecord; 
           <div className={styles.murderOutcome}>
             <span className={styles.outcomeIcon}>🔪</span>
             <span className={styles.outcomeText}>
-              <strong>{record.murderedName}</strong>
+              <PlayerChip player={playerByName(record.murderedName)} name={record.murderedName} />
               {record.murderedRole && (<> <RolePill role={record.murderedRole} /></>)} was murdered in the night
             </span>
           </div>
@@ -141,7 +165,7 @@ function RoundCard({ record, index, whispers, players }: { record: RoundRecord; 
           <div className={styles.recruitedOutcome}>
             <span className={styles.outcomeIcon}>🤝</span>
             <span className={styles.outcomeText}>
-              <strong>{record.recruitedName}</strong> was recruited and joined the Traitors
+              <PlayerChip player={playerByName(record.recruitedName)} name={record.recruitedName} /> was recruited and joined the Traitors
             </span>
           </div>
         </div>
@@ -166,10 +190,10 @@ function RoundCard({ record, index, whispers, players }: { record: RoundRecord; 
                 </div>
               );
             }
-            const authorName = playerNameById(c.playerId);
+            const author = playerById(c.playerId);
             return (
               <div key={c.id} style={{ fontSize: 13, padding: '4px 0' }}>
-                <strong>{authorName}</strong>
+                <PlayerChip player={author} name={playerNameById(c.playerId)} />
                 {c.isDefault && (
                   <span style={{ marginLeft: 6, fontSize: 11, opacity: 0.7, fontStyle: 'italic' }}>
                     (didn't confess)
@@ -188,7 +212,8 @@ function RoundCard({ record, index, whispers, players }: { record: RoundRecord; 
           <div style={{ fontSize: 12, opacity: 0.75, marginBottom: 6, letterSpacing: 0.4 }}>WHISPERS</div>
           {roundWhispers.map((w) => (
             <div key={w.id} style={{ fontSize: 13, padding: '4px 0' }}>
-              🤫 <strong>{w.senderName}</strong> &rarr; <strong>{w.recipientName}</strong>
+              🤫 <PlayerChip player={playerById(w.senderId)} name={w.senderName} /> &rarr;{' '}
+              <PlayerChip player={playerById(w.recipientId)} name={w.recipientName} />
               {w.content && <span style={{ opacity: 0.85, marginLeft: 6 }}>— "{w.content}"</span>}
             </div>
           ))}
