@@ -80,6 +80,27 @@
   border: 3px solid #00ff00;
 }
 
+.meAvatar {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.8rem;
+  margin-bottom: 8px;
+  border: 2px solid rgba(255, 255, 255, 0.5);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+}
+
+.meName {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.9);
+  margin: 0 0 12px;
+  letter-spacing: 0.04em;
+}
+
 .cardFront h2 {
   font-size: 2rem;
   margin-bottom: 1rem;
@@ -118,9 +139,23 @@
 
 .traitorName {
   background: rgba(255, 0, 0, 0.3);
-  padding: 8px 16px;
+  padding: 8px 14px 8px 8px;
   border-radius: 20px;
   font-weight: bold;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.traitorAvatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1rem;
+  flex-shrink: 0;
 }
 
 .primaryBtn {

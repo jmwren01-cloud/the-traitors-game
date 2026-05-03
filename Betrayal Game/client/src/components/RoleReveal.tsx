@@ -3,6 +3,7 @@ import type { Role, Player, C2SEvent } from '../types';
 import styles from './RoleReveal.module.css';
 import { useSoundContext } from '../contexts/SoundContext';
 import { vibrate } from '../utils/haptics';
+import { getColorHex, getAvatarEmoji } from '../avatarConstants';
 
 interface RoleRevealProps {
   myRole?: Role;
@@ -18,7 +19,8 @@ export function RoleReveal({ myRole, traitorIds, players, myPlayerId, phase }: R
   const [showTraitors, setShowTraitors] = useState(false);
   const [readyEnabled, setReadyEnabled] = useState(false);
   const [acknowledged, setAcknowledged] = useState(false);
-  const isHost = players.find((p) => p.id === myPlayerId)?.isHost;
+  const me = players.find((p) => p.id === myPlayerId);
+  const isHost = me?.isHost;
   const { play } = useSoundContext();
   const soundPlayedRef = useRef(false);
 
@@ -73,6 +75,16 @@ export function RoleReveal({ myRole, traitorIds, players, myPlayerId, phase }: R
             <span>?</span>
           </div>
           <div className={`${styles.cardFront} ${myRole === 'TRAITOR' ? styles.traitor : styles.faithful}`}>
+            {me && (
+              <div
+                className={styles.meAvatar}
+                style={{ background: getColorHex(me.color), color: '#000' }}
+                aria-label={`Your avatar: ${me.name}`}
+              >
+                <span aria-hidden>{getAvatarEmoji(me.avatar)}</span>
+              </div>
+            )}
+            {me && <p className={styles.meName}>{me.name}</p>}
             <h2>
               {myRole === 'TRAITOR'
                 ? 'TRAITOR'
@@ -109,6 +121,13 @@ export function RoleReveal({ myRole, traitorIds, players, myPlayerId, phase }: R
                 const player = players.find((p) => p.id === id);
                 return player ? (
                   <span key={id} className={styles.traitorName}>
+                    <span
+                      className={styles.traitorAvatar}
+                      style={{ background: getColorHex(player.color), color: '#000' }}
+                      aria-hidden
+                    >
+                      {getAvatarEmoji(player.avatar)}
+                    </span>
                     {player.name}
                   </span>
                 ) : null;
