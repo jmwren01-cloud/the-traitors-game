@@ -276,30 +276,12 @@ export function Voting({ players, myPlayerId, phase, votes: _votes, banishedPlay
     return () => window.clearTimeout(t);
   }, [whisperError, onLocalAction]);
 
-  // Meta-only whisper feed for the current round.
-  const renderConfessionsPanel = () => {
-    if (!confessionRevealed || confessionRevealed.length === 0) return null;
-    if (confessionRound !== undefined && currentRoundNumber !== undefined &&
-        confessionRound !== currentRoundNumber) {
-      return null;
-    }
-    return (
-      <div style={{
-        marginTop: 16, padding: 12,
-        border: '1px solid rgba(212,165,80,0.4)', borderRadius: 8,
-        background: 'rgba(80,30,10,0.18)',
-      }}>
-        <div style={{ fontSize: 13, opacity: 0.85, marginBottom: 8, letterSpacing: 0.5, color: '#f7d896' }}>
-          🕯️ ANONYMOUS CONFESSIONS
-        </div>
-        {confessionRevealed.map((c) => (
-          <div key={c.id} style={{ fontSize: 13, padding: '4px 0', fontStyle: 'italic', color: '#f4e3c2' }}>
-            “{c.text}”
-          </div>
-        ))}
-      </div>
-    );
-  };
+  // Wave 4 / 4 — confessions are now surfaced via the Chat "Confessions"
+  // tab; the inline panel was removed to avoid duplication. Reference
+  // the props so the wiring stays type-checked end-to-end.
+  void confessionRevealed;
+  void confessionRound;
+  void currentRoundNumber;
 
   const renderWhisperFeed = (round: number) => {
     const items = allWhispers.filter((w) => w.round === round);
