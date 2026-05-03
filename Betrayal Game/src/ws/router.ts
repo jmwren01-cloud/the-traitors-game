@@ -8,8 +8,7 @@ import {
   generateSessionToken,
   broadcastRecruitmentEvents,
   broadcastMorningEventWithRecruitment,
-  scrubPlayersForRecipient,
-  runSheriffInvestigation
+  scrubPlayersForRecipient
 } from './utils.js';
 import { startVoteRevealSequence } from './voteReveal.js';
 
@@ -35,6 +34,34 @@ function countEligibleAnswerers(state: GameState): number {
   return state.players.filter(
     (p) => p.isAlive && p.lastChallengeWinRound !== state.currentRound - 1
   ).length;
+}
+
+/**
+ * Wave 4 — fan out per-Sheriff investigation results as private messages.
+ * Called immediately after a NIGHT->MORNING transition (whether the kill
+ * landed, was shielded, or was Medic-blocked).
+ */
+function broadcastSheriffResults(
+  sessionId: string,
+  games: Map<string, GameState>,
+  playerConnections: Map<string, WebSocket>
+): void {
+  const state = games.get(sessionId);
+  if (!state) return;
+  const investigations = game.runSheriffInvestigations(state);
+  for (const inv of investigations) {
+    const socket = playerConnections.get(inv.sheriffId);
+    if (!socket || socket.readyState !== WebSocket.OPEN) continue;
+    socket.send(JSON.stringify({
+      type: 'S2C_SHERIFF_RESULT',
+      payload: {
+        targetId: inv.targetId,
+        targetName: inv.targetName,
+        reportedRole: inv.reportedRole,
+        round: state.currentRound,
+      }
+    } satisfies S2CEvent));
+  }
 }
 
 function broadcastChallengeResult(
@@ -315,7 +342,7 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
           : undefined;
 
         const remainingTraitors = updatedGame.players.filter((p) => p.isAlive && p.role === 'TRAITOR').length;
-        const remainingFaithful = updatedGame.players.filter((p) => p.isAlive && p.role && p.role !== 'TRAITOR').length;
+        const remainingFaithful = updatedGame.players.filter((p) => p.isAlive && game.isFaithfulRole(p.role)).length;
 
         const reconnectPayload: ReconnectPayload = {
           sessionId: currentSessionId,
@@ -715,7 +742,7 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
           writeGameRecordIfNeeded(updatedGame);
 
           const aliveTraitors = updatedGame.players.filter((p) => p.isAlive && p.role === 'TRAITOR').length;
-          const aliveFaithful = updatedGame.players.filter((p) => p.isAlive && p.role && p.role !== 'TRAITOR').length;
+          const aliveFaithful = updatedGame.players.filter((p) => p.isAlive && game.isFaithfulRole(p.role)).length;
 
           broadcast(currentSessionId, {
             type: 'S2C_GAME_END',
@@ -801,29 +828,37 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
         if (progress.received >= progress.needed && updatedGame.phase === 'NIGHT') {
           try {
             const result = game.resolveMurder(updatedGame);
-            // Sheriff investigates BEFORE morning broadcast so the private
-            // result lands first and the broadcast carries the appended history.
-            const gameAfterSheriff = runSheriffInvestigation(result.game, playerConnections);
-            setGame(gameAfterSheriff);
+            setGame(result.game);
 
-            broadcastRecruitmentEvents(result, gameAfterSheriff, playerConnections);
+            broadcastRecruitmentEvents(result, result.game, playerConnections);
 
             if (result.blocked) {
+              const isShieldBlock = result.shieldedPlayerId !== undefined;
               broadcastMorningEventWithRecruitment(
                 'S2C_MORNING_STARTED',
-                result.medicBlocked
-                  ? { phase: 'MORNING', murderBlocked: true }
-                  : {
+                isShieldBlock
+                  ? {
                       phase: 'MORNING',
                       murderBlocked: true,
                       shieldedPlayerId: result.shieldedPlayerId,
                       shieldedPlayerName: result.shieldedPlayerName,
+                    }
+                  : {
+                      // Wave 4 — Medic silent block. The Traitors voted, the
+                      // strike was attempted, but the target survived. We
+                      // surface a generic survival announcement WITHOUT
+                      // revealing the target's identity (which would out
+                      // the Medic's pick).
+                      phase: 'MORNING',
+                      murderBlocked: true,
+                      medicBlocked: true,
                     },
                 result.recruitedPlayerId,
                 result.recruitedPlayerName,
-                gameAfterSheriff,
+                result.game,
                 playerConnections
               );
+              broadcastSheriffResults(currentSessionId, games, playerConnections);
             } else if (result.murderedPlayerId) {
               broadcastMorningEventWithRecruitment(
                 'S2C_MURDER_RESOLVED',
@@ -834,7 +869,7 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
                 },
                 result.recruitedPlayerId,
                 result.recruitedPlayerName,
-                gameAfterSheriff,
+                result.game,
                 playerConnections
               );
             }
@@ -847,25 +882,32 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
 
       if (event.type === 'C2S_RESOLVE_MURDER') {
         const result = game.resolveMurder(gameState);
-        const gameAfterSheriff = runSheriffInvestigation(result.game, playerConnections);
-        setGame(gameAfterSheriff);
+        setGame(result.game);
 
-        broadcastRecruitmentEvents(result, gameAfterSheriff, playerConnections);
+        broadcastRecruitmentEvents(result, result.game, playerConnections);
 
         if (result.blocked) {
+          const isShieldBlock = result.shieldedPlayerId !== undefined;
           broadcastMorningEventWithRecruitment(
             'S2C_MORNING_STARTED',
-            result.medicBlocked
-              ? { phase: 'MORNING', murderBlocked: true }
-              : {
+            isShieldBlock
+              ? {
                   phase: 'MORNING',
                   murderBlocked: true,
                   shieldedPlayerId: result.shieldedPlayerId,
                   shieldedPlayerName: result.shieldedPlayerName,
+                }
+              : {
+                  // Wave 4 — Medic silent block. See the auto-resolve branch
+                  // above for the rationale: announce a failed strike but
+                  // not the protected identity.
+                  phase: 'MORNING',
+                  murderBlocked: true,
+                  medicBlocked: true,
                 },
             result.recruitedPlayerId,
             result.recruitedPlayerName,
-            gameAfterSheriff,
+            result.game,
             playerConnections
           );
         } else if (result.murderedPlayerId) {
@@ -878,10 +920,11 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
             },
             result.recruitedPlayerId,
             result.recruitedPlayerName,
-            gameAfterSheriff,
+            result.game,
             playerConnections
           );
         }
+        broadcastSheriffResults(currentSessionId, games, playerConnections);
         return;
       }
 
@@ -915,6 +958,61 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
             playerConnections
           );
         }
+        broadcastSheriffResults(currentSessionId, games, playerConnections);
+        return;
+      }
+
+      if (event.type === 'C2S_MEDIC_PROTECT') {
+        let updatedGame: GameState;
+        try {
+          updatedGame = game.submitMedicProtect(gameState, currentPlayerId, event.payload.targetId);
+        } catch (err) {
+          sendError(ws, (err as Error).message);
+          return;
+        }
+        setGame(updatedGame);
+        const target = updatedGame.players.find((p) => p.id === event.payload.targetId);
+        ws.send(JSON.stringify({
+          type: 'S2C_MEDIC_PROTECTED',
+          payload: {
+            targetId: event.payload.targetId,
+            targetName: target?.name ?? 'Unknown',
+          }
+        } satisfies S2CEvent));
+        return;
+      }
+
+      if (event.type === 'C2S_ACTIVATE_SEER') {
+        let result;
+        try {
+          // Per spec the target is RANDOM and chosen by the server.
+          result = game.activateSeer(gameState, currentPlayerId);
+        } catch (err) {
+          sendError(ws, (err as Error).message);
+          return;
+        }
+        setGame(result.game);
+
+        // Tell the Seer the true role.
+        ws.send(JSON.stringify({
+          type: 'S2C_SEER_RESULT',
+          payload: {
+            targetId: result.targetId,
+            targetName: result.targetName,
+            actualRole: result.actualRole,
+          }
+        } satisfies S2CEvent));
+
+        // Alert all alive Traitors that the Seer's gift was burned.
+        for (const tid of result.traitorIds) {
+          const sock = playerConnections.get(tid);
+          if (sock && sock.readyState === WebSocket.OPEN) {
+            sock.send(JSON.stringify({
+              type: 'S2C_SEER_ACTIVATED',
+              payload: {}
+            } satisfies S2CEvent));
+          }
+        }
         return;
       }
 
@@ -927,7 +1025,7 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
           writeGameRecordIfNeeded(updatedGame);
 
           const aliveTraitors = updatedGame.players.filter((p) => p.isAlive && p.role === 'TRAITOR').length;
-          const aliveFaithful = updatedGame.players.filter((p) => p.isAlive && p.role && p.role !== 'TRAITOR').length;
+          const aliveFaithful = updatedGame.players.filter((p) => p.isAlive && game.isFaithfulRole(p.role)).length;
 
           broadcast(currentSessionId, {
             type: 'S2C_GAME_END',
@@ -1169,55 +1267,6 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
         return;
       }
 
-      if (event.type === 'C2S_MEDIC_PROTECT') {
-        try {
-          const { game: updatedGame, targetName } = game.medicProtect(
-            gameState,
-            currentPlayerId,
-            event.payload.targetId
-          );
-          setGame(updatedGame);
-          ws.send(JSON.stringify({
-            type: 'S2C_MEDIC_PROTECT_CONFIRMED',
-            payload: { targetId: event.payload.targetId, targetName },
-          }));
-        } catch (err) {
-          sendError(ws, (err as Error).message);
-        }
-        return;
-      }
-
-      if (event.type === 'C2S_ACTIVATE_SEER') {
-        try {
-          const result = game.activateSeer(gameState, currentPlayerId);
-          setGame(result.game);
-          ws.send(JSON.stringify({
-            type: 'S2C_SEER_RESULT',
-            payload: {
-              round: result.round,
-              targetId: result.targetId,
-              targetName: result.targetName,
-              role: result.targetRole,
-            },
-          }));
-          // Notify alive Traitors that the Seer's gift was used (round only, no name).
-          result.game.players.forEach((p) => {
-            if (p.isAlive && p.role === 'TRAITOR') {
-              const sock = playerConnections.get(p.id);
-              if (sock && sock.readyState === WebSocket.OPEN) {
-                sock.send(JSON.stringify({
-                  type: 'S2C_SEER_ACTIVATED',
-                  payload: { round: result.round },
-                }));
-              }
-            }
-          });
-        } catch (err) {
-          sendError(ws, (err as Error).message);
-        }
-        return;
-      }
-
       if (event.type === 'C2S_SUBMIT_RECRUITMENT') {
         const updatedGame = game.submitRecruitment(gameState, currentPlayerId, event.payload.targetId);
         setGame(updatedGame);
@@ -1283,7 +1332,7 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
         const updatedGame = game.endGameEarly(gameState);
         setGame(updatedGame);
         const aliveTraitors = updatedGame.players.filter((p) => p.isAlive && p.role === 'TRAITOR').length;
-        const aliveFaithful = updatedGame.players.filter((p) => p.isAlive && p.role && p.role !== 'TRAITOR').length;
+        const aliveFaithful = updatedGame.players.filter((p) => p.isAlive && game.isFaithfulRole(p.role)).length;
         broadcast(currentSessionId, {
           type: 'S2C_GAME_END',
           payload: {

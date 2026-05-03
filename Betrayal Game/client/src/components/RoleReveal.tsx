@@ -77,23 +77,23 @@ export function RoleReveal({ myRole, traitorIds, players, myPlayerId, phase }: R
               {myRole === 'TRAITOR'
                 ? 'TRAITOR'
                 : myRole === 'SHERIFF'
-                  ? 'SHERIFF'
-                  : myRole === 'MEDIC'
-                    ? 'MEDIC'
-                    : myRole === 'SEER'
-                      ? 'SEER'
-                      : 'FAITHFUL'}
+                ? 'SHERIFF'
+                : myRole === 'MEDIC'
+                ? 'MEDIC'
+                : myRole === 'SEER'
+                ? 'SEER'
+                : 'FAITHFUL'}
             </h2>
             <p>
               {myRole === 'TRAITOR'
                 ? 'Eliminate the Faithful. Stay hidden.'
                 : myRole === 'SHERIFF'
-                  ? 'Each morning you secretly investigate one player.'
-                  : myRole === 'MEDIC'
-                    ? 'Each night you secretly protect one player from murder.'
-                    : myRole === 'SEER'
-                      ? 'Once per game, peer into a player\'s true allegiance.'
-                      : 'Find the Traitors. Survive.'}
+                ? 'Investigate by night. Trust your reports — most of them.'
+                : myRole === 'MEDIC'
+                ? 'Heal in silence. Pick someone to protect each night.'
+                : myRole === 'SEER'
+                ? 'You hold a single, true vision. Use it wisely.'
+                : 'Find the Traitors. Survive.'}
             </p>
           </div>
         </div>
@@ -133,31 +133,34 @@ export function RoleReveal({ myRole, traitorIds, players, myPlayerId, phase }: R
             <>
               <h3 className={styles.briefingTitle}>Your charge as the Sheriff</h3>
               <p className={styles.briefingBody}>
-                You side with the Faithful. Each morning you secretly investigate a random alive
-                player and learn whether they read as <strong>Suspicious</strong> or
-                <strong> Clear</strong>. Your readings are mostly accurate — but never certain.
+                Each morning you receive a report on a randomly selected player —
+                "Traitor" or "Faithful". Your reports are usually accurate, but
+                roughly one in four is wrong. You stand with the Faithful for the
+                purposes of victory.
               </p>
-              <p className={styles.briefingTip}>Reveal yourself with care; the Traitors will hunt you.</p>
+              <p className={styles.briefingTip}>Share carefully — outing yourself paints a target.</p>
             </>
           ) : myRole === 'MEDIC' ? (
             <>
               <h3 className={styles.briefingTitle}>Your charge as the Medic</h3>
               <p className={styles.briefingBody}>
-                You side with the Faithful. Each night you may secretly choose a player to protect.
-                If the Traitors target them, the murder is silently blocked. You cannot protect the
-                same player two nights in a row, and you cannot protect yourself.
+                Each night you may silently protect one other player from the
+                Traitors' kill. You cannot protect yourself, and you cannot
+                protect the same player two nights in a row. If your save lands,
+                no one will know. You stand with the Faithful.
               </p>
-              <p className={styles.briefingTip}>Save the right people. Keep the secret.</p>
+              <p className={styles.briefingTip}>Choose quickly — you have 30 seconds each night.</p>
             </>
           ) : myRole === 'SEER' ? (
             <>
               <h3 className={styles.briefingTitle}>Your charge as the Seer</h3>
               <p className={styles.briefingBody}>
-                You side with the Faithful. Once per game, during the roundtable, you may activate
-                your gift to learn the true role of a random player. The Traitors will know your
-                gift was used — but not by whom.
+                Once per game — during a Roundtable — you may burn your gift
+                to learn the TRUE role of one randomly chosen player. The
+                reading is always accurate. The Traitors will know the gift
+                has been used (but not by whom). You stand with the Faithful.
               </p>
-              <p className={styles.briefingTip}>Choose the moment carefully — the gift is one-shot.</p>
+              <p className={styles.briefingTip}>One vision. One chance. Pick the right Roundtable.</p>
             </>
           ) : (
             <>

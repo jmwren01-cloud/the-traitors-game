@@ -49,15 +49,20 @@ export function buildGameRecord(state: GameState): GameRecord | null {
       }
     }
 
-    const won = (state.winner === 'TRAITORS' && p.role === 'TRAITOR')
-             || (state.winner === 'FAITHFUL' && p.role !== undefined && p.role !== 'TRAITOR');
+    // Wave 4: Sheriff/Medic/Seer all share the Faithful win condition.
+    // Their persisted role is normalized to 'FAITHFUL' for stats so the
+    // existing schema and aggregates keep working unchanged.
+    const isTraitor = p.role === 'TRAITOR';
+    const won = (state.winner === 'TRAITORS' && isTraitor)
+             || (state.winner === 'FAITHFUL' && !isTraitor);
+    const persistedRole: 'TRAITOR' | 'FAITHFUL' = isTraitor ? 'TRAITOR' : 'FAITHFUL';
 
     playerRecords.push({
       id: crypto.randomUUID(),
       gameId,
       deviceToken: p.deviceToken,
       playerName: p.name,
-      role: p.role,
+      role: persistedRole,
       outcome: won ? 'WON' : 'LOST',
       survived: p.isAlive,
       wasBanished: !!banishedRound,

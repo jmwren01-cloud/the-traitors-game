@@ -1,6 +1,6 @@
 // Game Manager - Core Game Logic
 
-import type { GameState, Player, Role, Vote, TimerState, GamePhase, GameSettings, ChallengeState, ChallengeType, RoundRecord, VoteEntry, SheriffResult, SheriffInvestigation } from './types.js';
+import type { GameState, Player, Role, Vote, TimerState, GamePhase, GameSettings, ChallengeState, ChallengeType, RoundRecord, VoteEntry } from './types.js';
 import { DEFAULT_SETTINGS } from './types.js';
 import { pickAvailableColor, pickRandomAvatar, COLOR_IDS, AVATAR_IDS } from './avatarConstants.js';
 
@@ -133,6 +133,17 @@ export function updateSettings(game: GameState, partialSettings: Partial<GameSet
   };
 }
 
+// ============= ROLE TEAM HELPERS =============
+
+/**
+ * Wave 4: a role belongs to the Faithful team if it isn't 'TRAITOR'.
+ * Sheriff/Medic/Seer all share win conditions and "non-recruitment" status
+ * with vanilla Faithful, so this single predicate covers every team check.
+ */
+export function isFaithfulRole(role: Role | undefined): boolean {
+  return role !== undefined && role !== 'TRAITOR';
+}
+
 export function addPlayer(game: GameState, playerName: string, deviceToken?: string): { game: GameState; playerId: string } {
   if (game.phase !== 'LOBBY') {
     throw new Error('Cannot join game in progress');
@@ -234,38 +245,190 @@ export function assignRoles(game: GameState): GameState {
   // Shuffle players for random role assignment
   const shuffled = [...game.players].sort(() => Math.random() - 0.5);
 
-  // Assign traitors first
-  const roleByPlayerId = new Map<string, Role>();
-  for (let i = 0; i < shuffled.length; i++) {
-    const p = shuffled[i]!;
-    roleByPlayerId.set(p.id, i < traitorCount ? 'TRAITOR' : 'FAITHFUL');
-  }
-
-  // Special-role assignment from the non-traitor pool, in order: Sheriff (7+), Medic (8+), Seer (9+).
-  // The shuffled non-traitor pool order is the random order, so we just pick the next available.
-  if (game.settings.enableSpecialRoles) {
-    const nonTraitorPool = shuffled.slice(traitorCount);
-    let idx = 0;
-    if (playerCount >= 7 && idx < nonTraitorPool.length) {
-      roleByPlayerId.set(nonTraitorPool[idx]!.id, 'SHERIFF'); idx++;
-    }
-    if (playerCount >= 8 && idx < nonTraitorPool.length) {
-      roleByPlayerId.set(nonTraitorPool[idx]!.id, 'MEDIC'); idx++;
-    }
-    if (playerCount >= 9 && idx < nonTraitorPool.length) {
-      roleByPlayerId.set(nonTraitorPool[idx]!.id, 'SEER'); idx++;
-    }
-  }
-
-  const updatedPlayers = game.players.map((player) => ({
+  // Assign traitors first; everyone else starts as plain FAITHFUL.
+  let assigned: Player[] = shuffled.map((player, index) => ({
     ...player,
-    role: roleByPlayerId.get(player.id) ?? ('FAITHFUL' as Role),
+    role: (index < traitorCount ? 'TRAITOR' : 'FAITHFUL') as Role
   }));
+
+  // Wave 4: upgrade vanilla Faithful into Sheriff / Medic / Seer based on
+  // player-count thresholds. Special roles do NOT increase the Faithful
+  // count — they are stronger Faithful, not extra ones.
+  if (game.settings.enableSpecialRoles) {
+    const faithfulIds = assigned
+      .filter((p) => p.role === 'FAITHFUL')
+      .map((p) => p.id);
+    // Shuffle independently so traitor selection isn't correlated with which
+    // Faithful gets the special powers.
+    const pool = [...faithfulIds].sort(() => Math.random() - 0.5);
+    const upgrades: Role[] = [];
+    if (playerCount >= 7) upgrades.push('SHERIFF');
+    if (playerCount >= 8) upgrades.push('MEDIC');
+    if (playerCount >= 9) upgrades.push('SEER');
+
+    const upgradesById = new Map<string, Role>();
+    for (let i = 0; i < upgrades.length && i < pool.length; i++) {
+      upgradesById.set(pool[i]!, upgrades[i]!);
+    }
+    if (upgradesById.size > 0) {
+      assigned = assigned.map((p) =>
+        upgradesById.has(p.id) ? { ...p, role: upgradesById.get(p.id)! } : p
+      );
+    }
+  }
+
+  return {
+    ...game,
+    players: assigned,
+    phase: 'ROLE_REVEAL'
+  };
+}
+
+// ============= WAVE 4 SPECIAL ROLE HELPERS =============
+
+export function getSheriffIds(game: GameState): string[] {
+  return game.players.filter((p) => p.role === 'SHERIFF').map((p) => p.id);
+}
+
+export interface SheriffInvestigation {
+  sheriffId: string;
+  sheriffName: string;
+  targetId: string;
+  targetName: string;
+  reportedRole: 'TRAITOR' | 'FAITHFUL';
+}
+
+/**
+ * Wave 4 — Sheriff investigation. Called when transitioning into MORNING.
+ * For each alive Sheriff, picks a random alive non-self target and reports
+ * a role. There is a 25% chance the report is INVERTED (TRAITOR <->
+ * FAITHFUL), capturing the spec's "imperfect investigation" rule.
+ *
+ * Returns one investigation per alive Sheriff, or an empty array if none.
+ * The router fans these out as private S2C_SHERIFF_RESULT messages.
+ */
+export function runSheriffInvestigations(game: GameState): SheriffInvestigation[] {
+  const out: SheriffInvestigation[] = [];
+  const alive = game.players.filter((p) => p.isAlive);
+  for (const sheriff of alive) {
+    if (sheriff.role !== 'SHERIFF') continue;
+    const candidates = alive.filter((p) => p.id !== sheriff.id);
+    if (candidates.length === 0) continue;
+    const target = candidates[Math.floor(Math.random() * candidates.length)]!;
+    const trueIsTraitor = target.role === 'TRAITOR';
+    const inverted = Math.random() < 0.25;
+    const reported: 'TRAITOR' | 'FAITHFUL' = trueIsTraitor !== inverted ? 'TRAITOR' : 'FAITHFUL';
+    out.push({
+      sheriffId: sheriff.id,
+      sheriffName: sheriff.name,
+      targetId: target.id,
+      targetName: target.name,
+      reportedRole: reported,
+    });
+  }
+  return out;
+}
+
+/**
+ * Wave 4 — Medic protect. Called during NIGHT. The Medic chooses a target
+ * to silently protect from murder this night.
+ *
+ * Rules:
+ *   - Medic must be alive and have role 'MEDIC'.
+ *   - Cannot self-protect.
+ *   - Cannot protect the same player two nights in a row.
+ *   - Only one protect per night (overwrites if Medic resubmits before
+ *     murder resolution; the spec calls for a single in-flight choice).
+ */
+export function submitMedicProtect(
+  game: GameState,
+  medicId: string,
+  targetId: string
+): GameState {
+  if (game.phase !== 'NIGHT') {
+    throw new Error('Can only protect during the night phase');
+  }
+  const medic = game.players.find((p) => p.id === medicId);
+  if (!medic || !medic.isAlive || medic.role !== 'MEDIC') {
+    throw new Error('Only an alive Medic can protect a player');
+  }
+  if (targetId === medicId) {
+    throw new Error('Medic cannot protect themselves');
+  }
+  const target = game.players.find((p) => p.id === targetId);
+  if (!target || !target.isAlive) {
+    throw new Error('Target not found or not alive');
+  }
+  if (medic.medicLastProtectedTargetId === targetId) {
+    throw new Error('Cannot protect the same player two nights in a row');
+  }
+
+  const updatedPlayers = game.players.map((p) =>
+    p.id === medicId ? { ...p, medicLastProtectedTargetId: targetId } : p
+  );
 
   return {
     ...game,
     players: updatedPlayers,
-    phase: 'ROLE_REVEAL'
+    medicProtectionTargetId: targetId,
+  };
+}
+
+export interface SeerActivationResult {
+  game: GameState;
+  seerId: string;
+  seerName: string;
+  targetId: string;
+  targetName: string;
+  actualRole: Role;
+  traitorIds: string[];
+}
+
+/**
+ * Wave 4 — Seer one-time gift. Activated during ROUNDTABLE. Picks a
+ * RANDOM alive non-self player and reveals their TRUE role to the Seer
+ * (always accurate, never inverted). Also notifies all alive Traitors
+ * that the Seer used their gift on someone.
+ *
+ * The target is chosen by the server, not the Seer, so this function
+ * intentionally takes no targetId.
+ */
+export function activateSeer(
+  game: GameState,
+  seerId: string
+): SeerActivationResult {
+  if (game.phase !== 'ROUNDTABLE') {
+    throw new Error('Seer can only be activated during the Roundtable');
+  }
+  const seer = game.players.find((p) => p.id === seerId);
+  if (!seer || !seer.isAlive || seer.role !== 'SEER') {
+    throw new Error('Only an alive Seer can use the Seer gift');
+  }
+  if (seer.seerGiftUsed) {
+    throw new Error('Seer gift has already been used');
+  }
+
+  const candidates = game.players.filter(
+    (p) => p.isAlive && p.id !== seerId && !!p.role
+  );
+  if (candidates.length === 0) {
+    throw new Error('No valid target available for the Seer');
+  }
+  const target = candidates[Math.floor(Math.random() * candidates.length)]!;
+
+  const updatedPlayers = game.players.map((p) =>
+    p.id === seerId ? { ...p, seerGiftUsed: true } : p
+  );
+  const updated: GameState = { ...game, players: updatedPlayers };
+
+  return {
+    game: updated,
+    seerId,
+    seerName: seer.name,
+    targetId: target.id,
+    targetName: target.name,
+    actualRole: target.role!,
+    traitorIds: updated.players.filter((p) => p.isAlive && p.role === 'TRAITOR').map((p) => p.id),
   };
 }
 
@@ -708,7 +871,7 @@ export function checkWinCondition(game: GameState): GameState {
   }
 
   const aliveTraitors = game.players.filter((p: Player) => p.isAlive && p.role === 'TRAITOR').length;
-  const aliveFaithful = game.players.filter((p: Player) => p.isAlive && p.role && p.role !== 'TRAITOR').length;
+  const aliveFaithful = game.players.filter((p: Player) => p.isAlive && isFaithfulRole(p.role)).length;
 
   // Traitors win if they equal or outnumber faithful — game ended after banishment, no murder
   if (aliveTraitors >= aliveFaithful) {
@@ -768,6 +931,7 @@ export function startNight(game: GameState): GameState {
     murderVotes: [],
     pendingRecruitmentTargetId: undefined,
     lastRecruitedPlayerId: undefined,
+    medicProtectionTargetId: undefined,
   };
 }
 
@@ -790,8 +954,11 @@ export function submitRecruitment(game: GameState, recruiterId: string, targetId
   }
 
   const target = game.players.find((p: Player) => p.id === targetId);
-  if (!target || !target.isAlive || target.role === 'TRAITOR') {
-    throw new Error('Target must be an alive Faithful player');
+  // Wave 4: any non-Traitor (vanilla Faithful, Sheriff, Medic, or Seer) is a
+  // valid recruitment target. Recruitment converts them into a Traitor and
+  // strips their special powers (the role is overwritten in resolveMurder).
+  if (!target || !target.isAlive || !isFaithfulRole(target.role)) {
+    throw new Error('Target must be an alive Faithful-team player');
   }
 
   const updatedPlayers = game.players.map((p: Player) =>
@@ -840,8 +1007,6 @@ export function submitMurder(game: GameState, traitorId: string, targetId: strin
 export interface MurderResult {
   game: GameState;
   blocked: boolean;
-  /** True when the MEDIC's protection was the cause of the block (target identity is NOT exposed publicly). */
-  medicBlocked?: boolean;
   shieldedPlayerId?: string;
   shieldedPlayerName?: string;
   murderedPlayerId?: string;
@@ -910,7 +1075,7 @@ export function resolveMurder(game: GameState): MurderResult {
   if (game.pendingRecruitmentTargetId) {
     const recruitTarget = game.players.find(
       (p: Player) =>
-        p.id === game.pendingRecruitmentTargetId && p.isAlive && p.role !== 'TRAITOR'
+        p.id === game.pendingRecruitmentTargetId && p.isAlive && isFaithfulRole(p.role)
     );
     if (recruitTarget) {
       recruitedPlayerId = recruitTarget.id;
@@ -925,12 +1090,13 @@ export function resolveMurder(game: GameState): MurderResult {
 
   const finalTarget = playersWithRecruitment.find((p: Player) => p.id === targetId)!;
 
-  // MEDIC protection: if the medic chose this target, the murder is silently blocked.
-  // Target identity is NOT revealed publicly (no name leak in the morning broadcast).
+  // Wave 4 — Medic silent protection. If the Medic protected this exact
+  // target tonight, the murder is silently blocked: no shield is consumed,
+  // no public "shield blocked" reveal is broadcast, the morning simply
+  // shows "no one died". The Traitors don't learn why their kill missed.
   if (
-    game.medicProtectedTargetId &&
-    game.medicProtectedTargetId === targetId &&
-    finalTarget.isAlive
+    game.medicProtectionTargetId !== undefined &&
+    game.medicProtectionTargetId === targetId
   ) {
     return {
       game: {
@@ -941,12 +1107,13 @@ export function resolveMurder(game: GameState): MurderResult {
         lastShieldedPlayerId: undefined,
         lastRecruitedPlayerId: recruitedPlayerId,
         pendingRecruitmentTargetId: undefined,
-        medicProtectedTargetId: undefined,
+        medicProtectionTargetId: undefined,
         murderVotes: [],
-        phase: 'MORNING'
+        phase: 'MORNING',
       },
       blocked: true,
-      medicBlocked: true,
+      // Intentionally omit shieldedPlayerId / shieldedPlayerName so the
+      // router routes this as the silent "no one died" morning event.
       recruitedPlayerId,
       recruitedPlayerName,
     };
@@ -967,7 +1134,6 @@ export function resolveMurder(game: GameState): MurderResult {
         lastShieldedPlayerId: targetId,
         lastRecruitedPlayerId: recruitedPlayerId,
         pendingRecruitmentTargetId: undefined,
-        medicProtectedTargetId: undefined,
         murderVotes: [],
         phase: 'MORNING'
       },
@@ -993,7 +1159,6 @@ export function resolveMurder(game: GameState): MurderResult {
       lastShieldedPlayerId: undefined,
       lastRecruitedPlayerId: recruitedPlayerId,
       pendingRecruitmentTargetId: undefined,
-      medicProtectedTargetId: undefined,
       murderVotes: [],
       phase: 'MORNING'
     },
@@ -1026,7 +1191,7 @@ export function continueToDayPhase(game: GameState): GameState {
   const newHistory = [...game.history, record];
 
   const aliveTraitors = game.players.filter((p: Player) => p.isAlive && p.role === 'TRAITOR').length;
-  const aliveFaithful = game.players.filter((p: Player) => p.isAlive && p.role && p.role !== 'TRAITOR').length;
+  const aliveFaithful = game.players.filter((p: Player) => p.isAlive && isFaithfulRole(p.role)).length;
 
   // Check win conditions after murder
   if (aliveTraitors >= aliveFaithful) {
@@ -1520,145 +1685,5 @@ export function revealShieldLegacy(game: GameState, playerId: string): GameState
   return {
     ...game,
     players: updatedPlayers
-  };
-}
-
-// ============= SPECIAL ROLES: MEDIC, SEER, SHERIFF =============
-
-/**
- * MEDIC chooses an alive player to protect during the current NIGHT.
- * Cannot self-protect; cannot pick the same target two nights in a row.
- * Returns updated game and the target's display name.
- */
-export function medicProtect(
-  game: GameState,
-  medicId: string,
-  targetId: string
-): { game: GameState; targetName: string } {
-  if (game.phase !== 'NIGHT') {
-    throw new Error('Medic can only act during the night');
-  }
-  const medic = game.players.find((p: Player) => p.id === medicId);
-  if (!medic || !medic.isAlive || medic.role !== 'MEDIC') {
-    throw new Error('Only an alive Medic can protect a player');
-  }
-  if (targetId === medicId) {
-    throw new Error('Medic cannot protect themselves');
-  }
-  if (medic.medicLastProtectedId && medic.medicLastProtectedId === targetId) {
-    throw new Error('Medic cannot protect the same player two nights in a row');
-  }
-  const target = game.players.find((p: Player) => p.id === targetId);
-  if (!target || !target.isAlive) {
-    throw new Error('Target must be an alive player');
-  }
-
-  const updatedPlayers = game.players.map((p: Player) =>
-    p.id === medicId ? { ...p, medicLastProtectedId: targetId } : p
-  );
-
-  return {
-    game: { ...game, players: updatedPlayers, medicProtectedTargetId: targetId },
-    targetName: target.name,
-  };
-}
-
-/**
- * SEER one-shot ability: pick a random alive non-Seer target and reveal their true role
- * to the Seer. Notifies alive Traitors that the Seer's gift was used (round only).
- */
-export function activateSeer(
-  game: GameState,
-  seerId: string
-): {
-  game: GameState;
-  targetId: string;
-  targetName: string;
-  targetRole: Role;
-  round: number;
-} {
-  if (game.phase !== 'ROUNDTABLE') {
-    throw new Error('Seer can only activate during the roundtable');
-  }
-  const seer = game.players.find((p: Player) => p.id === seerId);
-  if (!seer || !seer.isAlive || seer.role !== 'SEER') {
-    throw new Error('Only an alive Seer can activate the gift');
-  }
-  if (seer.seerUsedAtRound !== undefined) {
-    throw new Error('The Seer gift has already been used');
-  }
-  const candidates = game.players.filter(
-    (p: Player) => p.isAlive && p.id !== seerId && p.role
-  );
-  if (candidates.length === 0) {
-    throw new Error('No valid targets for Seer');
-  }
-  const target = candidates[Math.floor(Math.random() * candidates.length)]!;
-  const round = game.currentRound;
-
-  const updatedPlayers = game.players.map((p: Player) =>
-    p.id === seerId ? { ...p, seerUsedAtRound: round } : p
-  );
-
-  return {
-    game: { ...game, players: updatedPlayers },
-    targetId: target.id,
-    targetName: target.name,
-    targetRole: (target.role ?? 'FAITHFUL') as Role,
-    round,
-  };
-}
-
-/**
- * SHERIFF morning investigation: pick a random alive non-Sheriff target,
- * compute true result, apply 25% inversion seam, store on sheriff.sheriffInvestigations.
- * Returns the investigation payload or undefined when no alive sheriff exists.
- */
-export function performSheriffInvestigation(
-  game: GameState
-): {
-  game: GameState;
-  sheriffId: string;
-  investigation: SheriffInvestigation;
-} | { game: GameState; sheriffId?: undefined; investigation?: undefined } {
-  const sheriff = game.players.find(
-    (p: Player) => p.isAlive && p.role === 'SHERIFF'
-  );
-  if (!sheriff) {
-    return { game };
-  }
-  const candidates = game.players.filter(
-    (p: Player) => p.isAlive && p.id !== sheriff.id && p.role
-  );
-  if (candidates.length === 0) {
-    return { game };
-  }
-  const target = candidates[Math.floor(Math.random() * candidates.length)]!;
-  const truth: SheriffResult = target.role === 'TRAITOR' ? 'SUSPICIOUS' : 'CLEAR';
-  const inverted = Math.random() < 0.25;
-  const displayedResult: SheriffResult = inverted
-    ? truth === 'SUSPICIOUS' ? 'CLEAR' : 'SUSPICIOUS'
-    : truth;
-
-  const investigation: SheriffInvestigation = {
-    round: game.currentRound,
-    targetId: target.id,
-    targetName: target.name,
-    displayedResult,
-  };
-
-  const updatedPlayers = game.players.map((p: Player) =>
-    p.id === sheriff.id
-      ? {
-          ...p,
-          sheriffInvestigations: [...(p.sheriffInvestigations ?? []), investigation],
-        }
-      : p
-  );
-
-  return {
-    game: { ...game, players: updatedPlayers },
-    sheriffId: sheriff.id,
-    investigation,
   };
 }

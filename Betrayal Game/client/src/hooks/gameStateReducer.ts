@@ -1,4 +1,4 @@
-import type { GameState, Player, Role, Vote, ChatMessage, TimerState, VoteTally, GameSettings, RoundRecord, SheriffResult } from '../types';
+import type { GameState, Player, Role, Vote, ChatMessage, TimerState, VoteTally, GameSettings, RoundRecord, SheriffReport } from '../types';
 
 type Msg = { type: string; payload: Record<string, unknown> };
 
@@ -365,9 +365,57 @@ export function gameStateReducer(state: GameState | null, msg: Msg): GameState |
         justRecruited: undefined,
         recruitedPlayer: undefined,
         nightRecruitmentSubmittedBy: undefined,
-        // Fresh night: clear medic's pending protection from any prior night.
-        medicProtection: undefined,
+        // Wave 4 — the previous night's Medic confirmation and any silent-block
+        // banner are stale once a new night begins. The Sheriff investigation
+        // history (sheriffReports) is preserved across the whole game.
+        medicProtectedTarget: undefined,
+        medicBlocked: undefined,
       } : null;
+    }
+
+    case 'S2C_SHERIFF_RESULT': {
+      const payload = msg.payload as unknown as SheriffReport;
+      if (!state) return null;
+      // Append to the running history, de-duped by (round, targetId) so a
+      // re-broadcast on reconnect does not double-count.
+      const prior = state.sheriffReports ?? [];
+      const dupe = prior.some(
+        (r) => r.round === payload.round && r.targetId === payload.targetId
+      );
+      const sheriffReports = dupe ? prior : [...prior, payload];
+      return { ...state, sheriffReports };
+    }
+
+    case 'S2C_MEDIC_PROTECTED': {
+      const payload = msg.payload as { targetId: string; targetName: string };
+      if (!state) return null;
+      // Mirror server-side bookkeeping so the UI can disable the same target next night.
+      return {
+        ...state,
+        medicProtectedTarget: { id: payload.targetId, name: payload.targetName },
+        players: state.players.map((p) =>
+          p.id === state.myPlayerId
+            ? { ...p, medicLastProtectedTargetId: payload.targetId }
+            : p
+        ),
+      };
+    }
+
+    case 'S2C_SEER_RESULT': {
+      const payload = msg.payload as { targetId: string; targetName: string; actualRole: Role };
+      if (!state) return null;
+      return {
+        ...state,
+        seerResult: payload,
+        players: state.players.map((p) =>
+          p.id === state.myPlayerId ? { ...p, seerGiftUsed: true } : p
+        ),
+      };
+    }
+
+    case 'S2C_SEER_ACTIVATED': {
+      // Sent only to alive Traitors. The payload intentionally hides identities.
+      return state ? { ...state, seerActivatedAlert: true } : null;
     }
 
     case 'S2C_MURDER_SUBMITTED': {
@@ -412,22 +460,26 @@ export function gameStateReducer(state: GameState | null, msg: Msg): GameState |
         murderBlocked?: boolean;
         shieldedPlayerId?: string;
         shieldedPlayerName?: string;
+        medicBlocked?: boolean;
         recruitedPlayerId?: string;
         recruitedPlayerName?: string;
         recruitmentOccurred?: boolean;
       };
+      // Distinguish the two block flavours: Shield publicly outs the
+      // protected identity, while Medic's block must NOT — only the
+      // generic "target survived" banner is shown.
+      const shieldBlock =
+        payload.murderBlocked === true && payload.shieldedPlayerId !== undefined
+          ? { shieldedPlayerId: payload.shieldedPlayerId, shieldedPlayerName: payload.shieldedPlayerName! }
+          : undefined;
       return state ? {
         ...state,
         phase: payload.phase as GameState['phase'],
         murderedPlayer: payload.lastMurderedPlayerId
           ? { id: payload.lastMurderedPlayerId, name: payload.lastMurderedPlayerName || '' }
           : undefined,
-        murderBlocked: payload.murderBlocked
-          ? {
-              ...(payload.shieldedPlayerId !== undefined ? { shieldedPlayerId: payload.shieldedPlayerId } : {}),
-              ...(payload.shieldedPlayerName !== undefined ? { shieldedPlayerName: payload.shieldedPlayerName } : {}),
-            }
-          : undefined,
+        murderBlocked: shieldBlock,
+        medicBlocked: payload.medicBlocked === true,
         recruitedPlayer: payload.recruitedPlayerId && payload.recruitedPlayerName
           ? { id: payload.recruitedPlayerId, name: payload.recruitedPlayerName }
           : payload.recruitmentOccurred
@@ -451,6 +503,7 @@ export function gameStateReducer(state: GameState | null, msg: Msg): GameState |
         banishedPlayer: undefined,
         murderedPlayer: undefined,
         murderBlocked: undefined,
+        medicBlocked: undefined,
         votes: undefined,
         ...(keepShieldBlock
           ? {}
@@ -574,46 +627,6 @@ export function gameStateReducer(state: GameState | null, msg: Msg): GameState |
     case 'S2C_AVATAR_UPDATED': {
       const payload = msg.payload as { players: Player[] };
       return state ? { ...state, players: payload.players } : null;
-    }
-
-    case 'S2C_SHERIFF_RESULT': {
-      const payload = msg.payload as { round: number; targetId: string; targetName: string; result: SheriffResult };
-      if (!state) return null;
-      const entry = { round: payload.round, targetId: payload.targetId, targetName: payload.targetName, result: payload.result };
-      return {
-        ...state,
-        sheriffResult: entry,
-        sheriffHistory: [...(state.sheriffHistory ?? []), entry],
-      };
-    }
-
-    case 'S2C_MEDIC_PROTECT_CONFIRMED': {
-      const payload = msg.payload as { targetId: string; targetName: string };
-      if (!state) return null;
-      return { ...state, medicProtection: { targetId: payload.targetId, targetName: payload.targetName } };
-    }
-
-    case 'S2C_SEER_RESULT': {
-      const payload = msg.payload as { round: number; targetId: string; targetName: string; role: Role };
-      if (!state) return null;
-      const entry = { round: payload.round, targetId: payload.targetId, targetName: payload.targetName, role: payload.role };
-      return {
-        ...state,
-        seerResult: entry,
-        seerHistory: [...(state.seerHistory ?? []), entry],
-        // Persist that the seer gift has been spent (server also persists on Player).
-        players: state.players.map((p) =>
-          p.id === state.myPlayerId ? { ...p, seerUsedAtRound: payload.round } : p
-        ),
-      };
-    }
-
-    case 'S2C_SEER_ACTIVATED': {
-      const payload = msg.payload as { round: number };
-      if (!state) return null;
-      const rounds = state.seerActivatedRounds ?? [];
-      if (rounds.includes(payload.round)) return state;
-      return { ...state, seerActivatedRounds: [...rounds, payload.round] };
     }
 
     case 'S2C_GAME_END': {

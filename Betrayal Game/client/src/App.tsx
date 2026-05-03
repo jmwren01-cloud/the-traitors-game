@@ -14,8 +14,7 @@ import { Spectator } from './components/Spectator';
 import { HostPanel } from './components/HostPanel';
 import { PhaseIntroCard } from './components/PhaseIntroCard';
 import { HUD } from './components/HUD';
-import { SheriffOverlay } from './components/SheriffOverlay';
-import { SeerControl } from './components/SeerControl';
+import { SpecialRoleHud } from './components/SpecialRoleHud';
 import hudStyles from './components/HUD.module.css';
 import { useSoundContext } from './contexts/SoundContext';
 import './App.css';
@@ -78,6 +77,20 @@ function App() {
   const phase = gameState?.phase || 'LOBBY';
   const showChat = gameState && phase !== 'LOBBY' && phase !== 'ROLE_ASSIGN';
   const isChatDisabled = phase === 'ROLE_REVEAL';
+  const specialRoleHud = gameState ? (
+    <SpecialRoleHud
+      phase={phase}
+      myPlayerId={gameState.myPlayerId}
+      myRole={gameState.myRole}
+      players={gameState.players}
+      traitorIds={gameState.traitorIds}
+      sheriffReports={gameState.sheriffReports}
+      medicProtectedTarget={gameState.medicProtectedTarget}
+      seerResult={gameState.seerResult}
+      seerActivatedAlert={gameState.seerActivatedAlert}
+      onSend={send}
+    />
+  ) : null;
   const myPlayer = gameState?.players?.find((p) => p.id === gameState?.myPlayerId);
   const isAlive = myPlayer?.isAlive ?? true;
 
@@ -239,29 +252,15 @@ function App() {
           murderVoteProgress={gameState?.murderVoteProgress}
           murderedPlayer={gameState?.murderedPlayer}
           murderBlocked={gameState?.murderBlocked}
+          medicBlocked={gameState?.medicBlocked}
           traitorIds={gameState?.traitorIds}
           myPlayerRecruitmentUsed={myPlayer?.recruitmentUsed}
           justRecruited={gameState?.justRecruited}
           recruitedPlayer={gameState?.recruitedPlayer}
           nightRecruitmentSubmittedBy={gameState?.nightRecruitmentSubmittedBy}
-          medicProtection={gameState?.medicProtection}
           onSend={send}
         />
-        <SheriffOverlay
-          myRole={gameState?.myRole}
-          sheriffResult={gameState?.sheriffResult}
-          sheriffHistory={gameState?.sheriffHistory}
-        />
-        <SeerControl
-          myRole={gameState?.myRole}
-          myPlayerId={gameState?.myPlayerId}
-          players={gameState?.players || []}
-          phase={phase}
-          currentRound={gameState?.currentRound}
-          seerResult={gameState?.seerResult}
-          seerActivatedRounds={gameState?.seerActivatedRounds}
-          onSend={send}
-        />
+        {specialRoleHud}
         {chatBox}
       </>
     );
@@ -297,21 +296,7 @@ function App() {
           shieldBlockedBanishmentName={gameState?.shieldBlockedBanishmentName}
           onSend={send}
         />
-        <SheriffOverlay
-          myRole={gameState?.myRole}
-          sheriffResult={gameState?.sheriffResult}
-          sheriffHistory={gameState?.sheriffHistory}
-        />
-        <SeerControl
-          myRole={gameState?.myRole}
-          myPlayerId={gameState?.myPlayerId}
-          players={gameState?.players || []}
-          phase={phase}
-          currentRound={gameState?.currentRound}
-          seerResult={gameState?.seerResult}
-          seerActivatedRounds={gameState?.seerActivatedRounds}
-          onSend={send}
-        />
+        {specialRoleHud}
         {chatBox}
       </>
     );

@@ -1,44 +1,47 @@
 import { WebSocket } from 'ws';
 import crypto from 'crypto';
 import type { S2CEvent, GameState, Player } from '../game/types.js';
-import { performSheriffInvestigation, type MurderResult } from '../game/manager.js';
+import type { MurderResult } from '../game/manager.js';
 
 /**
- * Returns a copy of the players list scrubbed for the given recipient:
- * `hasShield` is preserved only for the recipient themselves and for
- * players whose shield has been publicly revealed. For everyone else
- * `hasShield` is forced to `false` so the field cannot leak via the
- * raw WebSocket payload.
+ * Returns a copy of the players list scrubbed for the given recipient.
  *
- * `recipientId` may be `undefined` (e.g. broadcasting before a
- * connection has a known player id); in that case no player is
- * treated as "self" and only revealed shields remain visible.
+ * Hidden information removed for everyone except the recipient themselves
+ * (and except in `GAME_END`, where every role is publicly revealed):
+ *   - `role` (a Faithful must never see another player's true role,
+ *     including the Wave 4 special roles SHERIFF / MEDIC / SEER)
+ *   - `seerGiftUsed` (would out the Seer)
+ *   - `medicLastProtectedTargetId` (would out the Medic and their pick)
+ *
+ * `hasShield` is also stripped except for the recipient and for players
+ * whose shield is publicly revealed.
+ *
+ * `recipientId` may be `undefined` (e.g. broadcasting before a connection
+ * has a known player id); in that case no player is treated as "self".
  */
 export function scrubPlayersForRecipient(
   players: Player[],
-  recipientId: string | undefined
+  recipientId: string | undefined,
+  opts: { revealAllRoles?: boolean } = {}
 ): Player[] {
+  const revealAll = opts.revealAllRoles === true;
   return players.map((p) => {
     // Strip server-only fields from every broadcast (deviceToken must never leave the server)
     const { deviceToken: _dt, ...rest } = p;
-    const safe = rest as Player;
-    const isSelf = recipientId !== undefined && safe.id === recipientId;
-    // Special-role private fields would leak the player's role to others —
-    // only the recipient themselves should ever see them.
-    let scrubbed: Player = safe;
-    if (!isSelf) {
-      const {
-        sheriffInvestigations: _si,
-        medicLastProtectedId: _mp,
-        seerUsedAtRound: _su,
-        ...sanitized
-      } = safe;
-      scrubbed = sanitized as Player;
+    const isSelf = recipientId !== undefined && rest.id === recipientId;
+
+    // Per-recipient role/special-role privacy.
+    const safe: Player = { ...rest } as Player;
+    if (!isSelf && !revealAll) {
+      delete safe.role;
+      delete safe.seerGiftUsed;
+      delete safe.medicLastProtectedTargetId;
     }
-    if (!scrubbed.hasShield) return scrubbed;
-    if (isSelf) return scrubbed;
-    if (scrubbed.shieldRevealed) return scrubbed;
-    return { ...scrubbed, hasShield: false };
+
+    if (!safe.hasShield) return safe;
+    if (isSelf) return safe;
+    if (safe.shieldRevealed) return safe;
+    return { ...safe, hasShield: false };
   });
 }
 
@@ -57,6 +60,11 @@ export function broadcastToSession(
     typeof payload === 'object' &&
     Array.isArray((payload as { players?: unknown }).players);
 
+  // Roles become public once the game ends so the post-game summary can
+  // colour everyone correctly. Mid-game, scrubPlayersForRecipient hides
+  // them.
+  const revealAllRoles = gameState.phase === 'GAME_END';
+
   gameState.players.forEach((player) => {
     const connection = playerConnections.get(player.id);
     if (!connection || connection.readyState !== WebSocket.OPEN) return;
@@ -64,7 +72,7 @@ export function broadcastToSession(
     let toSend: S2CEvent = event;
     if (hasPlayersArray) {
       const originalPlayers = (payload as { players: Player[] }).players;
-      const scrubbed = scrubPlayersForRecipient(originalPlayers, player.id);
+      const scrubbed = scrubPlayersForRecipient(originalPlayers, player.id, { revealAllRoles });
       toSend = {
         ...event,
         payload: { ...(payload as object), players: scrubbed },
@@ -152,34 +160,6 @@ export function broadcastRecruitmentEvents(
       }
     }
   });
-}
-
-/**
- * Runs the SHERIFF morning investigation (if any) and sends a private
- * S2C_SHERIFF_RESULT to the sheriff BEFORE the morning broadcast occurs.
- * Returns the updated game state (with the investigation appended on the
- * sheriff's player object) — the caller MUST persist it via setGame and use
- * the returned state for any subsequent broadcasts so scrubbing stays correct.
- */
-export function runSheriffInvestigation(
-  game: GameState,
-  playerConnections: Map<string, WebSocket>
-): GameState {
-  const result = performSheriffInvestigation(game);
-  if (!result.sheriffId || !result.investigation) return result.game;
-  const socket = playerConnections.get(result.sheriffId);
-  if (socket && socket.readyState === WebSocket.OPEN) {
-    socket.send(JSON.stringify({
-      type: 'S2C_SHERIFF_RESULT',
-      payload: {
-        round: result.investigation.round,
-        targetId: result.investigation.targetId,
-        targetName: result.investigation.targetName,
-        result: result.investigation.displayedResult,
-      },
-    }));
-  }
-  return result.game;
 }
 
 export function broadcastMorningEventWithRecruitment(

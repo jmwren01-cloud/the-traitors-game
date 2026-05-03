@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type {
-  Player, Role, RoundRecord, C2SEvent,
+  Player, RoundRecord, C2SEvent, Role,
   PlayerStatsPayload, LeaderboardEntryPayload, GlobalStatsPayload
 } from '../types';
 import { getColorHex, getAvatarEmoji } from '../avatarConstants';
@@ -39,20 +39,14 @@ interface GameEndProps {
 const STAGE_TIMINGS_MS = [0, 1500, 4000, 6000, 9000];
 
 function RolePill({ role }: { role: Role }) {
+  // Wave 4 — special roles (Sheriff/Medic/Seer) belong to the Faithful
+  // team. The post-game pill summarises team membership, so they all
+  // render as "Faithful". The detailed role can still be inspected via
+  // history entries elsewhere if needed.
   const isTraitor = role === 'TRAITOR';
-  const label =
-    role === 'TRAITOR'
-      ? 'Traitor'
-      : role === 'SHERIFF'
-        ? 'Sheriff'
-        : role === 'MEDIC'
-          ? 'Medic'
-          : role === 'SEER'
-            ? 'Seer'
-            : 'Faithful';
   return (
     <span className={isTraitor ? styles.pillTraitor : styles.pillFaithful}>
-      {label}
+      {isTraitor ? 'Traitor' : 'Faithful'}
     </span>
   );
 }

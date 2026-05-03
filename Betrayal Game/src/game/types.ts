@@ -12,7 +12,12 @@ export interface GameSettings {
   round1DiscussionOnly: boolean; // Skip banishment in round 1
   challengesEnabled: boolean;    // Enable shield challenges
   challengeTimerSeconds: number; // 30-120 seconds, default 60
-  enableSpecialRoles: boolean;   // Enable Sheriff/Medic/Seer at higher player counts
+  /**
+   * Wave 4: when true, eligible Faithful players are upgraded to special roles
+   * (Sheriff/Medic/Seer) at role-assignment time depending on the player count.
+   * Thresholds: Sheriff at 7+, Medic at 8+, Seer at 9+.
+   */
+  enableSpecialRoles: boolean;
 }
 
 export type ChallengeType = 'TIME_ESTIMATE' | 'MISSING_PLAYER' | 'WORD_SCRAMBLE';
@@ -64,16 +69,13 @@ export type GamePhase =
   | 'MORNING'
   | 'GAME_END';
 
+/**
+ * Wave 4 special roles. Sheriff/Medic/Seer all belong to the Faithful team
+ * for win-condition and recruitment purposes — anything that isn't 'TRAITOR'
+ * is Faithful-aligned. Use `isFaithfulRole()` from manager.ts at boundaries
+ * where the literal team matters.
+ */
 export type Role = 'TRAITOR' | 'FAITHFUL' | 'SHERIFF' | 'MEDIC' | 'SEER';
-
-export type SheriffResult = 'SUSPICIOUS' | 'CLEAR';
-
-export interface SheriffInvestigation {
-  round: number;
-  targetId: string;
-  targetName: string;
-  displayedResult: SheriffResult;
-}
 
 export interface Player {
   id: string;
@@ -84,12 +86,6 @@ export interface Player {
   isConnected: boolean;
   hasShield: boolean;
   shieldRevealed: boolean;
-  /** Round in which the SEER consumed their one-shot ability. */
-  seerUsedAtRound?: number;
-  /** ID of the player the MEDIC protected last night (cannot repeat next night). */
-  medicLastProtectedId?: string;
-  /** SHERIFF private investigation history (server-side; sent to sheriff only). */
-  sheriffInvestigations?: SheriffInvestigation[];
   /**
    * Round number in which the player explicitly declined to use their
    * shield. Tracked per-player (not per-game) so that revote-tie scenarios
@@ -101,6 +97,17 @@ export interface Player {
   color?: string;
   avatar?: string;
   recruitmentUsed?: boolean;
+  /**
+   * Wave 4 — Seer one-time gift. True after the Seer has used their reveal
+   * during a Roundtable.
+   */
+  seerGiftUsed?: boolean;
+  /**
+   * Wave 4 — Medic. The id of the player the Medic protected on the most
+   * recent night they were active. Cleared when the Medic dies. Used to
+   * enforce the "no two nights in a row" rule.
+   */
+  medicLastProtectedTargetId?: string;
   /**
    * Persistent device-fingerprint identity .
    * Server-only; never broadcast to other players. Used to link game records
@@ -202,13 +209,17 @@ export interface GameState {
   pendingRecruitmentTargetId?: string;
   lastRecruitedPlayerId?: string;
   /**
+   * Wave 4 — Medic. Set when a living Medic submits a protect target during
+   * NIGHT. Consumed by `resolveMurder()` to silently block a kill on the
+   * matching player. Cleared on the next `startNight()`.
+   */
+  medicProtectionTargetId?: string;
+  /**
    * Set true when a shield was revealed during VOTE_REVEAL and consumed to
    * cancel the in-flight banishment. The host's subsequent "Continue" will
    * skip the kill and proceed straight to the win check.
    */
   shieldBlockedBanishment?: boolean;
-  /** Transient: target the MEDIC chose to protect during the current NIGHT. Cleared after murder resolution. */
-  medicProtectedTargetId?: string;
   /** Game creation time (ms epoch). Used for persisted stats records. */
   startedAt?: number;
   /** Set after writeGameRecord runs so we don't double-record on duplicate end-game broadcasts. */
@@ -246,6 +257,11 @@ export type C2SEvent =
   | { type: 'C2S_SET_AVATAR'; payload: { color?: string; avatar?: string } }
   | { type: 'C2S_SUBMIT_RECRUITMENT'; payload: { targetId: string } }
   | { type: 'C2S_MEDIC_PROTECT'; payload: { targetId: string } }
+  /**
+   * Wave 4 — the Seer activates their one-time gift. Per spec the gift
+   * reveals a RANDOM alive non-self player; the client does not pick a
+   * target, so the payload is intentionally empty.
+   */
   | { type: 'C2S_ACTIVATE_SEER'; payload: Record<string, never> }
   | { type: 'C2S_IDENTIFY'; payload: { deviceToken: string; playerName: string } }
   | { type: 'C2S_GET_PLAYER_STATS'; payload: Record<string, never> }
@@ -384,6 +400,12 @@ export type S2CEvent =
       murderBlocked?: boolean;
       shieldedPlayerId?: string;
       shieldedPlayerName?: string;
+      /**
+       * Wave 4 — set when the Medic silently blocked the murder. The
+       * server intentionally omits the target's identity so the Medic
+       * is not outed; the UI just announces that the strike failed.
+       */
+      medicBlocked?: boolean;
       recruitedPlayerId?: string;
       recruitedPlayerName?: string;
       recruitmentOccurred?: boolean;
@@ -414,11 +436,34 @@ export type S2CEvent =
       shieldAwarded?: boolean;
     } }
   | { type: 'S2C_SHIELD_REVEALED'; payload: { playerId: string; playerName: string; banishmentBlocked?: boolean } }
+  /** Sent privately to a Sheriff each morning with their investigation result. */
+  | { type: 'S2C_SHERIFF_RESULT'; payload: {
+      targetId: string;
+      targetName: string;
+      reportedRole: 'TRAITOR' | 'FAITHFUL';
+      round: number;
+    } }
+  /** Sent privately to the Medic to confirm their submitted protection target. */
+  | { type: 'S2C_MEDIC_PROTECTED'; payload: { targetId: string; targetName: string } }
+  /** Sent privately to the Seer with the actual role of their chosen target. */
+  | { type: 'S2C_SEER_RESULT'; payload: {
+      targetId: string;
+      targetName: string;
+      actualRole: Role;
+    } }
+  /**
+   * Sent privately to all alive Traitors when the Seer activates their gift.
+   * The spec is intentionally vague — Traitors learn that the gift was used
+   * but NOT who the Seer is or who they read. Identity fields are optional
+   * so future variants can opt into more disclosure without a breaking change.
+   */
+  | { type: 'S2C_SEER_ACTIVATED'; payload: {
+      seerId?: string;
+      seerName?: string;
+      targetId?: string;
+      targetName?: string;
+    } }
   | { type: 'S2C_AVATAR_UPDATED'; payload: { players: Player[] } }
-  | { type: 'S2C_SHERIFF_RESULT'; payload: { round: number; targetId: string; targetName: string; result: SheriffResult } }
-  | { type: 'S2C_MEDIC_PROTECT_CONFIRMED'; payload: { targetId: string; targetName: string } }
-  | { type: 'S2C_SEER_RESULT'; payload: { round: number; targetId: string; targetName: string; role: Role } }
-  | { type: 'S2C_SEER_ACTIVATED'; payload: { round: number } }
   | { type: 'S2C_CHAT_MESSAGE'; payload: ChatMessage }
   | { type: 'S2C_TIMER_UPDATE'; payload: { endTime: number; duration: number; phase: GamePhase } }
   | { type: 'S2C_IDENTITY_CONFIRMED'; payload: { deviceToken: string; playerName: string; isReturningPlayer: boolean } }

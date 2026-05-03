@@ -14,13 +14,14 @@ interface NightPhaseProps {
   aliveTraitorCount?: number;
   murderVoteProgress?: { received: number; needed: number };
   murderedPlayer?: { id: string; name: string };
-  murderBlocked?: { shieldedPlayerId?: string; shieldedPlayerName?: string };
+  murderBlocked?: { shieldedPlayerId: string; shieldedPlayerName: string };
+  /** Wave 4 — true when the Medic silently saved the Traitors' target. */
+  medicBlocked?: boolean;
   traitorIds?: string[];
   myPlayerRecruitmentUsed?: boolean;
   justRecruited?: boolean;
   recruitedPlayer?: { id: string; name: string };
   nightRecruitmentSubmittedBy?: string;
-  medicProtection?: { targetId: string; targetName: string };
   onSend: (event: C2SEvent) => void;
 }
 
@@ -34,12 +35,12 @@ export function NightPhase({
   murderVoteProgress,
   murderedPlayer,
   murderBlocked,
+  medicBlocked,
   traitorIds,
   myPlayerRecruitmentUsed,
   justRecruited,
   recruitedPlayer,
   nightRecruitmentSubmittedBy,
-  medicProtection,
   onSend,
 }: NightPhaseProps) {
   const [selectedTarget, setSelectedTarget] = useState<string | null>(null);
@@ -295,81 +296,11 @@ export function NightPhase({
       );
     }
 
-    const isMedic = myRole === 'MEDIC';
-    const me = players.find((p) => p.id === myPlayerId);
-    const medicLastProtectedId = me?.medicLastProtectedId;
-    const medicCandidates = isMedic
-      ? players.filter((p) => p.isAlive && p.id !== myPlayerId && p.id !== medicLastProtectedId)
-      : [];
-    const medicAlreadyProtected = !!medicProtection;
-
     return (
       <div className={styles.container}>
         <div className={styles.nightOverlay}>
           <h1 className={styles.title}>Night Falls</h1>
           <p className={styles.subtitle}>Round {currentRound}</p>
-
-          {isMedic && me?.isAlive && (
-            <div
-              style={{
-                background: '#1a1326',
-                border: '2px solid #66d9a8',
-                borderRadius: 12,
-                padding: 16,
-                margin: '16px 0',
-                color: '#f5e9d3',
-              }}
-            >
-              <h2 style={{ marginTop: 0, fontSize: 18, color: '#66d9a8' }}>🩺 Medic — Choose someone to protect</h2>
-              {medicAlreadyProtected ? (
-                <p style={{ margin: 0 }}>
-                  ✅ You are protecting <strong>{medicProtection?.targetName}</strong> tonight.
-                </p>
-              ) : (
-                <>
-                  <p style={{ fontSize: 13, opacity: 0.85, margin: '0 0 12px' }}>
-                    If the Traitors target your chosen player, the murder will be silently blocked.
-                    {medicLastProtectedId && (
-                      <> You cannot pick the same player two nights in a row.</>
-                    )}
-                  </p>
-                  <div className={styles.targetGrid}>
-                    {medicCandidates.map((player) => {
-                      const colorHex = getColorHex(player.color);
-                      const avatarEmoji = getAvatarEmoji(player.avatar);
-                      const selected = selectedTarget === player.id;
-                      return (
-                        <div
-                          key={player.id}
-                          className={`${styles.targetCard} ${selected ? styles.selected : ''}`}
-                          style={{ borderColor: selected ? colorHex : undefined }}
-                          onClick={() => setSelectedTarget(player.id)}
-                        >
-                          <div className={styles.avatar} style={{ background: colorHex, color: '#000' }}>
-                            {avatarEmoji}
-                          </div>
-                          <span className={styles.name}>{player.name}</span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                  <button
-                    className={styles.murderBtn}
-                    style={{ background: '#66d9a8', color: '#102a1a', marginTop: 12 }}
-                    disabled={!selectedTarget}
-                    onClick={() => {
-                      if (selectedTarget) {
-                        vibrate('medium');
-                        onSend({ type: 'C2S_MEDIC_PROTECT', payload: { targetId: selectedTarget } });
-                      }
-                    }}
-                  >
-                    Confirm Protection
-                  </button>
-                </>
-              )}
-            </div>
-          )}
 
           <div className={styles.sleepingIcon}>
             <span>💤</span>
@@ -424,19 +355,19 @@ export function NightPhase({
               <h2>{murderedPlayer.name}</h2>
               <p className={styles.deathMessage}>was found dead this morning...</p>
             </div>
-          ) : murderBlocked && murderBlocked.shieldedPlayerName ? (
+          ) : murderBlocked ? (
             <div className={styles.shieldBlockReveal}>
               <div className={styles.shieldIcon}>🛡️</div>
               <h2>{murderBlocked.shieldedPlayerName}</h2>
               <p className={styles.shieldMessage}>was protected by their Shield!</p>
               <p className={styles.noDeathText}>No one was murdered last night.</p>
             </div>
-          ) : murderBlocked ? (
+          ) : medicBlocked ? (
             <div className={styles.shieldBlockReveal}>
               <div className={styles.shieldIcon}>✨</div>
-              <h2>The Traitors struck...</h2>
-              <p className={styles.shieldMessage}>but their target survived.</p>
-              <p className={styles.noDeathText}>No one was murdered last night.</p>
+              <p className={styles.shieldMessage}>
+                The Traitors struck, but their target survived.
+              </p>
             </div>
           ) : (
             <div className={styles.noDeathMessage}>

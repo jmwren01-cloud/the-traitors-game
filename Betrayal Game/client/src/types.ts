@@ -1,12 +1,12 @@
 export type Role = 'TRAITOR' | 'FAITHFUL' | 'SHERIFF' | 'MEDIC' | 'SEER';
 
-export type SheriffResult = 'SUSPICIOUS' | 'CLEAR';
-
-export interface SheriffInvestigation {
-  round: number;
-  targetId: string;
-  targetName: string;
-  displayedResult: SheriffResult;
+/**
+ * Wave 4 — Sheriff / Medic / Seer all belong to the Faithful team for win
+ * conditions and UI counts. Use this helper anywhere the literal team
+ * matters (e.g. "X Faithful remain").
+ */
+export function isFaithfulRole(role: Role | undefined): boolean {
+  return role !== undefined && role !== 'TRAITOR';
 }
 
 export interface GameSettings {
@@ -73,9 +73,8 @@ export interface Player {
   color?: string;
   avatar?: string;
   recruitmentUsed?: boolean;
-  seerUsedAtRound?: number;
-  medicLastProtectedId?: string;
-  sheriffInvestigations?: SheriffInvestigation[];
+  seerGiftUsed?: boolean;
+  medicLastProtectedTargetId?: string;
 }
 
 export interface Vote {
@@ -147,10 +146,7 @@ export interface GameState {
   votes?: Vote[];
   banishedPlayer?: { id: string; name: string; role: Role };
   murderedPlayer?: { id: string; name: string };
-  /** Set when a murder attempt was blocked. Shield-block carries the protected
-   * player's identity; medic-block intentionally omits both fields so the
-   * morning broadcast does not leak the medic's target. */
-  murderBlocked?: { shieldedPlayerId?: string; shieldedPlayerName?: string };
+  murderBlocked?: { shieldedPlayerId: string; shieldedPlayerName: string };
   winner?: 'TRAITORS' | 'FAITHFUL';
   endReason?: 'HOST_ENDED';
   remainingTraitors?: number;
@@ -184,18 +180,32 @@ export interface GameState {
   nightRecruitmentSubmittedBy?: string;
   shieldBlockedBanishment?: boolean;
   shieldBlockedBanishmentName?: string;
-  /** Last sheriff investigation result (private to the sheriff). */
-  sheriffResult?: { round: number; targetId: string; targetName: string; result: SheriffResult };
-  /** All sheriff investigation results received so far. */
-  sheriffHistory?: { round: number; targetId: string; targetName: string; result: SheriffResult }[];
-  /** Local: medic's chosen target this night, after server confirmation. */
-  medicProtection?: { targetId: string; targetName: string };
-  /** Last seer reading the seer received. */
-  seerResult?: { round: number; targetId: string; targetName: string; role: Role };
-  /** All seer readings received so far. */
-  seerHistory?: { round: number; targetId: string; targetName: string; role: Role }[];
-  /** For traitors: round numbers in which a Seer used their gift. */
-  seerActivatedRounds?: number[];
+  /**
+   * Wave 4 — Sheriff's running list of investigations across the game,
+   * appended each morning. Used to render "My Investigations" history.
+   */
+  sheriffReports?: SheriffReport[];
+  /** Wave 4 — Medic's confirmed protection target for the current night. */
+  medicProtectedTarget?: { id: string; name: string };
+  /**
+   * Wave 4 — Seer's revealed result after burning their one-time gift.
+   * Note: targetId is informational; UI normally displays targetName.
+   */
+  seerResult?: { targetId: string; targetName: string; actualRole: Role };
+  /** Wave 4 — Set on alive Traitors when the Seer's gift is activated. */
+  seerActivatedAlert?: boolean;
+  /**
+   * Wave 4 — set during MORNING when the Medic silently blocked the
+   * Traitors' kill. The protected identity is intentionally not sent.
+   */
+  medicBlocked?: boolean;
+}
+
+export interface SheriffReport {
+  targetId: string;
+  targetName: string;
+  reportedRole: 'TRAITOR' | 'FAITHFUL';
+  round: number;
 }
 
 export type C2SEvent =
@@ -228,6 +238,7 @@ export type C2SEvent =
   | { type: 'C2S_SET_AVATAR'; payload: { color?: string; avatar?: string } }
   | { type: 'C2S_SUBMIT_RECRUITMENT'; payload: { targetId: string } }
   | { type: 'C2S_MEDIC_PROTECT'; payload: { targetId: string } }
+  /** Wave 4 — Seer activates the gift. Target is RANDOM and chosen server-side. */
   | { type: 'C2S_ACTIVATE_SEER'; payload: Record<string, never> }
   | { type: 'C2S_IDENTIFY'; payload: { deviceToken: string; playerName: string } }
   | { type: 'C2S_GET_PLAYER_STATS'; payload: Record<string, never> }
@@ -261,6 +272,7 @@ export interface GameSummaryPayload {
   sessionId: string;
   endedAt: number;
   winner: 'TRAITORS' | 'FAITHFUL';
+  // DB persists only the literal team; special roles are normalized to FAITHFUL.
   role: 'TRAITOR' | 'FAITHFUL';
   outcome: 'WON' | 'LOST';
   playerCount: number;

@@ -495,10 +495,10 @@ export function Lobby({
                 <label className={styles.checkboxLabel}>
                   <input
                     type="checkbox"
-                    checked={settings.enableSpecialRoles ?? true}
+                    checked={settings.enableSpecialRoles}
                     onChange={(e) => updateSettings({ enableSpecialRoles: e.target.checked })}
                   />
-                  Special Roles (Sheriff / Medic / Seer)
+                  Special Roles (Sheriff 7+, Medic 8+, Seer 9+)
                 </label>
               </div>
 
