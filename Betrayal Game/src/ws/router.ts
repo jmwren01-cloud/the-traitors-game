@@ -980,9 +980,9 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
           payload: { received, needed },
         });
 
-        if (game.allAlivePlacedTokens(after)) {
-          fireTokenResolution(currentSessionId);
-        }
+        // Intentionally do NOT early-resolve once all alive players
+        // have placed: the 45s window must stay open so anyone can
+        // change their pick (upsert) up until tokenWindowEndsAt.
         return;
       }
 

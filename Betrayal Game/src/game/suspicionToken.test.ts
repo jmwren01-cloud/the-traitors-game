@@ -188,6 +188,38 @@ describe('Suspicion Tokens — resolveSuspicionTokens backfill', () => {
   });
 });
 
+describe('Suspicion Tokens — upsert window stays open', () => {
+  it('after all alive submit, a player can still change target before window expires', () => {
+    let g = beginSuspicionTokenPhase(mkGame());
+    g = placeSuspicionToken(g, 'p1', 'p2');
+    g = placeSuspicionToken(g, 'p2', 'p3');
+    g = placeSuspicionToken(g, 'p3', 'p4');
+    g = placeSuspicionToken(g, 'p4', 'p1');
+    expect(allAlivePlacedTokens(g)).toBe(true);
+    expect(g.tokenPhase).toBe('PLACEMENT');
+    // Window has not closed — re-pick must succeed and replace the entry.
+    g = placeSuspicionToken(g, 'p1', 'p4');
+    expect(g.tokenPhase).toBe('PLACEMENT');
+    expect(g.suspicionTokensCurrent).toHaveLength(4);
+    const p1Token = g.suspicionTokensCurrent!.find((t) => t.placerId === 'p1');
+    expect(p1Token?.targetId).toBe('p4');
+    expect(g.tokensSubmittedIds).toEqual(['p1', 'p2', 'p3', 'p4']);
+  });
+
+  it('resolveSuspicionTokens is idempotent on the timeout path', () => {
+    let g = beginSuspicionTokenPhase(mkGame());
+    g = placeSuspicionToken(g, 'p1', 'p2');
+    g = placeSuspicionToken(g, 'p2', 'p3');
+    g = placeSuspicionToken(g, 'p3', 'p4');
+    g = placeSuspicionToken(g, 'p4', 'p1');
+    const r1 = resolveSuspicionTokens(g);
+    const r2 = resolveSuspicionTokens(r1);
+    expect(r2).toBe(r1);
+    expect(r1.tokenPhase).toBe('REVEAL');
+    expect(r1.suspicionTokensCurrent).toHaveLength(4);
+  });
+});
+
 describe('Suspicion Tokens — round transitions', () => {
   it('startVoting strips the sub-phase but keeps the round archive', () => {
     let g = beginSuspicionTokenPhase(mkGame());
