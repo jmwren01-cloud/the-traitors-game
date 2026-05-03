@@ -9,6 +9,7 @@ interface HostPanelProps {
   currentRound?: number;
   voteCount?: { received: number; needed: number };
   votes?: Vote[];
+  revealedVotes?: Vote[];
   murderVoteProgress?: { received: number; needed: number };
   murderVoterIds?: string[];
   traitorIds?: string[];
@@ -59,7 +60,7 @@ function useTimerSeconds(timer: TimerState | undefined, phase: GamePhase): numbe
 export function HostPanel(props: HostPanelProps) {
   const {
     players, myPlayerId, phase, currentRound,
-    voteCount, votes, murderVoteProgress, murderVoterIds, traitorIds,
+    voteCount, votes, revealedVotes, murderVoteProgress, murderVoterIds, traitorIds,
     timer, canStartGame, minPlayers, round1DiscussionOnly,
     onSend,
   } = props;
@@ -106,6 +107,11 @@ export function HostPanel(props: HostPanelProps) {
       case 'MORNING':
       case 'CHALLENGE_RESULT':
         return true;
+      // Once every vote has been revealed in VOTE_REVEAL the host
+      // must press Banish (handled in BANISH_REVEAL controls) — until
+      // then we don't pulse since reveals are still streaming.
+      case 'VOTE_REVEAL':
+        return !!voteCount && (revealedVotes?.length ?? 0) >= voteCount.needed;
       default: return false;
     }
   })();

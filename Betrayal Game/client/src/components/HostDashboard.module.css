@@ -30,37 +30,6 @@
   box-shadow: none;
 }
 
-/* Pulses the HOST toggle when the current phase needs the host to act
- * (e.g. reveal complete and a banishment is required). The pulse stops
- * when the dashboard is opened or the action is taken. */
-.toggleBtnAttention {
-  background: rgba(233, 69, 96, 0.95);
-  border-color: #ffd166;
-  animation: hostToggleAttention 1.2s ease-in-out infinite;
-}
-
-.toggleBtnAttention:hover {
-  background: rgba(233, 69, 96, 1);
-}
-
-@keyframes hostToggleAttention {
-  0%, 100% {
-    box-shadow: 0 4px 16px rgba(233, 69, 96, 0.55), 0 0 0 0 rgba(255, 209, 102, 0.7);
-    transform: scale(1);
-  }
-  50% {
-    box-shadow: 0 4px 24px rgba(233, 69, 96, 0.85), 0 0 0 10px rgba(255, 209, 102, 0);
-    transform: scale(1.06);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .toggleBtnAttention {
-    animation: none;
-    box-shadow: 0 4px 20px rgba(255, 209, 102, 0.7);
-  }
-}
-
 .toggleLabel {
   font-size: 0.8rem;
   text-transform: uppercase;

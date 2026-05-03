@@ -46,26 +46,6 @@ export function HostDashboard({
   const showVotePanel = VOTING_PHASES.includes(phase);
   const showNightPanel = NIGHT_PHASES.includes(phase);
 
-  // Phases where the host MUST press a button to advance the game.
-  // VOTING/REVOTE/CHALLENGE are excluded — those buttons are optional
-  // (force-resolve / end-early) and don't actually block progress.
-  const ALWAYS_ACTION_PHASES = new Set([
-    'ROLE_ASSIGN',
-    'ROLE_REVEAL',
-    'ROUNDTABLE',
-    'TIE_DETECTED',
-    'TIEBREAKER_REVEAL',
-    'BANISH_REVEAL',
-    'MORNING',
-    'CHALLENGE_RESULT',
-  ]);
-  const voteRevealComplete =
-    phase === 'VOTE_REVEAL' &&
-    !!voteCount &&
-    (revealedVotes?.length ?? 0) >= voteCount.needed;
-  const actionRequired =
-    !open && (ALWAYS_ACTION_PHASES.has(phase) || voteRevealComplete);
-
   const getPlayerName = (id: string) => players.find((p) => p.id === id)?.name ?? id;
 
   const activeVotes = revealedVotes && revealedVotes.length > 0 ? revealedVotes : (votes ?? []);
@@ -153,9 +133,9 @@ export function HostDashboard({
   return (
     <>
       <button
-        className={`${styles.toggleBtn} ${open ? styles.toggleBtnOpen : ''} ${actionRequired ? styles.toggleBtnAttention : ''}`}
+        className={`${styles.toggleBtn} ${open ? styles.toggleBtnOpen : ''}`}
         onClick={() => setOpen((v) => !v)}
-        aria-label={actionRequired ? 'Host action required — open dashboard' : 'Toggle host dashboard'}
+        aria-label="Toggle host dashboard"
       >
         {open ? '✕' : '📋'}
         <span className={styles.toggleLabel}>{open ? 'Close' : 'Host'}</span>

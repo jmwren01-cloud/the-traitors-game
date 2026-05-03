@@ -141,6 +141,7 @@ function App() {
       myPlayerId={gameState.myPlayerId}
       phase={phase}
       votes={gameState.votes}
+      revealedVotes={gameState.revealedVotes}
       voteCount={gameState.voteCount}
       murderVoteProgress={gameState.murderVoteProgress}
       murderVoterIds={gameState.murderVoterIds}
