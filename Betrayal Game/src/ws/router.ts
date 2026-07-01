@@ -739,6 +739,11 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
       }
 
       if (event.type === 'C2S_START_GAME') {
+        const startingPlayer = gameState.players.find((p) => p.id === currentPlayerId);
+        if (!startingPlayer?.isHost) {
+          sendError(ws, 'Only the host can start the game');
+          return;
+        }
         if (gameState.players.length < gameState.settings.minPlayers) {
           sendError(ws, `Need at least ${gameState.settings.minPlayers} players to start`);
           return;
@@ -755,6 +760,11 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
       }
 
       if (event.type === 'C2S_ASSIGN_ROLES') {
+        const assigningPlayer = gameState.players.find((p) => p.id === currentPlayerId);
+        if (!assigningPlayer?.isHost) {
+          sendError(ws, 'Only the host can assign roles');
+          return;
+        }
         const updatedGame = game.assignRoles(gameState);
         setGame(updatedGame);
 
@@ -786,6 +796,11 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
       }
 
       if (event.type === 'C2S_START_ROUNDTABLE') {
+        const startingPlayer = gameState.players.find((p) => p.id === currentPlayerId);
+        if (!startingPlayer?.isHost) {
+          sendError(ws, 'Only the host can start the roundtable');
+          return;
+        }
         const roundtableGame = game.startRoundtable(gameState);
 
         // Wave 4 / 3 — consume any pending FalseEvidence at the start of
@@ -1216,6 +1231,11 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
       }
 
       if (event.type === 'C2S_CHECK_WIN') {
+        const checkingPlayer = gameState.players.find((p) => p.id === currentPlayerId);
+        if (!checkingPlayer?.isHost) {
+          sendError(ws, 'Only the host can check the win condition');
+          return;
+        }
         const updatedGame = game.checkWinCondition(gameState);
         setGame(updatedGame);
 
@@ -1253,6 +1273,11 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
       }
 
       if (event.type === 'C2S_START_NIGHT') {
+        const startingPlayer = gameState.players.find((p) => p.id === currentPlayerId);
+        if (!startingPlayer?.isHost) {
+          sendError(ws, 'Only the host can start night');
+          return;
+        }
         // Wave 4 / 3 — drop any stale evidence-window timer from a prior
         // night so we never fire after the round has rolled over.
         clearEvidenceTimer(currentSessionId);
@@ -1361,6 +1386,11 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
       }
 
       if (event.type === 'C2S_RESOLVE_MURDER') {
+        const resolvingPlayer = gameState.players.find((p) => p.id === currentPlayerId);
+        if (!resolvingPlayer?.isHost) {
+          sendError(ws, 'Only the host can resolve the murder');
+          return;
+        }
         const result = game.resolveMurder(gameState);
         setGame(result.game);
 
@@ -1409,6 +1439,11 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
       }
 
       if (event.type === 'C2S_START_MORNING') {
+        const startingPlayer = gameState.players.find((p) => p.id === currentPlayerId);
+        if (!startingPlayer?.isHost) {
+          sendError(ws, 'Only the host can start morning');
+          return;
+        }
         const updatedGame = game.startMorning(gameState);
         setGame(updatedGame);
 
@@ -1497,6 +1532,11 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
       }
 
       if (event.type === 'C2S_CONTINUE_TO_DAY') {
+        const continuingPlayer = gameState.players.find((p) => p.id === currentPlayerId);
+        if (!continuingPlayer?.isHost) {
+          sendError(ws, 'Only the host can continue to day');
+          return;
+        }
         let updatedGame = game.continueToDayPhase(gameState);
         // Wave 4 / 3 — when challenges are disabled, MORNING flows directly
         // into ROUNDTABLE. Activate any planted FalseEvidence here so
@@ -1656,6 +1696,11 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
       }
 
       if (event.type === 'C2S_CONTINUE_TO_ROUNDTABLE') {
+        const continuingPlayer = gameState.players.find((p) => p.id === currentPlayerId);
+        if (!continuingPlayer?.isHost) {
+          sendError(ws, 'Only the host can continue to the roundtable');
+          return;
+        }
         if (gameState.phase !== 'CHALLENGE_RESULT') {
           if (gameState.phase === 'CHALLENGE' && gameState.challenge?.type === 'TIME_ESTIMATE') {
             clearChallengeTimer(currentSessionId);
