@@ -20,6 +20,9 @@ import {
   startNight,
   submitMurder,
   continueToDayPhase,
+  startRevote,
+  startVoting,
+  revealVotes,
 } from './manager.js';
 import type { GameState, Player } from './types.js';
 import { DEFAULT_SETTINGS } from './types.js';
@@ -355,6 +358,54 @@ describe('submitVote()', () => {
       votes: [],
     });
     expect(() => submitVote(game, voter.id, deadTarget.id)).toThrow();
+  });
+});
+
+// ============= revote -> reveal =============
+
+describe('revealVotes() after a revote', () => {
+  it('does not throw once every alive player has cast a revote, and moves to VOTE_REVEAL', () => {
+    const players = makePlayers(4);
+    const [a, b, c, d] = players as [Player, Player, Player, Player];
+
+    // The tie that produced this TIE_DETECTED state came from a completed
+    // VOTING round, which leaves votingLocked: true on the game — exactly
+    // as the real router does once every alive player has voted.
+    const tieGame = makeGame({
+      players,
+      phase: 'TIE_DETECTED',
+      tiedPlayerIds: [a.id, b.id],
+      votingLocked: true,
+    });
+    const revoteGame = startRevote(tieGame);
+    expect(revoteGame.phase).toBe('REVOTE');
+    // Router gates C2S_SUBMIT_REVOTE on `!gameState.votingLocked` — if this
+    // stays true from the original vote, every revote is silently rejected.
+    expect(revoteGame.votingLocked).toBe(false);
+
+    let game = revoteGame;
+    for (const voter of [a, b, c, d]) {
+      game = submitVote(game, voter.id, voter.id === a.id ? b.id : a.id);
+    }
+
+    expect(() => revealVotes(game)).not.toThrow();
+    const revealed = revealVotes(game);
+    expect(revealed.phase).toBe('VOTE_REVEAL');
+    expect(revealed.revealedVotes).toHaveLength(4);
+  });
+});
+
+describe('startVoting()', () => {
+  it('clears votingLocked left over from a previous round', () => {
+    const players = makePlayers(4);
+    const game = makeGame({
+      players,
+      phase: 'ROUNDTABLE',
+      votingLocked: true,
+    });
+    const voting = startVoting(game);
+    expect(voting.phase).toBe('VOTING');
+    expect(voting.votingLocked).toBe(false);
   });
 });
 
