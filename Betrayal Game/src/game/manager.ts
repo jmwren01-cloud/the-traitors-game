@@ -1148,7 +1148,8 @@ export function startVoting(game: GameState): GameState {
   return {
     ...clearSuspicionTokenPhase(game),
     phase: 'VOTING',
-    votes: []
+    votes: [],
+    votingLocked: false
   };
 }
 
@@ -1277,7 +1278,7 @@ export function generateAutoVotes(game: GameState): AutoVoteResult {
 }
 
 export function revealVotes(game: GameState): GameState {
-  if (game.phase !== 'VOTING') {
+  if (game.phase !== 'VOTING' && game.phase !== 'REVOTE') {
     throw new Error('Not in voting phase');
   }
 
@@ -1470,7 +1471,8 @@ export function startRevote(game: GameState): GameState {
     phase: 'REVOTE',
     votes: [],
     revealedVotes: [],
-    isRevote: true
+    isRevote: true,
+    votingLocked: false
   };
 }
 
