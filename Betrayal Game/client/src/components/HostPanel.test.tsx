@@ -54,3 +54,54 @@ describe('HostPanel — VOTE_REVEAL banish control', () => {
     expect(onSend).toHaveBeenCalledWith({ type: 'C2S_BANISH_PLAYER', payload: {} });
   });
 });
+
+describe('HostPanel — Roundtable sub-phase gating', () => {
+  it('does not offer "End Discussion" while the Confession Booth is open', () => {
+    render(
+      <HostPanel
+        players={players}
+        myPlayerId="host"
+        phase="ROUNDTABLE"
+        currentRound={2}
+        confessionPhase="BOOTH"
+        onSend={vi.fn()}
+      />,
+    );
+    openPanel();
+    expect(screen.queryByRole('button', { name: /End Discussion/i })).toBeNull();
+    expect(screen.getByText(/Confession Booth is open/i)).toBeTruthy();
+  });
+
+  it('does not offer "End Discussion" while Suspicion Tokens are open', () => {
+    render(
+      <HostPanel
+        players={players}
+        myPlayerId="host"
+        phase="ROUNDTABLE"
+        currentRound={2}
+        tokenPhase="PLACEMENT"
+        onSend={vi.fn()}
+      />,
+    );
+    openPanel();
+    expect(screen.queryByRole('button', { name: /End Discussion/i })).toBeNull();
+    expect(screen.getByText(/Suspicion Tokens are open/i)).toBeTruthy();
+  });
+
+  it('offers "End Discussion → Voting" once the sub-phases have cleared', () => {
+    const onSend = vi.fn();
+    render(
+      <HostPanel
+        players={players}
+        myPlayerId="host"
+        phase="ROUNDTABLE"
+        currentRound={2}
+        onSend={onSend}
+      />,
+    );
+    openPanel();
+    const button = screen.getByRole('button', { name: /End Discussion → Voting/i });
+    fireEvent.click(button);
+    expect(onSend).toHaveBeenCalledWith({ type: 'C2S_START_VOTING', payload: {} });
+  });
+});

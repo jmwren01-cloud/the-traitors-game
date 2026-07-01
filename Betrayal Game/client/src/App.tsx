@@ -160,6 +160,8 @@ function App() {
       canStartGame={canStartGame}
       minPlayers={minPlayers}
       round1DiscussionOnly={gameState.settings?.round1DiscussionOnly ?? false}
+      confessionPhase={gameState.confessionPhase}
+      tokenPhase={gameState.tokenPhase}
       onSend={send}
     />
   ) : null;
