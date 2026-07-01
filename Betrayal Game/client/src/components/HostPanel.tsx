@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import type { Player, C2SEvent, GamePhase, TimerState, Vote } from '../types';
+import type { Player, C2SEvent, GamePhase, TimerState, Vote, ConfessionPhase, SuspicionTokenPhase } from '../types';
 import styles from './HostPanel.module.css';
 
 interface HostPanelProps {
@@ -18,6 +18,8 @@ interface HostPanelProps {
   canStartGame?: boolean;
   minPlayers?: number;
   round1DiscussionOnly?: boolean;
+  confessionPhase?: ConfessionPhase;
+  tokenPhase?: SuspicionTokenPhase;
   onSend: (event: C2SEvent) => void;
 }
 
@@ -62,6 +64,7 @@ export function HostPanel(props: HostPanelProps) {
     players, myPlayerId, phase, currentRound,
     voteCount, votes, revealedVotes, murderVoteProgress, murderVoterIds, traitorIds,
     timer, canStartGame, minPlayers, round1DiscussionOnly,
+    confessionPhase, tokenPhase,
     onSend,
   } = props;
 
@@ -98,9 +101,12 @@ export function HostPanel(props: HostPanelProps) {
   const actionNeeded = (() => {
     switch (phase) {
       case 'LOBBY': return !!canStartGame;
+      // The booth/token sub-phases resolve on their own timers — the host
+      // has nothing to press until discussion is actually advanceable.
+      case 'ROUNDTABLE':
+        return confessionPhase !== 'BOOTH' && tokenPhase === undefined;
       case 'ROLE_ASSIGN':
       case 'ROLE_REVEAL':
-      case 'ROUNDTABLE':
       case 'TIE_DETECTED':
       case 'BANISH_REVEAL':
       case 'TIEBREAKER_REVEAL':
@@ -161,6 +167,12 @@ export function HostPanel(props: HostPanelProps) {
           </button>
         );
       case 'ROUNDTABLE': {
+        if (confessionPhase === 'BOOTH') {
+          return <p className={styles.hint}>Confession Booth is open — discussion starts once it resolves.</p>;
+        }
+        if (tokenPhase !== undefined) {
+          return <p className={styles.hint}>Suspicion Tokens are open — voting starts once they resolve.</p>;
+        }
         const round1Only = currentRound === 1 && round1DiscussionOnly;
         return (
           <button
