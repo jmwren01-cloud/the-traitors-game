@@ -27,6 +27,7 @@ let currentRound = 0;
 let gameEnded = false;
 let traitorIds: string[] = [];
 let alivePlayers: string[] = [];
+let tiedPlayerIds: string[] = [];
 
 function log(msg: string) {
   console.log(`[${new Date().toISOString().slice(11, 19)}] ${msg}`);
@@ -86,22 +87,14 @@ function handleEvent(player: PlayerClient, event: GameEvent) {
       log(`Game created: ${sessionId}, Host: Player ${player.id}`);
       break;
 
-    case 'S2C_JOINED':
+    case 'S2C_GAME_JOINED':
       player.playerId = payload.playerId;
       player.sessionToken = payload.sessionToken;
       log(`Player ${player.id} joined as ${player.playerId}`);
       break;
 
     case 'S2C_PLAYER_JOINED':
-      log(`Player joined: ${payload.playerName} (total: ${payload.totalPlayers})`);
-      break;
-
-    case 'S2C_ROLE_ASSIGNED':
-      player.role = payload.role;
-      if (payload.role === 'TRAITOR') {
-        traitorIds = payload.traitorIds || [];
-      }
-      log(`Player ${player.id} (${player.name}) assigned role: ${payload.role}`);
+      log(`Player joined (total: ${payload.players?.length ?? 'unknown'})`);
       break;
 
     case 'S2C_GAME_STARTED':
@@ -134,18 +127,43 @@ function handleEvent(player: PlayerClient, event: GameEvent) {
       log(`Player ${player.id} role revealed: ${payload.role}`);
       break;
 
-    case 'S2C_PHASE_CHANGE':
-      currentPhase = payload.phase;
-      if (payload.currentRound) currentRound = payload.currentRound;
-      log(`Phase changed to: ${currentPhase} (Round ${currentRound})`);
-      handlePhaseChange(player, payload);
-      break;
-
     case 'S2C_ROUNDTABLE_STARTED':
       currentPhase = 'ROUNDTABLE';
       if (payload.currentRound) currentRound = payload.currentRound;
       log(`ROUNDTABLE started (Round ${currentRound})`);
+      break;
+
+    case 'S2C_CONFESSION_PHASE_STARTED':
+      // Submit immediately so the booth early-resolves instead of
+      // sitting on its full 60s window every round.
+      if (player.isAlive) {
+        send(player, {
+          type: 'C2S_SUBMIT_CONFESSION',
+          payload: { content: `Confession from ${player.name}` },
+        });
+      }
+      break;
+
+    case 'S2C_CONFESSIONS_REVEALED':
+      log(`Confession Booth resolved (${payload.reveals?.length ?? 0} reveals)`);
       handlePhaseChange(player, { phase: 'ROUNDTABLE' });
+      break;
+
+    case 'S2C_TOKEN_PHASE_STARTED':
+      // Suspicion Tokens never early-resolve (by design — the 45s
+      // window always stays open), but placing immediately avoids
+      // relying on the server's auto-backfill for every player.
+      if (player.isAlive) {
+        const targets = players.filter(p => p.isAlive && p.playerId && p.playerId !== player.playerId);
+        const target = targets[Math.floor(Math.random() * targets.length)];
+        if (target) {
+          send(player, { type: 'C2S_PLACE_SUSPICION_TOKEN', payload: { targetId: target.playerId } });
+        }
+      }
+      break;
+
+    case 'S2C_TOKENS_REVEALED':
+      log(`Suspicion Tokens revealed (${payload.tokens?.length ?? 0} tokens)`);
       break;
 
     case 'S2C_VOTING_STARTED':
@@ -171,30 +189,43 @@ function handleEvent(player: PlayerClient, event: GameEvent) {
       log(`Vote reveal started, total votes: ${payload.totalVotes}`);
       break;
 
-    case 'S2C_VOTE_RECEIVED':
-      log(`Vote received: ${payload.voterName} -> ${payload.targetName}`);
+    case 'S2C_VOTE_REVEAL_STEP':
+      log(`Vote reveal #${payload.revealIndex}: ${payload.voterName} voted for ${payload.targetName}`);
       break;
 
-    case 'S2C_VOTE_REVEAL':
-      log(`Vote reveal #${payload.revealIndex}: ${payload.voterName} voted for ${payload.targetName}${payload.isAutoVote ? ' (AUTO)' : ''}`);
+    case 'S2C_VOTE_REVEAL_COMPLETE':
+      log(`Vote reveal complete (${payload.allVotes?.length ?? 0} votes) — host banishing`);
+      if (player.isHost) {
+        setTimeout(() => {
+          send(player, { type: 'C2S_BANISH_PLAYER', payload: {} });
+        }, 500);
+      }
       break;
 
-    case 'S2C_BANISH_RESULT':
+    // Revotes resolve through a plain, non-phased reveal (unlike the
+    // original vote's S2C_VOTE_REVEAL_STARTED/STEP/COMPLETE sequence).
+    case 'S2C_VOTES_REVEALED':
+      currentPhase = payload.phase ?? 'VOTE_REVEAL';
+      log(`Revote reveal complete (${payload.votes?.length ?? 0} votes) — host banishing`);
+      if (player.isHost) {
+        setTimeout(() => {
+          send(player, { type: 'C2S_BANISH_PLAYER', payload: {} });
+        }, 500);
+      }
+      break;
+
+    case 'S2C_PLAYER_BANISHED':
       currentPhase = 'BANISH_REVEAL';
       log(`BANISHED: ${payload.banishedPlayerName} was ${payload.banishedPlayerRole}`);
       markPlayerDead(payload.banishedPlayerId);
       handlePhaseChange(player, { phase: 'BANISH_REVEAL' });
       break;
 
-    case 'S2C_ROUND1_NO_BANISHMENT':
-      currentPhase = 'CHECK_WIN';
-      log(`Round 1 - no banishment (discussion only)`);
-      handlePhaseChange(player, { phase: 'CHECK_WIN' });
-      break;
-
     case 'S2C_MURDER_RESOLVED':
       log(`MURDERED: ${payload.murderedPlayerName}`);
       markPlayerDead(payload.murderedPlayerId);
+      currentPhase = 'MORNING';
+      handlePhaseChange(player, { phase: 'MORNING' });
       break;
 
     case 'S2C_MORNING_STARTED':
@@ -206,14 +237,31 @@ function handleEvent(player: PlayerClient, event: GameEvent) {
       } else {
         log(`Morning: No one was murdered`);
       }
+      currentPhase = 'MORNING';
+      handlePhaseChange(player, { phase: 'MORNING' });
       break;
 
     case 'S2C_TIE_DETECTED':
       log(`TIE DETECTED between: ${payload.tiedPlayerNames?.join(', ')}`);
+      tiedPlayerIds = payload.tiedPlayerIds ?? [];
+      currentPhase = 'TIE_DETECTED';
+      if (player.isHost) {
+        setTimeout(() => {
+          send(player, { type: 'C2S_START_REVOTE', payload: {} });
+        }, 500);
+      }
       break;
 
-    case 'S2C_TIEBREAKER_RESULT':
-      log(`TIEBREAKER: ${payload.selectedPlayerName} randomly selected`);
+    case 'S2C_REVOTE_STARTED':
+      currentPhase = 'REVOTE';
+      log(`REVOTE started between: ${payload.tiedPlayerIds?.join(', ')}`);
+      break;
+
+    case 'S2C_TIEBREAKER_RESOLVED':
+      log(`TIEBREAKER: ${payload.selectedPlayerName} randomly selected and banished`);
+      markPlayerDead(payload.selectedPlayerId);
+      currentPhase = 'TIEBREAKER_REVEAL';
+      handlePhaseChange(player, { phase: 'TIEBREAKER_REVEAL' });
       break;
 
     case 'S2C_CHALLENGE_STARTED':
@@ -229,6 +277,8 @@ function handleEvent(player: PlayerClient, event: GameEvent) {
       } else {
         log(`CHALLENGE: No winner`);
       }
+      currentPhase = 'CHALLENGE_RESULT';
+      handlePhaseChange(player, { phase: 'CHALLENGE_RESULT' });
       break;
 
     case 'S2C_GAME_END':
@@ -270,16 +320,26 @@ function handlePhaseChange(player: PlayerClient, payload: any) {
     switch (payload.phase) {
       case 'ROUNDTABLE':
         setTimeout(() => {
-          log(`Host starting voting phase`);
-          send(player, { type: 'C2S_START_VOTING', payload: {} });
-        }, 1000);
+          // Round 1 skips straight to Night (round1DiscussionOnly default);
+          // every later round goes through Suspicion Tokens -> Voting.
+          if (currentRound === 1) {
+            log(`Host proceeding straight to Night (Round 1)`);
+            send(player, { type: 'C2S_START_NIGHT', payload: {} });
+          } else {
+            log(`Host starting voting phase`);
+            send(player, { type: 'C2S_START_VOTING', payload: {} });
+          }
+        }, 500);
         break;
 
       case 'BANISH_REVEAL':
       case 'CHECK_WIN':
+      case 'TIEBREAKER_REVEAL':
         setTimeout(() => {
-          log(`Host continuing to night`);
-          send(player, { type: 'C2S_START_NIGHT', payload: {} });
+          // checkWinCondition() routes straight to NIGHT (or GAME_END) —
+          // there is no separate C2S_START_NIGHT step after a banishment.
+          log(`Host checking win condition`);
+          send(player, { type: 'C2S_CHECK_WIN', payload: {} });
         }, 500);
         break;
 
@@ -337,10 +397,29 @@ async function runVotingPhase() {
     
     setTimeout(() => {
       log(`Player ${voter.id} (${voter.playerId}) voting for Player ${target.id} (${target.playerId})`);
-      send(voter, { 
-        type: 'C2S_SUBMIT_VOTE', 
-        payload: { targetId: target.playerId, reasonText: `Suspicious behavior` } 
+      send(voter, {
+        type: 'C2S_SUBMIT_VOTE',
+        payload: { targetId: target.playerId, reasonText: `Suspicious behavior` }
       });
+    }, voter.id * 100);
+  }
+}
+
+async function runRevotePhase() {
+  log(`\n--- REVOTE PHASE ---`);
+  // A revote only accepts votes for the tied candidates.
+  const alivePlayersList = players.filter(p => p.isAlive && p.playerId);
+  const tiedCandidates = alivePlayersList.filter(p => p.playerId && tiedPlayerIds.includes(p.playerId));
+  if (tiedCandidates.length === 0) return;
+
+  for (const voter of alivePlayersList) {
+    const validTargets = tiedCandidates.filter(p => p.playerId !== voter.playerId);
+    const target = validTargets.length > 0 ? validTargets : tiedCandidates;
+    const pick = target[Math.floor(Math.random() * target.length)]!;
+
+    setTimeout(() => {
+      log(`Player ${voter.id} (${voter.playerId}) revoting for Player ${pick.id} (${pick.playerId})`);
+      send(voter, { type: 'C2S_SUBMIT_REVOTE', payload: { targetId: pick.playerId } });
     }, voter.id * 100);
   }
 }
@@ -429,7 +508,9 @@ async function runGame() {
         await sleep(300);
       }
 
-      if (await waitForPhase('VOTING', 5000)) {
+      // Round 1 skips voting entirely (round1DiscussionOnly), so don't
+      // wait on it — go straight to waiting for NIGHT below.
+      if (roundCount > 1 && await waitForPhase('VOTING', 65000)) {
         await runVotingPhase();
         await sleep(3000);
       }
@@ -438,9 +519,9 @@ async function runGame() {
 
       if (currentPhase === 'TIE_DETECTED' || currentPhase === 'REVOTE') {
         log(`Handling tie/revote...`);
-        await sleep(1000);
+        await waitForPhase('REVOTE', 5000);
         if (currentPhase === 'REVOTE') {
-          await runVotingPhase();
+          await runRevotePhase();
           await sleep(3000);
         }
       }
