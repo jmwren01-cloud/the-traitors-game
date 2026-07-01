@@ -211,8 +211,19 @@ export function HostPanel(props: HostPanelProps) {
           </>
         );
       }
-      case 'VOTE_REVEAL':
-        return <p className={styles.hint}>Votes are revealing… banish prompt will appear when complete.</p>;
+      case 'VOTE_REVEAL': {
+        const revealed = revealedVotes?.length ?? 0;
+        const needed = voteCount?.needed ?? votes?.length ?? 0;
+        const revealComplete = needed > 0 && revealed >= needed;
+        if (!revealComplete) {
+          return <p className={styles.hint}>Votes are revealing… banish prompt will appear when complete.</p>;
+        }
+        return (
+          <button className={styles.controlBtnDanger} onClick={() => sendEvent({ type: 'C2S_BANISH_PLAYER', payload: {} })}>
+            Banish Player
+          </button>
+        );
+      }
       case 'TIE_DETECTED':
         return (
           <button className={styles.controlBtn} onClick={() => sendEvent({ type: 'C2S_START_REVOTE', payload: {} })}>
