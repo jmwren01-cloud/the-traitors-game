@@ -184,12 +184,6 @@ export function updateSettings(game: GameState, partialSettings: Partial<GameSet
     newSettings.aiHost = partialSettings.aiHost;
   }
 
-  // Prototype constraint: the AI Host director does not drive the shield
-  // challenge sub-phase yet, so challenges are disabled whenever AI Host is on.
-  if (newSettings.aiHost) {
-    newSettings.challengesEnabled = false;
-  }
-
   return {
     ...game,
     settings: newSettings

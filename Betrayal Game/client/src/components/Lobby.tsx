@@ -483,8 +483,8 @@ export function Lobby({
                 </label>
                 {settings.aiHost && (
                   <p className={styles.settingHint}>
-                    The game runs itself: the AI Host paces every phase and narrates.
-                    Everyone gets to play. (Shield challenges are disabled in this mode.)
+                    The game runs itself: the AI Host paces every phase, runs the
+                    shield challenges, and narrates. Everyone gets to play.
                   </p>
                 )}
               </div>
@@ -505,10 +505,9 @@ export function Lobby({
                   <input
                     type="checkbox"
                     checked={settings.challengesEnabled}
-                    disabled={settings.aiHost}
                     onChange={(e) => updateSettings({ challengesEnabled: e.target.checked })}
                   />
-                  Shield Challenges Enabled{settings.aiHost ? ' (disabled under AI Host)' : ''}
+                  Shield Challenges Enabled
                 </label>
               </div>
 

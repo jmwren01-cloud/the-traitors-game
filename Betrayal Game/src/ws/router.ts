@@ -378,6 +378,75 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
     confessionTimers.set(sessionId, handle);
   }
 
+  /**
+   * Create the shield challenge, broadcast S2C_CHALLENGE_STARTED, and schedule
+   * the server-authoritative auto-resolve when the challenge timer expires.
+   * `state` must already be in the CHALLENGE phase (as returned by
+   * continueToDayPhase). Shared by the human host handler and the AI Host
+   * director so both start challenges identically.
+   */
+  function beginChallenge(sessionId: string, state: GameState): void {
+    const challengeResult = game.createChallenge(state);
+    const timer = game.createTimer('CHALLENGE', challengeResult.game.settings);
+    const gameWithTimer = timer ? { ...challengeResult.game, timer } : challengeResult.game;
+    setGame(gameWithTimer);
+
+    const challenge = challengeResult.challenge;
+    const eligibleCount = countEligibleAnswerers(gameWithTimer);
+    broadcast(sessionId, {
+      type: 'S2C_CHALLENGE_STARTED',
+      payload: {
+        phase: 'CHALLENGE',
+        challengeType: challenge.type,
+        startTime: challenge.startTime,
+        eligibleCount,
+        // targetTime is intentionally NOT broadcast at start (blind-guess).
+        ...(challenge.shownPlayerIds !== undefined ? { shownPlayerIds: challenge.shownPlayerIds } : {}),
+        ...(challenge.scrambledWord !== undefined ? { scrambledWord: challenge.scrambledWord } : {}),
+        ...(timer ? { endTime: timer.endTime, duration: timer.duration } : {}),
+      },
+    });
+
+    if (timer) {
+      broadcast(sessionId, {
+        type: 'S2C_TIMER_UPDATE',
+        payload: { endTime: timer.endTime, duration: timer.duration, phase: 'CHALLENGE' },
+      });
+    }
+
+    if (challenge.type === 'MISSING_PLAYER') {
+      setTimeout(() => {
+        const currentGame = games.get(sessionId);
+        if (currentGame?.phase === 'CHALLENGE' && currentGame.challenge?.type === 'MISSING_PLAYER') {
+          broadcast(sessionId, {
+            type: 'S2C_CHALLENGE_PHASE_UPDATE',
+            payload: {
+              ...(currentGame.challenge.hiddenPlayerId !== undefined
+                ? { hiddenPlayerId: currentGame.challenge.hiddenPlayerId }
+                : {}),
+            },
+          });
+        }
+      }, 3000);
+    }
+
+    // Server-authoritative auto-resolve when the timer expires.
+    clearChallengeTimer(sessionId);
+    const expiryMs = timer ? Math.max(0, timer.endTime - Date.now()) : 60000;
+    activeChallengeTimers.set(sessionId, setTimeout(() => {
+      activeChallengeTimers.delete(sessionId);
+      const currentGame = games.get(sessionId);
+      if (!currentGame || currentGame.phase !== 'CHALLENGE' || !currentGame.challenge) return;
+      try {
+        const resolution = game.resolveChallenge(currentGame);
+        setGame(resolution.game);
+        broadcastChallengeResult(sessionId, resolution, games, playerConnections);
+      } catch (e) {
+        console.error('Challenge auto-resolve error:', e);
+      }
+    }, expiryMs));
+  }
+
   // ============= NIGHT MURDER RESOLUTION =============
 
   /**
@@ -749,6 +818,13 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
             updated.winner === 'TRAITORS'
               ? 'The Traitors have won. Deception, as ever, is a fine art.'
               : 'The Faithful have prevailed — every Traitor unmasked. Trust wins tonight.');
+        } else if (updated.phase === 'CHALLENGE') {
+          // Challenges are enabled: run the shield challenge. It self-resolves
+          // on its own timer into CHALLENGE_RESULT, which the director then
+          // advances back to the Roundtable.
+          emitNarration(sessionId, 'CHALLENGE', 'GENERIC',
+            'Before we talk — a test of nerve. Win the challenge and earn a shield against tonight’s blade.');
+          beginChallenge(sessionId, updated);
         } else {
           const activation = game.activateFalseEvidence(updated);
           const finalGame = activation.game;
@@ -774,8 +850,8 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
         return;
       }
       case 'CHALLENGE_RESULT': {
-        // Defensive: challenges are disabled under AI Host, but keep the loop
-        // unstuck if a game somehow lands here.
+        // Challenge resolved (winner + any shield already broadcast). Advance
+        // back into the Roundtable, consuming any planted FalseEvidence.
         const continueGame = game.continueToRoundtable(s);
         const activation = game.activateFalseEvidence(continueGame);
         setGame(activation.game);
@@ -783,6 +859,12 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
           type: 'S2C_ROUNDTABLE_STARTED',
           payload: { phase: 'ROUNDTABLE', currentRound: activation.game.currentRound },
         });
+        if (activation.fabricatedWhisper) {
+          broadcast(sessionId, {
+            type: 'S2C_WHISPER_SENT',
+            payload: game.buildWhisperFanout(activation.fabricatedWhisper).broadcast,
+          });
+        }
         beginConfessionBooth(sessionId, activation.game);
         return;
       }
@@ -1964,68 +2046,7 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
             }
           });
         } else if (updatedGame.phase === 'CHALLENGE') {
-          const challengeResult = game.createChallenge(updatedGame);
-          const timer = game.createTimer('CHALLENGE', challengeResult.game.settings);
-          const gameWithTimer = timer ? { ...challengeResult.game, timer } : challengeResult.game;
-          setGame(gameWithTimer);
-
-          const challenge = challengeResult.challenge;
-          const eligibleCount = countEligibleAnswerers(gameWithTimer);
-          broadcast(currentSessionId, {
-            type: 'S2C_CHALLENGE_STARTED',
-            payload: {
-              phase: 'CHALLENGE',
-              challengeType: challenge.type,
-              startTime: challenge.startTime,
-              eligibleCount,
-              // NOTE: targetTime is intentionally NOT broadcast at challenge
-              // start. TIME_ESTIMATE is a blind-guess game — the secret number
-              // only appears in S2C_CHALLENGE_RESULT (as correctAnswer).
-              ...(challenge.shownPlayerIds !== undefined ? { shownPlayerIds: challenge.shownPlayerIds } : {}),
-              ...(challenge.scrambledWord !== undefined ? { scrambledWord: challenge.scrambledWord } : {}),
-              ...(timer ? { endTime: timer.endTime, duration: timer.duration } : {}),
-            }
-          });
-
-          if (timer) {
-            broadcast(currentSessionId, {
-              type: 'S2C_TIMER_UPDATE',
-              payload: { endTime: timer.endTime, duration: timer.duration, phase: 'CHALLENGE' }
-            });
-          }
-
-          if (challenge.type === 'MISSING_PLAYER') {
-            setTimeout(() => {
-              const currentGame = games.get(currentSessionId!);
-              if (currentGame?.phase === 'CHALLENGE' && currentGame.challenge?.type === 'MISSING_PLAYER') {
-                broadcast(currentSessionId!, {
-                  type: 'S2C_CHALLENGE_PHASE_UPDATE',
-                  payload: {
-                    ...(currentGame.challenge.hiddenPlayerId !== undefined
-                      ? { hiddenPlayerId: currentGame.challenge.hiddenPlayerId }
-                      : {})
-                  }
-                });
-              }
-            }, 3000);
-          }
-
-          // Server-authoritative auto-resolve when timer expires
-          clearChallengeTimer(currentSessionId);
-          const sessionId = currentSessionId;
-          const expiryMs = timer ? Math.max(0, timer.endTime - Date.now()) : 60000;
-          activeChallengeTimers.set(sessionId, setTimeout(() => {
-            activeChallengeTimers.delete(sessionId);
-            const currentGame = games.get(sessionId);
-            if (!currentGame || currentGame.phase !== 'CHALLENGE' || !currentGame.challenge) return;
-            try {
-              const resolution = game.resolveChallenge(currentGame);
-              setGame(resolution.game);
-              broadcastChallengeResult(sessionId, resolution, games, playerConnections);
-            } catch (e) {
-              console.error('Challenge auto-resolve error:', e);
-            }
-          }, expiryMs));
+          beginChallenge(currentSessionId, updatedGame);
         } else {
           broadcast(currentSessionId, {
             type: 'S2C_CONTINUE_GAME',

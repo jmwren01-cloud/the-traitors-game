@@ -24,7 +24,7 @@ export interface GameSettings {
    * end discussion, resolve votes, banish, check win, continue to day, …) on
    * dramatic timers, and narrates the game. This removes the "host tax": the
    * game creator plays as a normal player instead of babysitting buttons.
-   * Prototype constraint: challenges are auto-disabled while AI Host is on.
+   * The director also runs and resolves the shield-challenge sub-phase.
    */
   aiHost: boolean;
 }

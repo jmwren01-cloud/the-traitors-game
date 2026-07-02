@@ -53,8 +53,9 @@ function runHandsFree(n: number) {
     clients.push(ws);
   }
 
-  // Enable AI Host, then start. After this, we send NOTHING else.
-  host.recv({ type: 'C2S_UPDATE_SETTINGS', payload: { settings: { aiHost: true } } });
+  // Enable AI Host WITH shield challenges on, then start. After this we send
+  // NOTHING else — the director must run challenges too.
+  host.recv({ type: 'C2S_UPDATE_SETTINGS', payload: { settings: { aiHost: true, challengesEnabled: true } } });
   host.recv({ type: 'C2S_START_GAME', payload: {} });
 
   const state = () => games.get(sessionId)!;
@@ -76,19 +77,21 @@ describe('AI Host drives a full game with zero human input', () => {
   afterEach(() => { vi.clearAllTimers(); vi.useRealTimers(); });
 
   for (const n of [5, 7, 9, 12]) {
-    it(`reaches GAME_END hands-free with ${n} players`, () => {
+    it(`reaches GAME_END hands-free with ${n} players (challenges on)`, () => {
       const { state, phasesSeen, narrations } = runHandsFree(n);
       expect(state.phase, `AI Host game (${n}) did not finish; last phase ${state.phase}`).toBe('GAME_END');
       expect(['TRAITORS', 'FAITHFUL']).toContain(state.winner);
       // It actually played rounds, not just insta-ended.
       expect(phasesSeen.has('NIGHT')).toBe(true);
       expect(phasesSeen.has('VOTE_REVEAL') || phasesSeen.has('BANISH_REVEAL')).toBe(true);
+      // The director drove the shield challenge sub-phase too.
+      expect(phasesSeen.has('CHALLENGE'), 'director should have run at least one challenge').toBe(true);
       // The host narrated along the way.
       expect(narrations.length).toBeGreaterThan(0);
     });
   }
 
-  it('auto-disables challenges when AI Host is enabled', () => {
+  it('keeps challenges enabled under AI Host (director now runs them)', () => {
     const { ctx, games } = makeCtx();
     const host = new FakeWs();
     handleConnection(host as any, ctx);
@@ -96,6 +99,6 @@ describe('AI Host drives a full game with zero human input', () => {
     const sessionId = games.keys().next().value as string;
     host.recv({ type: 'C2S_UPDATE_SETTINGS', payload: { settings: { aiHost: true, challengesEnabled: true } } });
     expect(games.get(sessionId)!.settings.aiHost).toBe(true);
-    expect(games.get(sessionId)!.settings.challengesEnabled).toBe(false);
+    expect(games.get(sessionId)!.settings.challengesEnabled).toBe(true);
   });
 });
