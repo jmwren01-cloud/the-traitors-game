@@ -31,6 +31,9 @@ const confessionTimers = new Map<string, NodeJS.Timeout>();
 // server-side 45s Suspicion Token placement timer + the 5s
 // post-resolve reveal timer that auto-advances into VOTING.
 const tokenTimers = new Map<string, NodeJS.Timeout>();
+// server-side NIGHT timer — auto-resolves the murder when the night
+// timer expires so a disconnected/AFK Traitor can never freeze the game.
+const nightTimers = new Map<string, NodeJS.Timeout>();
 
 function clearChallengeTimer(sessionId: string): void {
   const t = activeChallengeTimers.get(sessionId);
@@ -64,6 +67,14 @@ function clearTokenTimer(sessionId: string): void {
   }
 }
 
+function clearNightTimer(sessionId: string): void {
+  const t = nightTimers.get(sessionId);
+  if (t) {
+    clearTimeout(t);
+    nightTimers.delete(sessionId);
+  }
+}
+
 /**
  * Clean up all in-memory timers/intervals associated with a session.
  * Call this when a game session is destroyed (e.g. all players gone, manual cleanup).
@@ -73,6 +84,7 @@ export function cleanupSessionTimers(sessionId: string): void {
   clearEvidenceTimer(sessionId);
   clearConfessionTimer(sessionId);
   clearTokenTimer(sessionId);
+  clearNightTimer(sessionId);
 }
 
 function countEligibleAnswerers(state: GameState): number {
@@ -352,6 +364,122 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
       }
     }, duration);
     confessionTimers.set(sessionId, handle);
+  }
+
+  // ============= NIGHT MURDER RESOLUTION =============
+
+  /**
+   * Resolve the murder for `stateToResolve` and fan out the resulting
+   * morning / recruitment / sheriff broadcasts. Shared by the "all traitors
+   * voted" auto-resolve, the host manual resolve, and the night-timer
+   * fallback so all three paths broadcast identically.
+   */
+  function resolveAndBroadcastMurder(sessionId: string, stateToResolve: GameState): void {
+    const result = game.resolveMurder(stateToResolve);
+    setGame(result.game);
+
+    broadcastRecruitmentEvents(result, result.game, playerConnections);
+
+    if (result.blocked) {
+      const isShieldBlock = result.shieldedPlayerId !== undefined;
+      broadcastMorningEventWithRecruitment(
+        'S2C_MORNING_STARTED',
+        isShieldBlock
+          ? {
+              phase: 'MORNING',
+              murderBlocked: true,
+              shieldedPlayerId: result.shieldedPlayerId,
+              shieldedPlayerName: result.shieldedPlayerName,
+            }
+          : {
+              phase: 'MORNING',
+              murderBlocked: true,
+              medicBlocked: true,
+            },
+        result.recruitedPlayerId,
+        result.recruitedPlayerName,
+        result.game,
+        playerConnections
+      );
+    } else if (result.murderedPlayerId) {
+      broadcastMorningEventWithRecruitment(
+        'S2C_MURDER_RESOLVED',
+        {
+          murderedPlayerId: result.murderedPlayerId,
+          murderedPlayerName: result.murderedPlayerName,
+          phase: 'MORNING',
+        },
+        result.recruitedPlayerId,
+        result.recruitedPlayerName,
+        result.game,
+        playerConnections
+      );
+    }
+    broadcastSheriffResults(sessionId, games, playerConnections, setGame);
+  }
+
+  /**
+   * Enter (or re-enter) the NIGHT phase: create + broadcast the night timer
+   * and arm the auto-resolve fallback. Shared by every path that lands in
+   * NIGHT — the host's "End Discussion → Night" (C2S_START_NIGHT) AND the
+   * post-banishment win check (C2S_CHECK_WIN), which is how the normal loop
+   * reaches the murder night. Without this the murder can only ever resolve
+   * when every alive Traitor votes, so one AFK/disconnected Traitor freezes
+   * the game with no host recourse.
+   */
+  function beginNightTimer(sessionId: string, state: GameState): GameState {
+    clearNightTimer(sessionId);
+    const timer = game.createTimer('NIGHT', state.settings);
+    let withTimer = state;
+    if (timer) {
+      withTimer = { ...state, timer };
+      setGame(withTimer);
+      broadcast(sessionId, {
+        type: 'S2C_TIMER_UPDATE',
+        payload: { endTime: timer.endTime, duration: timer.duration, phase: 'NIGHT' },
+      });
+    }
+    const fireIn = timer
+      ? Math.max(0, timer.endTime - Date.now())
+      : state.settings.timerDurations.night * 1000;
+    const handle = setTimeout(() => {
+      nightTimers.delete(sessionId);
+      try {
+        fireNightResolution(sessionId);
+      } catch (e) {
+        console.error('Night auto-resolve timer error:', e);
+      }
+    }, fireIn);
+    nightTimers.set(sessionId, handle);
+    return withTimer;
+  }
+
+  /**
+   * Night-timer fallback: when the NIGHT timer expires, fill an auto murder
+   * vote for every Traitor who hasn't voted (mirrors the day-vote
+   * Force Resolve) and resolve. Guarantees the game can never freeze in
+   * NIGHT because a Traitor disconnected or went AFK. Idempotent — bails if
+   * we're no longer in NIGHT.
+   */
+  function fireNightResolution(sessionId: string): void {
+    clearNightTimer(sessionId);
+    const current = games.get(sessionId);
+    if (!current || current.phase !== 'NIGHT') return;
+    const { game: filled } = game.generateAutoMurderVotes(current);
+    const aliveTraitors = filled.players.filter(
+      (p) => p.isAlive && p.role === 'TRAITOR'
+    ).length;
+    // If we still couldn't reach one vote per Traitor there is no valid
+    // target to kill (every non-Traitor is gone) — but in that case the
+    // Faithful would already have lost at the previous win check, so this is
+    // purely defensive: leave the state untouched rather than throw.
+    if (filled.murderVotes.length < aliveTraitors) return;
+    setGame(filled);
+    try {
+      resolveAndBroadcastMurder(sessionId, filled);
+    } catch (e) {
+      console.error('Night auto-resolve error:', e);
+    }
   }
 
   ws.on('message', (data: string) => {
@@ -1267,6 +1395,12 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
           if (updatedGame.phase === 'ROUNDTABLE') {
             // booth gates the discussion timer.
             beginConfessionBooth(currentSessionId, updatedGame);
+          } else if (updatedGame.phase === 'NIGHT') {
+            // Normal loop reaches the murder night here (post-banishment win
+            // check), NOT via C2S_START_NIGHT. Arm the night timer + murder
+            // auto-resolve fallback so an AFK/disconnected Traitor can't
+            // freeze the game.
+            beginNightTimer(currentSessionId, updatedGame);
           }
         }
         return;
@@ -1295,15 +1429,7 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
           }
         });
 
-        const timer = game.createTimer('NIGHT', updatedGame.settings);
-        if (timer) {
-          const gameWithTimer = { ...updatedGame, timer };
-          setGame(gameWithTimer);
-          broadcast(currentSessionId, {
-            type: 'S2C_TIMER_UPDATE',
-            payload: { endTime: timer.endTime, duration: timer.duration, phase: 'NIGHT' }
-          });
-        }
+        beginNightTimer(currentSessionId, updatedGame);
         return;
       }
 
@@ -1332,52 +1458,10 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
 
         if (progress.received >= progress.needed && updatedGame.phase === 'NIGHT') {
           try {
-            const result = game.resolveMurder(updatedGame);
-            setGame(result.game);
-
-            broadcastRecruitmentEvents(result, result.game, playerConnections);
-
-            if (result.blocked) {
-              const isShieldBlock = result.shieldedPlayerId !== undefined;
-              broadcastMorningEventWithRecruitment(
-                'S2C_MORNING_STARTED',
-                isShieldBlock
-                  ? {
-                      phase: 'MORNING',
-                      murderBlocked: true,
-                      shieldedPlayerId: result.shieldedPlayerId,
-                      shieldedPlayerName: result.shieldedPlayerName,
-                    }
-                  : {
-                      // Wave 4 — Medic silent block. The Traitors voted, the
-                      // strike was attempted, but the target survived. We
-                      // surface a generic survival announcement WITHOUT
-                      // revealing the target's identity (which would out
-                      // the Medic's pick).
-                      phase: 'MORNING',
-                      murderBlocked: true,
-                      medicBlocked: true,
-                    },
-                result.recruitedPlayerId,
-                result.recruitedPlayerName,
-                result.game,
-                playerConnections
-              );
-            } else if (result.murderedPlayerId) {
-              broadcastMorningEventWithRecruitment(
-                'S2C_MURDER_RESOLVED',
-                {
-                  murderedPlayerId: result.murderedPlayerId,
-                  murderedPlayerName: result.murderedPlayerName,
-                  phase: 'MORNING',
-                },
-                result.recruitedPlayerId,
-                result.recruitedPlayerName,
-                result.game,
-                playerConnections
-              );
-            }
-            broadcastSheriffResults(currentSessionId, games, playerConnections, setGame);
+            // All traitors have voted — resolve now and cancel the night
+            // timer fallback so it can't fire a second resolution.
+            clearNightTimer(currentSessionId);
+            resolveAndBroadcastMurder(currentSessionId, updatedGame);
           } catch (err) {
             console.error('Error auto-resolving murder:', err);
           }
@@ -1391,50 +1475,8 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
           sendError(ws, 'Only the host can resolve the murder');
           return;
         }
-        const result = game.resolveMurder(gameState);
-        setGame(result.game);
-
-        broadcastRecruitmentEvents(result, result.game, playerConnections);
-
-        if (result.blocked) {
-          const isShieldBlock = result.shieldedPlayerId !== undefined;
-          broadcastMorningEventWithRecruitment(
-            'S2C_MORNING_STARTED',
-            isShieldBlock
-              ? {
-                  phase: 'MORNING',
-                  murderBlocked: true,
-                  shieldedPlayerId: result.shieldedPlayerId,
-                  shieldedPlayerName: result.shieldedPlayerName,
-                }
-              : {
-                  // Wave 4 — Medic silent block. See the auto-resolve branch
-                  // above for the rationale: announce a failed strike but
-                  // not the protected identity.
-                  phase: 'MORNING',
-                  murderBlocked: true,
-                  medicBlocked: true,
-                },
-            result.recruitedPlayerId,
-            result.recruitedPlayerName,
-            result.game,
-            playerConnections
-          );
-        } else if (result.murderedPlayerId) {
-          broadcastMorningEventWithRecruitment(
-            'S2C_MURDER_RESOLVED',
-            {
-              murderedPlayerId: result.murderedPlayerId,
-              murderedPlayerName: result.murderedPlayerName,
-              phase: 'MORNING',
-            },
-            result.recruitedPlayerId,
-            result.recruitedPlayerName,
-            result.game,
-            playerConnections
-          );
-        }
-        broadcastSheriffResults(currentSessionId, games, playerConnections, setGame);
+        clearNightTimer(currentSessionId);
+        resolveAndBroadcastMurder(currentSessionId, gameState);
         return;
       }
 

@@ -2179,6 +2179,51 @@ export function submitMurder(game: GameState, traitorId: string, targetId: strin
   };
 }
 
+export interface AutoMurderVoteResult {
+  game: GameState;
+  autoVotes: Vote[];
+}
+
+/**
+ * Fill in a murder vote for every alive Traitor who hasn't voted yet, so the
+ * night can always be resolved even when a Traitor is disconnected or AFK.
+ * Mirrors `generateAutoVotes` for the day vote. To keep the Traitors' intent
+ * intact, non-voters are biased onto a target their teammates already picked
+ * (the first existing murder vote); otherwise a random alive non-Traitor is
+ * chosen. Returns the game unchanged with no auto-votes when there is no valid
+ * (alive, non-Traitor) target — the caller must not force a resolution then.
+ */
+export function generateAutoMurderVotes(game: GameState): AutoMurderVoteResult {
+  const aliveTraitors = game.players.filter((p: Player) => p.isAlive && p.role === 'TRAITOR');
+  const alreadyVoted = new Set(game.murderVotes.map((v: Vote) => v.voterId));
+  const validTargets = game.players.filter((p: Player) => p.isAlive && p.role !== 'TRAITOR');
+
+  const autoVotes: Vote[] = [];
+  const updatedVotes: Vote[] = [...game.murderVotes];
+
+  for (const traitor of aliveTraitors) {
+    if (alreadyVoted.has(traitor.id)) continue;
+    if (validTargets.length === 0) break;
+
+    // Prefer a target teammates have already agreed on so a single active
+    // Traitor's choice stands, otherwise pick a random Faithful-team player.
+    const existingTarget = updatedVotes.find((v) =>
+      validTargets.some((t) => t.id === v.targetId),
+    )?.targetId;
+    const targetId =
+      existingTarget ?? validTargets[Math.floor(Math.random() * validTargets.length)]!.id;
+
+    const autoVote: Vote = { voterId: traitor.id, targetId };
+    autoVotes.push(autoVote);
+    updatedVotes.push(autoVote);
+  }
+
+  return {
+    game: { ...game, murderVotes: updatedVotes },
+    autoVotes,
+  };
+}
+
 export interface MurderResult {
   game: GameState;
   blocked: boolean;

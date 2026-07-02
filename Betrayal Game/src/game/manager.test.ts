@@ -23,6 +23,7 @@ import {
   startRevote,
   startVoting,
   revealVotes,
+  generateAutoMurderVotes,
 } from './manager.js';
 import type { GameState, Player } from './types.js';
 import { DEFAULT_SETTINGS } from './types.js';
@@ -1378,5 +1379,67 @@ describe('full night cycle (startNight → submitMurder → resolveMurder → co
     expect(record.murderedName).toBe('Victim');
     expect(record.murderedRole).toBe('FAITHFUL');
     expect(record.murderBlocked).toBe(false);
+  });
+});
+
+// ============= generateAutoMurderVotes =============
+
+describe('generateAutoMurderVotes()', () => {
+  it('fills a vote for every alive traitor who has not voted', () => {
+    const t1 = makePlayer({ role: 'TRAITOR' });
+    const t2 = makePlayer({ role: 'TRAITOR' });
+    const f1 = makePlayer({ role: 'FAITHFUL' });
+    const f2 = makePlayer({ role: 'FAITHFUL' });
+    const game = makeGame({ players: [t1, t2, f1, f2], phase: 'NIGHT', murderVotes: [] });
+
+    const { game: filled, autoVotes } = generateAutoMurderVotes(game);
+    expect(autoVotes).toHaveLength(2);
+    // Every filled vote targets a Faithful-team player, never a traitor/self.
+    for (const v of filled.murderVotes) {
+      expect([f1.id, f2.id]).toContain(v.targetId);
+    }
+    // One vote per alive traitor.
+    expect(new Set(filled.murderVotes.map((v) => v.voterId))).toEqual(new Set([t1.id, t2.id]));
+  });
+
+  it('biases non-voters onto the target a teammate already picked', () => {
+    const t1 = makePlayer({ role: 'TRAITOR' });
+    const t2 = makePlayer({ role: 'TRAITOR' });
+    const f1 = makePlayer({ role: 'FAITHFUL' });
+    const f2 = makePlayer({ role: 'FAITHFUL' });
+    // t1 already voted for f2; t2 is AFK.
+    const game = makeGame({
+      players: [t1, t2, f1, f2],
+      phase: 'NIGHT',
+      murderVotes: [{ voterId: t1.id, targetId: f2.id }],
+    });
+
+    const { game: filled, autoVotes } = generateAutoMurderVotes(game);
+    expect(autoVotes).toHaveLength(1);
+    expect(autoVotes[0]!.voterId).toBe(t2.id);
+    // Consensus: the AFK traitor is dropped onto the existing target.
+    expect(autoVotes[0]!.targetId).toBe(f2.id);
+    expect(filled.murderVotes).toHaveLength(2);
+  });
+
+  it('does not overwrite existing votes and is a no-op when all have voted', () => {
+    const t1 = makePlayer({ role: 'TRAITOR' });
+    const f1 = makePlayer({ role: 'FAITHFUL' });
+    const game = makeGame({
+      players: [t1, f1],
+      phase: 'NIGHT',
+      murderVotes: [{ voterId: t1.id, targetId: f1.id }],
+    });
+    const { autoVotes, game: filled } = generateAutoMurderVotes(game);
+    expect(autoVotes).toHaveLength(0);
+    expect(filled.murderVotes).toHaveLength(1);
+  });
+
+  it('produces no auto-votes when there is no valid (non-traitor) target', () => {
+    const t1 = makePlayer({ role: 'TRAITOR' });
+    const t2 = makePlayer({ role: 'TRAITOR' });
+    const game = makeGame({ players: [t1, t2], phase: 'NIGHT', murderVotes: [] });
+    const { autoVotes } = generateAutoMurderVotes(game);
+    expect(autoVotes).toHaveLength(0);
   });
 });
