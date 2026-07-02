@@ -24,6 +24,7 @@ const settings: GameSettings = {
   challengesEnabled: true,
   challengeTimerSeconds: 60,
   enableSpecialRoles: true,
+  aiHost: false,
 };
 
 const baseState: GameState = {

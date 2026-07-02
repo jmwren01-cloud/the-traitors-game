@@ -43,6 +43,9 @@ export function useWebSocket() {
   const [playerStats, setPlayerStats] = useState<PlayerStatsPayload | null>(null);
   const [leaderboard, setLeaderboard] = useState<{ metric: string; entries: LeaderboardEntryPayload[] } | null>(null);
   const [globalStats, setGlobalStats] = useState<GlobalStatsPayload | null>(null);
+  const [narration, setNarration] = useState<
+    { text: string; phase: string; kind: string; at: number } | null
+  >(null);
   const wsRef = useRef<WebSocket | null>(null);
   const myPlayerIdRef = useRef<string | null>(null);
   const reconnectAttemptedRef = useRef(false);
@@ -172,6 +175,12 @@ export function useWebSocket() {
       return;
     }
 
+    if (msg.type === 'S2C_HOST_NARRATION') {
+      const p = msg.payload as unknown as { text: string; phase: string; kind: string };
+      setNarration({ ...p, at: Date.now() });
+      return;
+    }
+
     // Delegate all state transitions to the pure reducer
     setGameState((prev) => gameStateReducer(prev, msg));
   }, []);
@@ -202,5 +211,6 @@ export function useWebSocket() {
     myPlayerId: myPlayerIdRef.current, reconnecting,
     identity, identifyError, identify,
     playerStats, leaderboard, globalStats,
+    narration,
   };
 }

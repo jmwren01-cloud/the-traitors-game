@@ -20,6 +20,7 @@ interface HostPanelProps {
   round1DiscussionOnly?: boolean;
   confessionPhase?: ConfessionPhase;
   tokenPhase?: SuspicionTokenPhase;
+  aiHost?: boolean;
   onSend: (event: C2SEvent) => void;
 }
 
@@ -64,7 +65,7 @@ export function HostPanel(props: HostPanelProps) {
     players, myPlayerId, phase, currentRound,
     voteCount, votes, revealedVotes, murderVoteProgress, murderVoterIds, traitorIds,
     timer, canStartGame, minPlayers, round1DiscussionOnly,
-    confessionPhase, tokenPhase,
+    confessionPhase, tokenPhase, aiHost,
     onSend,
   } = props;
 
@@ -99,6 +100,9 @@ export function HostPanel(props: HostPanelProps) {
   const transferTargets = players.filter((p) => p.id !== myPlayerId);
 
   const actionNeeded = (() => {
+    // Under AI Host the director performs all phase transitions — the human
+    // host never needs to act (except starting the game from the lobby).
+    if (aiHost && phase !== 'LOBBY') return false;
     switch (phase) {
       case 'LOBBY': return !!canStartGame;
       // The booth/token sub-phases resolve on their own timers — the host
@@ -145,6 +149,17 @@ export function HostPanel(props: HostPanelProps) {
   };
 
   const renderControls = () => {
+    // AI Host mode: the server director runs every phase after the game
+    // starts. Show a status line instead of phase buttons so the human host
+    // (now just a player) doesn't race the director.
+    if (aiHost && phase !== 'LOBBY') {
+      return (
+        <p className={styles.hint}>
+          🎙️ The AI Host is running this game — sit back and play. Use the Danger
+          Zone below if you need to step in.
+        </p>
+      );
+    }
     switch (phase) {
       case 'LOBBY':
         return canStartGame ? (

@@ -474,8 +474,25 @@ export function Lobby({
 
               <div className={styles.settingGroup}>
                 <label className={styles.checkboxLabel}>
-                  <input 
-                    type="checkbox" 
+                  <input
+                    type="checkbox"
+                    checked={settings.aiHost}
+                    onChange={(e) => updateSettings({ aiHost: e.target.checked })}
+                  />
+                  🎙️ AI Host (auto-runs & narrates — no one has to host)
+                </label>
+                {settings.aiHost && (
+                  <p className={styles.settingHint}>
+                    The game runs itself: the AI Host paces every phase and narrates.
+                    Everyone gets to play. (Shield challenges are disabled in this mode.)
+                  </p>
+                )}
+              </div>
+
+              <div className={styles.settingGroup}>
+                <label className={styles.checkboxLabel}>
+                  <input
+                    type="checkbox"
                     checked={settings.round1DiscussionOnly}
                     onChange={(e) => updateSettings({ round1DiscussionOnly: e.target.checked })}
                   />
@@ -488,9 +505,10 @@ export function Lobby({
                   <input
                     type="checkbox"
                     checked={settings.challengesEnabled}
+                    disabled={settings.aiHost}
                     onChange={(e) => updateSettings({ challengesEnabled: e.target.checked })}
                   />
-                  Shield Challenges Enabled
+                  Shield Challenges Enabled{settings.aiHost ? ' (disabled under AI Host)' : ''}
                 </label>
               </div>
 

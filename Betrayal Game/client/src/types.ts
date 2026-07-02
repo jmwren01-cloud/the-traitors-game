@@ -23,6 +23,8 @@ export interface GameSettings {
   challengesEnabled: boolean;
   challengeTimerSeconds: number;
   enableSpecialRoles: boolean;
+  /** When true, the server auto-hosts the game (no human host presses buttons). */
+  aiHost: boolean;
 }
 
 export type ChallengeType = 'TIME_ESTIMATE' | 'MISSING_PLAYER' | 'WORD_SCRAMBLE';

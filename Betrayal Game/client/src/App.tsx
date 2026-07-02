@@ -26,7 +26,7 @@ function App() {
   const {
     connected, gameState, error, send, dispatchLocal, reconnecting,
     identity, identifyError, identify,
-    playerStats, leaderboard, globalStats,
+    playerStats, leaderboard, globalStats, narration,
   } = useWebSocket();
   const { setEnabled } = useSoundContext();
   // Initialise from the persisted `betrayal_muted` localStorage key so the
@@ -162,8 +162,16 @@ function App() {
       round1DiscussionOnly={gameState.settings?.round1DiscussionOnly ?? false}
       confessionPhase={gameState.confessionPhase}
       tokenPhase={gameState.tokenPhase}
+      aiHost={gameState.settings?.aiHost ?? false}
       onSend={send}
     />
+  ) : null;
+
+  const narrationBanner = narration && gameState?.settings?.aiHost && phase !== 'LOBBY' ? (
+    <div className="ai-host-banner" role="status" aria-live="polite" key={narration.at}>
+      <span className="ai-host-avatar" aria-hidden>🎙️</span>
+      <span className="ai-host-text">{narration.text}</span>
+    </div>
   ) : null;
 
   const chatBox = showChat ? (
@@ -237,6 +245,7 @@ function App() {
         {soundToggle}
         {hud}
         {hostPanel}
+        {narrationBanner}
         {phaseIntroCard}
         {timer}
         {tokenOverlayActive && tokenPhaseLocal && (
@@ -292,6 +301,7 @@ function App() {
         {soundToggle}
         {hud}
         {hostPanel}
+        {narrationBanner}
         {phaseIntroCard}
         {timer}
         <NightPhase
@@ -332,6 +342,7 @@ function App() {
         {soundToggle}
         {hud}
         {hostPanel}
+        {narrationBanner}
         {phaseIntroCard}
         {timer}
         <Voting
@@ -412,6 +423,7 @@ function App() {
         <ConnectionStatus connected={connected} reconnecting={reconnecting} />
         {soundToggle}
         {hostPanel}
+        {narrationBanner}
         <RoleReveal
           myRole={gameState?.myRole}
           traitorIds={gameState?.traitorIds}
@@ -432,6 +444,7 @@ function App() {
         {soundToggle}
         {hud}
         {hostPanel}
+        {narrationBanner}
         {phaseIntroCard}
         <Challenge
           challenge={gameState?.challenge}

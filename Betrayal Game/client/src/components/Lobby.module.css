@@ -556,6 +556,14 @@
   margin-bottom: 18px;
 }
 
+.settingHint {
+  color: #8a7fb8;
+  font-size: 0.78rem;
+  line-height: 1.4;
+  margin: 6px 0 0 26px;
+  text-transform: none;
+}
+
 .settingGroup:last-child {
   margin-bottom: 0;
 }
