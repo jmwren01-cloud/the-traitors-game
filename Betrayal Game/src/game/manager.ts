@@ -180,6 +180,10 @@ export function updateSettings(game: GameState, partialSettings: Partial<GameSet
     newSettings.enableSpecialRoles = partialSettings.enableSpecialRoles;
   }
 
+  if (partialSettings.aiHost !== undefined) {
+    newSettings.aiHost = partialSettings.aiHost;
+  }
+
   return {
     ...game,
     settings: newSettings

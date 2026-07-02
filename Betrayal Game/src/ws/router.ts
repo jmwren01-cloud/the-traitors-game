@@ -34,6 +34,9 @@ const tokenTimers = new Map<string, NodeJS.Timeout>();
 // server-side NIGHT timer — auto-resolves the murder when the night
 // timer expires so a disconnected/AFK Traitor can never freeze the game.
 const nightTimers = new Map<string, NodeJS.Timeout>();
+// AI Host director — the single self-rescheduling timer that drives all
+// host-paced transitions for sessions running in AI Host mode.
+const aiHostTimers = new Map<string, NodeJS.Timeout>();
 
 function clearChallengeTimer(sessionId: string): void {
   const t = activeChallengeTimers.get(sessionId);
@@ -75,6 +78,14 @@ function clearNightTimer(sessionId: string): void {
   }
 }
 
+function clearAiHostTimer(sessionId: string): void {
+  const t = aiHostTimers.get(sessionId);
+  if (t) {
+    clearTimeout(t);
+    aiHostTimers.delete(sessionId);
+  }
+}
+
 /**
  * Clean up all in-memory timers/intervals associated with a session.
  * Call this when a game session is destroyed (e.g. all players gone, manual cleanup).
@@ -85,6 +96,7 @@ export function cleanupSessionTimers(sessionId: string): void {
   clearConfessionTimer(sessionId);
   clearTokenTimer(sessionId);
   clearNightTimer(sessionId);
+  clearAiHostTimer(sessionId);
 }
 
 function countEligibleAnswerers(state: GameState): number {
@@ -366,6 +378,75 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
     confessionTimers.set(sessionId, handle);
   }
 
+  /**
+   * Create the shield challenge, broadcast S2C_CHALLENGE_STARTED, and schedule
+   * the server-authoritative auto-resolve when the challenge timer expires.
+   * `state` must already be in the CHALLENGE phase (as returned by
+   * continueToDayPhase). Shared by the human host handler and the AI Host
+   * director so both start challenges identically.
+   */
+  function beginChallenge(sessionId: string, state: GameState): void {
+    const challengeResult = game.createChallenge(state);
+    const timer = game.createTimer('CHALLENGE', challengeResult.game.settings);
+    const gameWithTimer = timer ? { ...challengeResult.game, timer } : challengeResult.game;
+    setGame(gameWithTimer);
+
+    const challenge = challengeResult.challenge;
+    const eligibleCount = countEligibleAnswerers(gameWithTimer);
+    broadcast(sessionId, {
+      type: 'S2C_CHALLENGE_STARTED',
+      payload: {
+        phase: 'CHALLENGE',
+        challengeType: challenge.type,
+        startTime: challenge.startTime,
+        eligibleCount,
+        // targetTime is intentionally NOT broadcast at start (blind-guess).
+        ...(challenge.shownPlayerIds !== undefined ? { shownPlayerIds: challenge.shownPlayerIds } : {}),
+        ...(challenge.scrambledWord !== undefined ? { scrambledWord: challenge.scrambledWord } : {}),
+        ...(timer ? { endTime: timer.endTime, duration: timer.duration } : {}),
+      },
+    });
+
+    if (timer) {
+      broadcast(sessionId, {
+        type: 'S2C_TIMER_UPDATE',
+        payload: { endTime: timer.endTime, duration: timer.duration, phase: 'CHALLENGE' },
+      });
+    }
+
+    if (challenge.type === 'MISSING_PLAYER') {
+      setTimeout(() => {
+        const currentGame = games.get(sessionId);
+        if (currentGame?.phase === 'CHALLENGE' && currentGame.challenge?.type === 'MISSING_PLAYER') {
+          broadcast(sessionId, {
+            type: 'S2C_CHALLENGE_PHASE_UPDATE',
+            payload: {
+              ...(currentGame.challenge.hiddenPlayerId !== undefined
+                ? { hiddenPlayerId: currentGame.challenge.hiddenPlayerId }
+                : {}),
+            },
+          });
+        }
+      }, 3000);
+    }
+
+    // Server-authoritative auto-resolve when the timer expires.
+    clearChallengeTimer(sessionId);
+    const expiryMs = timer ? Math.max(0, timer.endTime - Date.now()) : 60000;
+    activeChallengeTimers.set(sessionId, setTimeout(() => {
+      activeChallengeTimers.delete(sessionId);
+      const currentGame = games.get(sessionId);
+      if (!currentGame || currentGame.phase !== 'CHALLENGE' || !currentGame.challenge) return;
+      try {
+        const resolution = game.resolveChallenge(currentGame);
+        setGame(resolution.game);
+        broadcastChallengeResult(sessionId, resolution, games, playerConnections);
+      } catch (e) {
+        console.error('Challenge auto-resolve error:', e);
+      }
+    }, expiryMs));
+  }
+
   // ============= NIGHT MURDER RESOLUTION =============
 
   /**
@@ -480,6 +561,340 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
     } catch (e) {
       console.error('Night auto-resolve error:', e);
     }
+  }
+
+  // ============= AI HOST DIRECTOR =============
+  // A single self-rescheduling timer per session that performs every
+  // host-paced transition automatically, reusing the exact same manager
+  // functions + scheduler closures the human host handlers use. It polls the
+  // current phase: when a phase is "ready to advance" it acts (with a
+  // dramatic delay); otherwise it re-checks shortly. No existing handler is
+  // modified — the director is purely additive.
+
+  const nameOf = (s: GameState, id: string | undefined): string =>
+    s.players.find((p) => p.id === id)?.name ?? 'someone';
+
+  type NarrationKind = Extract<S2CEvent, { type: 'S2C_HOST_NARRATION' }>['payload']['kind'];
+  function emitNarration(sessionId: string, phase: GameState['phase'], kind: NarrationKind, text: string): void {
+    broadcast(sessionId, { type: 'S2C_HOST_NARRATION', payload: { text, phase, kind } });
+  }
+
+  /**
+   * Compute how long to wait before the director next looks at this session,
+   * based on the current phase. Reveal/announcement phases get a dramatic
+   * pause; phases still resolving on their own sub-timers (booth, tokens,
+   * night) get a short re-check; timed phases wait for their timer.
+   */
+  function aiHostDelay(s: GameState): number | null {
+    const now = Date.now();
+    const remaining = (phase: GameState['phase']) =>
+      s.timer && s.timer.phase === phase ? Math.max(1000, s.timer.endTime - now) : null;
+    switch (s.phase) {
+      case 'ROLE_ASSIGN': return 3500;
+      case 'ROLE_REVEAL': return 12000;
+      case 'ROUNDTABLE':
+        if (s.confessionPhase === 'BOOTH') return 3000;      // booth self-resolves
+        if (s.tokenPhase !== undefined) return 3000;         // tokens self-advance to VOTING
+        return remaining('ROUNDTABLE') ?? 5000;              // discussion timer
+      case 'VOTING': return remaining('VOTING') ?? 4000;
+      case 'REVOTE': return remaining('REVOTE') ?? 4000;
+      case 'VOTE_REVEAL': {
+        // Wait out the staggered reveal (≈4s/vote) plus a shield-decision window.
+        const aliveCount = s.players.filter((p) => p.isAlive).length;
+        return aliveCount * 4000 + 5000;
+      }
+      case 'TIE_DETECTED': return 5000;
+      case 'BANISH_REVEAL': return 8000;
+      case 'TIEBREAKER_REVEAL': return 8000;
+      case 'NIGHT': return 4000;                             // murder self-resolves
+      case 'MORNING': return 8000;
+      case 'CHALLENGE': return 4000;                         // self-resolves (defensive)
+      case 'CHALLENGE_RESULT': return 6000;                  // defensive
+      default: return null;                                   // LOBBY / GAME_END → stop
+    }
+  }
+
+  /** Perform the single host action appropriate to the current phase. */
+  function aiHostAct(sessionId: string): void {
+    const s = games.get(sessionId);
+    if (!s || !s.settings.aiHost) return;
+
+    switch (s.phase) {
+      case 'ROLE_ASSIGN': {
+        const updated = game.assignRoles(s);
+        setGame(updated);
+        broadcast(sessionId, { type: 'S2C_ROLES_ASSIGNED', payload: { phase: 'ROLE_REVEAL' } });
+        const traitorIds = game.getTraitorIds(updated);
+        updated.players.forEach((player) => {
+          const connection = playerConnections.get(player.id);
+          if (connection && connection.readyState === WebSocket.OPEN && player.role) {
+            const basePayload = { role: player.role, phase: 'ROLE_REVEAL' as const };
+            connection.send(JSON.stringify({
+              type: 'S2C_ROLE_REVEAL',
+              payload: player.role === 'TRAITOR' ? { ...basePayload, traitorIds } : basePayload,
+            } satisfies S2CEvent));
+          }
+        });
+        emitNarration(sessionId, 'ROLE_REVEAL', 'ROLES',
+          'The roles are cast. Somewhere among you, the Traitors are smiling. Check your card… and trust no one.');
+        return;
+      }
+      case 'ROLE_REVEAL': {
+        const activation = game.activateFalseEvidence(game.startRoundtable(s));
+        const updated = activation.game;
+        setGame(updated);
+        broadcast(sessionId, {
+          type: 'S2C_ROUNDTABLE_STARTED',
+          payload: { phase: 'ROUNDTABLE', currentRound: updated.currentRound },
+        });
+        if (activation.fabricatedWhisper) {
+          broadcast(sessionId, {
+            type: 'S2C_WHISPER_SENT',
+            payload: game.buildWhisperFanout(activation.fabricatedWhisper).broadcast,
+          });
+        }
+        beginConfessionBooth(sessionId, updated);
+        emitNarration(sessionId, 'ROUNDTABLE', 'ROUNDTABLE',
+          'Welcome to the Round Table. Step into the Confession Booth — then let the accusations begin.');
+        return;
+      }
+      case 'ROUNDTABLE': {
+        if (s.confessionPhase === 'BOOTH' || s.tokenPhase !== undefined) return; // not ready
+        const round1Only = s.currentRound === 1 && s.settings.round1DiscussionOnly;
+        if (round1Only) {
+          const ng = game.startNight(s);
+          setGame(ng);
+          broadcast(sessionId, {
+            type: 'S2C_NIGHT_STARTED',
+            payload: { phase: 'NIGHT', currentRound: ng.currentRound, aliveTraitorCount: game.getAliveTraitorCount(ng) },
+          });
+          beginNightTimer(sessionId, ng);
+        } else {
+          emitNarration(sessionId, 'ROUNDTABLE', 'VOTING',
+            'Enough talk. Place your suspicions — a vote is coming.');
+          beginTokenPlacement(sessionId, s);
+        }
+        return;
+      }
+      case 'VOTING':
+      case 'REVOTE': {
+        const { game: withAuto, autoVotes } = game.generateAutoVotes(s);
+        for (const av of autoVotes) {
+          broadcast(sessionId, {
+            type: 'S2C_VOTE_SUBMITTED',
+            payload: { voterId: av.voterId, isAutoVote: true, voterName: nameOf(withAuto, av.voterId) },
+          });
+        }
+        const aliveCount = withAuto.players.filter((p) => p.isAlive).length;
+        broadcast(sessionId, {
+          type: 'S2C_VOTE_COUNT_UPDATE',
+          payload: { received: withAuto.votes.length, needed: aliveCount },
+        });
+        const revealed = game.revealVotes({ ...withAuto, votingLocked: true });
+        setGame(revealed);
+        startVoteRevealSequence(sessionId, games, playerConnections, setGame);
+        emitNarration(sessionId, 'VOTE_REVEAL', 'VOTING', 'The votes are in. Let us see where the daggers point…');
+        return;
+      }
+      case 'VOTE_REVEAL': {
+        // Auto-decline any shield still blocking a banishment (the human game
+        // lets the player choose; the AI host gives them the reveal window
+        // via aiHostDelay, then proceeds like a host saying "last chance…").
+        let cur = games.get(sessionId)!;
+        for (const p of cur.players.filter(
+          (p) => p.isAlive && p.hasShield && !p.shieldRevealed && p.shieldDeclinedAtRound !== cur.currentRound,
+        )) {
+          try { cur = game.declineShield(cur, p.id); setGame(cur); } catch { /* not a top candidate */ }
+        }
+        const result = game.banishPlayer(games.get(sessionId)!);
+        setGame(result.game);
+        if (result.isTie && result.tiedPlayerIds) {
+          broadcast(sessionId, {
+            type: 'S2C_TIE_DETECTED',
+            payload: {
+              tiedPlayerIds: result.tiedPlayerIds,
+              tiedPlayerNames: result.tiedPlayerIds.map((id) => nameOf(result.game, id)),
+              phase: 'TIE_DETECTED',
+            },
+          });
+          emitNarration(sessionId, 'TIE_DETECTED', 'VOTING', 'A tie! The Round Table is divided. We vote again.');
+        } else if (result.isRandomSelection && result.randomlySelectedPlayerId) {
+          const sel = result.game.players.find((p) => p.id === result.randomlySelectedPlayerId);
+          if (sel?.role) {
+            broadcast(sessionId, {
+              type: 'S2C_TIEBREAKER_RESOLVED',
+              payload: {
+                selectedPlayerId: sel.id, selectedPlayerName: sel.name, selectedPlayerRole: sel.role,
+                tiedPlayerIds: result.tiedPlayerIds ?? [],
+                tiedPlayerNames: (result.tiedPlayerIds ?? []).map((id) => nameOf(result.game, id)),
+                phase: 'TIEBREAKER_REVEAL',
+              },
+            });
+            emitNarration(sessionId, 'TIEBREAKER_REVEAL', 'BANISHMENT',
+              `Deadlocked again — so fate decides. ${sel.name} is banished, and was… a ${sel.role === 'TRAITOR' ? 'Traitor' : 'Faithful'}.`);
+          }
+        } else {
+          const b = result.game.players.find((p) => p.id === result.game.banishedPlayerId);
+          if (b?.role) {
+            broadcast(sessionId, {
+              type: 'S2C_PLAYER_BANISHED',
+              payload: { banishedPlayerId: b.id, banishedPlayerName: b.name, banishedPlayerRole: b.role, phase: 'BANISH_REVEAL' },
+            });
+            emitNarration(sessionId, 'BANISH_REVEAL', 'BANISHMENT',
+              `${b.name}, the Round Table has spoken. You were… ${b.role === 'TRAITOR' ? 'a TRAITOR. Well played.' : 'a Faithful. A grave mistake.'}`);
+          } else {
+            // Shield burned → no one banished.
+            broadcast(sessionId, {
+              type: 'S2C_CONTINUE_GAME',
+              payload: { phase: result.game.phase, currentRound: result.game.currentRound },
+            });
+          }
+        }
+        return;
+      }
+      case 'TIE_DETECTED': {
+        const updated = game.startRevote(s);
+        setGame(updated);
+        broadcast(sessionId, {
+          type: 'S2C_REVOTE_STARTED',
+          payload: { tiedPlayerIds: updated.tiedPlayerIds ?? [], phase: 'REVOTE' },
+        });
+        const timer = game.createTimer('REVOTE', updated.settings);
+        if (timer) {
+          setGame({ ...updated, timer });
+          broadcast(sessionId, {
+            type: 'S2C_TIMER_UPDATE',
+            payload: { endTime: timer.endTime, duration: timer.duration, phase: 'REVOTE' },
+          });
+        }
+        return;
+      }
+      case 'BANISH_REVEAL':
+      case 'TIEBREAKER_REVEAL': {
+        const updated = game.checkWinCondition(s);
+        setGame(updated);
+        if (updated.phase === 'GAME_END' && updated.winner) {
+          writeGameRecordIfNeeded(updated);
+          broadcast(sessionId, {
+            type: 'S2C_GAME_END',
+            payload: {
+              winner: updated.winner, phase: 'GAME_END',
+              remainingTraitors: updated.players.filter((p) => p.isAlive && p.role === 'TRAITOR').length,
+              remainingFaithful: updated.players.filter((p) => p.isAlive && game.isFaithfulRole(p.role)).length,
+              history: updated.history, whispers: updated.whispers ?? [],
+              ...(updated.falseEvidence ? { falseEvidence: updated.falseEvidence } : {}),
+            },
+          });
+          emitNarration(sessionId, 'GAME_END', 'GAME_END',
+            updated.winner === 'TRAITORS'
+              ? 'The Traitors have won. Deception, as ever, is a fine art.'
+              : 'The Faithful have prevailed — every Traitor unmasked. Trust wins tonight.');
+        } else {
+          broadcast(sessionId, {
+            type: 'S2C_CONTINUE_GAME',
+            payload: { phase: updated.phase, currentRound: updated.currentRound },
+          });
+          if (updated.phase === 'ROUNDTABLE') beginConfessionBooth(sessionId, updated);
+          else if (updated.phase === 'NIGHT') beginNightTimer(sessionId, updated);
+        }
+        return;
+      }
+      case 'MORNING': {
+        const updated = game.continueToDayPhase(s);
+        setGame(updated);
+        if (updated.phase === 'GAME_END' && updated.winner) {
+          writeGameRecordIfNeeded(updated);
+          broadcast(sessionId, {
+            type: 'S2C_GAME_END',
+            payload: {
+              winner: updated.winner, phase: 'GAME_END',
+              remainingTraitors: updated.players.filter((p) => p.isAlive && p.role === 'TRAITOR').length,
+              remainingFaithful: updated.players.filter((p) => p.isAlive && game.isFaithfulRole(p.role)).length,
+              history: updated.history, whispers: updated.whispers ?? [],
+              ...(updated.falseEvidence ? { falseEvidence: updated.falseEvidence } : {}),
+            },
+          });
+          emitNarration(sessionId, 'GAME_END', 'GAME_END',
+            updated.winner === 'TRAITORS'
+              ? 'The Traitors have won. Deception, as ever, is a fine art.'
+              : 'The Faithful have prevailed — every Traitor unmasked. Trust wins tonight.');
+        } else if (updated.phase === 'CHALLENGE') {
+          // Challenges are enabled: run the shield challenge. It self-resolves
+          // on its own timer into CHALLENGE_RESULT, which the director then
+          // advances back to the Roundtable.
+          emitNarration(sessionId, 'CHALLENGE', 'GENERIC',
+            'Before we talk — a test of nerve. Win the challenge and earn a shield against tonight’s blade.');
+          beginChallenge(sessionId, updated);
+        } else {
+          const activation = game.activateFalseEvidence(updated);
+          const finalGame = activation.game;
+          setGame(finalGame);
+          broadcast(sessionId, {
+            type: 'S2C_CONTINUE_GAME',
+            payload: { phase: finalGame.phase, currentRound: finalGame.currentRound },
+          });
+          if (finalGame.phase === 'ROUNDTABLE') {
+            broadcast(sessionId, {
+              type: 'S2C_ROUNDTABLE_STARTED',
+              payload: { phase: 'ROUNDTABLE', currentRound: finalGame.currentRound },
+            });
+            if (activation.fabricatedWhisper) {
+              broadcast(sessionId, {
+                type: 'S2C_WHISPER_SENT',
+                payload: game.buildWhisperFanout(activation.fabricatedWhisper).broadcast,
+              });
+            }
+            beginConfessionBooth(sessionId, finalGame);
+          }
+        }
+        return;
+      }
+      case 'CHALLENGE_RESULT': {
+        // Challenge resolved (winner + any shield already broadcast). Advance
+        // back into the Roundtable, consuming any planted FalseEvidence.
+        const continueGame = game.continueToRoundtable(s);
+        const activation = game.activateFalseEvidence(continueGame);
+        setGame(activation.game);
+        broadcast(sessionId, {
+          type: 'S2C_ROUNDTABLE_STARTED',
+          payload: { phase: 'ROUNDTABLE', currentRound: activation.game.currentRound },
+        });
+        if (activation.fabricatedWhisper) {
+          broadcast(sessionId, {
+            type: 'S2C_WHISPER_SENT',
+            payload: game.buildWhisperFanout(activation.fabricatedWhisper).broadcast,
+          });
+        }
+        beginConfessionBooth(sessionId, activation.game);
+        return;
+      }
+      default:
+        return; // NIGHT / CHALLENGE self-resolve; LOBBY / GAME_END: nothing.
+    }
+  }
+
+  /**
+   * (Re)arm the director's single timer for a session. Idempotent — clears any
+   * pending tick first. Stops (does not reschedule) at LOBBY / GAME_END or if
+   * AI Host is disabled.
+   */
+  function scheduleAiHost(sessionId: string): void {
+    clearAiHostTimer(sessionId);
+    const s = games.get(sessionId);
+    if (!s || !s.settings.aiHost || s.phase === 'GAME_END' || s.phase === 'LOBBY') return;
+    const delay = aiHostDelay(s);
+    if (delay === null) return;
+    const handle = setTimeout(() => {
+      aiHostTimers.delete(sessionId);
+      try {
+        aiHostAct(sessionId);
+      } catch (e) {
+        console.error('AI Host director error:', e);
+      }
+      // Reschedule for whatever phase we're now in.
+      scheduleAiHost(sessionId);
+    }, delay);
+    aiHostTimers.set(sessionId, handle);
   }
 
   ws.on('message', (data: string) => {
@@ -836,6 +1251,13 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
         }));
 
         console.log(`Player ${player.name} reconnected to game ${currentSessionId}`);
+
+        // Resilience: if this is an AI Host game mid-flight and the director's
+        // timer isn't currently armed (e.g. after a server restart or a full
+        // disconnect/reconnect), restart it so the game keeps advancing.
+        if (updatedGame.settings.aiHost && !aiHostTimers.has(currentSessionId)) {
+          scheduleAiHost(currentSessionId);
+        }
         return;
       }
 
@@ -884,6 +1306,14 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
           type: 'S2C_GAME_STARTED',
           payload: { phase: 'ROLE_ASSIGN' }
         });
+
+        // AI Host mode: hand the game to the autonomous director. From here
+        // on it drives every host-paced transition; no human presses buttons.
+        if (updatedGame.settings.aiHost) {
+          emitNarration(currentSessionId, 'ROLE_ASSIGN', 'GENERIC',
+            'Players, welcome. I will be your host tonight. Sit back — the game is now in my hands.');
+          scheduleAiHost(currentSessionId);
+        }
         return;
       }
 
@@ -1616,68 +2046,7 @@ export function handleConnection(ws: WebSocket, ctx: WsContext): void {
             }
           });
         } else if (updatedGame.phase === 'CHALLENGE') {
-          const challengeResult = game.createChallenge(updatedGame);
-          const timer = game.createTimer('CHALLENGE', challengeResult.game.settings);
-          const gameWithTimer = timer ? { ...challengeResult.game, timer } : challengeResult.game;
-          setGame(gameWithTimer);
-
-          const challenge = challengeResult.challenge;
-          const eligibleCount = countEligibleAnswerers(gameWithTimer);
-          broadcast(currentSessionId, {
-            type: 'S2C_CHALLENGE_STARTED',
-            payload: {
-              phase: 'CHALLENGE',
-              challengeType: challenge.type,
-              startTime: challenge.startTime,
-              eligibleCount,
-              // NOTE: targetTime is intentionally NOT broadcast at challenge
-              // start. TIME_ESTIMATE is a blind-guess game — the secret number
-              // only appears in S2C_CHALLENGE_RESULT (as correctAnswer).
-              ...(challenge.shownPlayerIds !== undefined ? { shownPlayerIds: challenge.shownPlayerIds } : {}),
-              ...(challenge.scrambledWord !== undefined ? { scrambledWord: challenge.scrambledWord } : {}),
-              ...(timer ? { endTime: timer.endTime, duration: timer.duration } : {}),
-            }
-          });
-
-          if (timer) {
-            broadcast(currentSessionId, {
-              type: 'S2C_TIMER_UPDATE',
-              payload: { endTime: timer.endTime, duration: timer.duration, phase: 'CHALLENGE' }
-            });
-          }
-
-          if (challenge.type === 'MISSING_PLAYER') {
-            setTimeout(() => {
-              const currentGame = games.get(currentSessionId!);
-              if (currentGame?.phase === 'CHALLENGE' && currentGame.challenge?.type === 'MISSING_PLAYER') {
-                broadcast(currentSessionId!, {
-                  type: 'S2C_CHALLENGE_PHASE_UPDATE',
-                  payload: {
-                    ...(currentGame.challenge.hiddenPlayerId !== undefined
-                      ? { hiddenPlayerId: currentGame.challenge.hiddenPlayerId }
-                      : {})
-                  }
-                });
-              }
-            }, 3000);
-          }
-
-          // Server-authoritative auto-resolve when timer expires
-          clearChallengeTimer(currentSessionId);
-          const sessionId = currentSessionId;
-          const expiryMs = timer ? Math.max(0, timer.endTime - Date.now()) : 60000;
-          activeChallengeTimers.set(sessionId, setTimeout(() => {
-            activeChallengeTimers.delete(sessionId);
-            const currentGame = games.get(sessionId);
-            if (!currentGame || currentGame.phase !== 'CHALLENGE' || !currentGame.challenge) return;
-            try {
-              const resolution = game.resolveChallenge(currentGame);
-              setGame(resolution.game);
-              broadcastChallengeResult(sessionId, resolution, games, playerConnections);
-            } catch (e) {
-              console.error('Challenge auto-resolve error:', e);
-            }
-          }, expiryMs));
+          beginChallenge(currentSessionId, updatedGame);
         } else {
           broadcast(currentSessionId, {
             type: 'S2C_CONTINUE_GAME',

@@ -18,6 +18,15 @@ export interface GameSettings {
    * Thresholds: Sheriff at 7+, Medic at 8+, Seer at 9+.
    */
   enableSpecialRoles: boolean;
+  /**
+   * When true, the server runs an autonomous "AI Host" director that drives
+   * every phase transition a human host would normally trigger (assign roles,
+   * end discussion, resolve votes, banish, check win, continue to day, …) on
+   * dramatic timers, and narrates the game. This removes the "host tax": the
+   * game creator plays as a normal player instead of babysitting buttons.
+   * The director also runs and resolves the shield-challenge sub-phase.
+   */
+  aiHost: boolean;
 }
 
 export type ChallengeType = 'TIME_ESTIMATE' | 'MISSING_PLAYER' | 'WORD_SCRAMBLE';
@@ -48,7 +57,8 @@ export const DEFAULT_SETTINGS: GameSettings = {
   round1DiscussionOnly: true,
   challengesEnabled: true,
   challengeTimerSeconds: 60,
-  enableSpecialRoles: true
+  enableSpecialRoles: true,
+  aiHost: false
 };
 
 export type GamePhase = 
@@ -925,6 +935,25 @@ export type S2CEvent =
   | { type: 'S2C_PLAYER_STATS'; payload: PlayerStatsPayload }
   | { type: 'S2C_LEADERBOARD'; payload: { metric: string; entries: LeaderboardEntryPayload[] } }
   | { type: 'S2C_GLOBAL_STATS'; payload: GlobalStatsPayload }
+  | {
+      // AI Host narration — flavorful, host-in-the-loop commentary generated
+      // from real game state. `kind` lets the client pick a presentation
+      // (banner vs. dramatic overlay) and a voice/sound cue.
+      type: 'S2C_HOST_NARRATION';
+      payload: {
+        text: string;
+        phase: GamePhase;
+        kind:
+          | 'GENERIC'
+          | 'ROLES'
+          | 'ROUNDTABLE'
+          | 'VOTING'
+          | 'BANISHMENT'
+          | 'NIGHTFALL'
+          | 'MORNING'
+          | 'GAME_END';
+      };
+    }
   | { type: 'S2C_ERROR'; payload: { message: string } };
 
 // ============= Stats payload shapes =============
